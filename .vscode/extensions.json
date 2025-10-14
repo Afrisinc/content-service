@@ -1,0 +1,31 @@
+{
+  "recommendations": [
+    // Essential for development
+    "ms-vscode.vscode-typescript-next",
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+
+    // Database and API
+    "Prisma.prisma",
+    "rangav.vscode-thunder-client",
+
+    // Development utilities
+    "ms-vscode.vscode-json",
+    "mikestead.dotenv",
+    "bradlc.vscode-tailwindcss",
+    "ms-vscode.vscode-node-azure-pack",
+
+    // Git
+    "eamodio.gitlens",
+
+    // Additional helpful extensions
+    "streetsidesoftware.code-spell-checker",
+    "ms-vscode.vscode-todo-highlight",
+    "formulahendry.auto-rename-tag",
+    "christian-kohler.path-intellisense",
+    "ms-vscode.vscode-typescript-next"
+  ],
+  "unwantedRecommendations": [
+    "ms-vscode.vscode-typescript"
+  ]
+}
