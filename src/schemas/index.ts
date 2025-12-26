@@ -4,6 +4,8 @@ export * from './entities/user.schema';
 // Request schemas
 export * from './requests/auth.schema';
 export * from './requests/user.schema';
+export * from './requests/socialMedia.schema';
+export * from './requests/aiGeneration.schema';
 
 // Response schemas
 export * from './responses/auth.schema';

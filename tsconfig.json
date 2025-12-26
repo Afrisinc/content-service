@@ -31,7 +31,10 @@
       "@/utils/*": ["src/utils/*"],
       "@/schemas/*": ["src/schemas/*"],
       "@/database/*": ["src/database/*"],
-      "@/tests/*": ["src/tests/*"]
+      "@/tests/*": ["src/tests/*"],
+      "@/types/*": ["src/types/*"],
+      "@/helpers/*": ["src/helpers/*"],
+      "@/config/*": ["src/config/*"]
     }
   },
   "include": ["src/**/*"],

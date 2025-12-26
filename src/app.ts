@@ -16,10 +16,23 @@ const createApp = async () => {
       schemes: ['http'],
       consumes: ['application/json'],
       produces: ['application/json'],
+      securityDefinitions: {
+        bearerAuth: {
+          type: 'apiKey',
+          name: 'Authorization',
+          in: 'header',
+          description: 'Bearer token for authentication. Format: Bearer <token>',
+        },
+      },
       tags: [
         { name: 'auth', description: 'Authentication endpoints' },
         { name: 'users', description: 'User management endpoints' },
         { name: 'health', description: 'Health check endpoints' },
+        { name: 'social-media', description: 'Social media posting endpoints' },
+        {
+          name: 'ai-generation',
+          description: 'AI-powered content generation endpoints',
+        },
       ],
     },
   });
