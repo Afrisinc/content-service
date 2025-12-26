@@ -8,10 +8,138 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String          @id @default(uuid())
+  email         String          @unique
+  password      String
+  name          String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  socialPosts   SocialMediaPost[]
+  socialAccounts SocialMediaAccount[]
+}
+
+// Social Media Account Configuration
+model SocialMediaAccount {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform      String   // facebook, instagram, twitter, linkedin, tiktok
+  pageId        String
+  pageeName     String?
+  accessToken   String
+  refreshToken  String?
+  expiresAt     DateTime?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, platform, pageId])
+  @@index([userId])
+  @@index([platform])
+}
+
+// Social Media Post Record
+model SocialMediaPost {
+  id                  String   @id @default(uuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Post Identification
+  platform            String   // facebook, instagram, twitter, linkedin, tiktok
+  pageId              String
+  postId              String?  // ID returned from platform
+  postUrl             String?  // URL to the post on the platform
+
+  // Content
+  message             String?
+  link                String?
+  description         String?
+  picture             String?
+  name                String?
+  caption             String?
+  tags                String[] // Array of tags
+
+  // Media
+  mediaType           String?  // image, video, carousel
+  mediaUrls           String[] // Array of media URLs
+  altText             String?
+
+  // Scheduling & Timing
+  scheduledAt         DateTime?
+  publishedAt         DateTime?
+
+  // Targeting (for ads)
+  ageMin              Int?
+  ageMax              Int?
+  genders             Int[]
+  countries           String[]
+  regions             String[]
+  cities              String[]
+  interests           String[]
+  keywords            String[]
+
+  // AI Generation Tracking
+  aiGenerated         Boolean  @default(false)
+  aiProvider          String?  // openai, anthropic, huggingface
+  aiModel             String?
+  aiPrompt            String?
+
+  // Status & Metrics
+  status              String   @default("pending") // pending, published, failed, deleted
+  errorMessage        String?
+
+  // Engagement Metrics (updated periodically)
+  likes               Int      @default(0)
+  comments            Int      @default(0)
+  shares              Int      @default(0)
+  views               Int      @default(0)
+  lastMetricsUpdate   DateTime?
+
+  // Metadata
+  metadata            String?  // JSON stored as string for flexibility
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([userId])
+  @@index([platform])
+  @@index([status])
+  @@index([publishedAt])
+  @@index([aiGenerated])
+}
+
+// Social Media Post Analytics
+model SocialMediaAnalytics {
+  id                String   @id @default(uuid())
+  postId            String   @unique
+
+  // Aggregated metrics by day
+  date              DateTime
+  platform          String
+
+  // Daily metrics
+  impressions       Int      @default(0)
+  reaches           Int      @default(0)
+  engagements       Int      @default(0)
+  clicks            Int      @default(0)
+
+  // Engagement breakdown
+  likes             Int      @default(0)
+  comments          Int      @default(0)
+  shares            Int      @default(0)
+  saves             Int      @default(0)
+  views             Int      @default(0)
+
+  // Audience insights
+  topCountries      String[] // JSON array
+  topCities         String[] // JSON array
+  genderBreakdown   String[] // JSON array
+  ageBreakdown      String[] // JSON array
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([postId])
+  @@index([platform])
+  @@index([date])
 }
