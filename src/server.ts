@@ -1,3 +1,5 @@
+import 'dotenv/config';
+
 import { connectToDatabase, gracefulShutdown } from '@/database/prisma.js';
 import { logger, startupLogger } from '@/utils/logger.js';
 import { createApp } from './app.js';

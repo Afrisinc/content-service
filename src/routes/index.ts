@@ -2,6 +2,8 @@ import { HealthRouteSchema } from '@/schemas';
 import { FastifyInstance } from 'fastify';
 import { authRoutes } from './auth.routes';
 import { userRoutes } from './user.routes';
+import { socialMediaRoutes } from './socialMedia.routes';
+import { aiGenerationRoutes } from './aiGeneration.routes';
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get(
@@ -16,4 +18,6 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.register(authRoutes);
   app.register(userRoutes);
+  app.register(socialMediaRoutes);
+  app.register(aiGenerationRoutes);
 }
