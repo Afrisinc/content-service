@@ -5,6 +5,7 @@ import {
 import {
   RegisterResponseSchema,
   LoginResponseSchema,
+  ProfileResponseSchema,
 } from '../responses/auth.schema';
 import { ErrorResponseSchema } from '../responses/common.schema';
 
@@ -27,5 +28,16 @@ export const LoginRouteSchema = {
   response: {
     200: LoginResponseSchema,
     400: ErrorResponseSchema,
+  },
+} as const;
+
+export const GetProfileRouteSchema = {
+  tags: ['auth'],
+  summary: 'Get user profile',
+  description: 'Retrieve authenticated user profile information',
+  security: [{ bearerAuth: [] }],
+  response: {
+    200: ProfileResponseSchema,
+    401: ErrorResponseSchema,
   },
 } as const;

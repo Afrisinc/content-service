@@ -31,3 +31,13 @@ export const LoginResponseSchema = {
   },
   required: ['success', 'message', 'data'],
 } as const;
+
+export const ProfileResponseSchema = {
+  type: 'object',
+  properties: {
+    success: { type: 'boolean', example: true },
+    message: { type: 'string', example: 'Profile retrieved successfully' },
+    data: UserPublicSchema,
+  },
+  required: ['success', 'message', 'data'],
+} as const;

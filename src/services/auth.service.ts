@@ -31,4 +31,30 @@ export class AuthService {
     const token = generateToken(user.id);
     return { user, token };
   }
+
+  async getProfile(userId: string) {
+    const user = await repo.findByIdWithAccounts(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Exclude password from response
+    const { password, socialAccounts, ...profile } = user;
+
+    // Format social accounts to exclude sensitive tokens
+    const formattedAccounts = socialAccounts.map((account: any) => ({
+      id: account.id,
+      platform: account.platform,
+      pageId: account.pageId,
+      pageName: account.pageeName,
+      isActive: account.isActive,
+      createdAt: account.createdAt,
+      updatedAt: account.updatedAt,
+    }));
+
+    return {
+      ...profile,
+      socialAccounts: formattedAccounts,
+    };
+  }
 }
