@@ -1,9 +1,32 @@
 import Fastify from 'fastify';
 import { registerRoutes } from './routes';
 import { errorHandler } from './middlewares/errorHandler';
+import { env } from './config/env';
 
 const createApp = async () => {
   const app = Fastify({ logger: true });
+
+  // Register CORS
+  // Parse allowed origins: can be '*', 'true', or comma-separated URLs
+  let corsOrigin: boolean | string | RegExp | (string | RegExp)[] = '*';
+
+  if (
+    env.CORS_ORIGIN &&
+    env.CORS_ORIGIN !== '*' &&
+    env.CORS_ORIGIN !== 'true'
+  ) {
+    // If multiple origins, split by comma and trim
+    corsOrigin = env.CORS_ORIGIN.split(',').map(url => url.trim());
+  } else if (env.CORS_ORIGIN === 'true') {
+    corsOrigin = true;
+  }
+
+  await app.register(import('@fastify/cors'), {
+    origin: corsOrigin,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
 
   await app.register(import('@fastify/swagger'), {
     swagger: {
@@ -21,7 +44,8 @@ const createApp = async () => {
           type: 'apiKey',
           name: 'Authorization',
           in: 'header',
-          description: 'Bearer token for authentication. Format: Bearer <token>',
+          description:
+            'Bearer token for authentication. Format: Bearer <token>',
         },
       },
       tags: [
