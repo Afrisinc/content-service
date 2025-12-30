@@ -111,6 +111,52 @@ export class SocialMediaPostRepository {
   }
 
   /**
+   * Get all posts with optional filters
+   */
+  async getAllPosts(options?: {
+    platform?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const where: any = {};
+
+    if (options?.platform) {
+      where.platform = options.platform;
+    }
+
+    if (options?.status) {
+      where.status = options.status;
+    }
+
+    const [posts, total] = await Promise.all([
+      this.prisma.socialMediaPost.findMany({
+        where,
+        skip: options?.offset || 0,
+        take: options?.limit || 50,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+            },
+          },
+        },
+      }),
+      this.prisma.socialMediaPost.count({ where }),
+    ]);
+
+    return {
+      posts,
+      total,
+      limit: options?.limit || 50,
+      offset: options?.offset || 0,
+    };
+  }
+
+  /**
    * Get all posts by user
    */
   async getPostsByUser(
@@ -132,21 +178,31 @@ export class SocialMediaPostRepository {
       where.status = options.status;
     }
 
-    return this.prisma.socialMediaPost.findMany({
-      where,
-      skip: options?.offset || 0,
-      take: options?.limit || 50,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            name: true,
+    const [posts, total] = await Promise.all([
+      this.prisma.socialMediaPost.findMany({
+        where,
+        skip: options?.offset || 0,
+        take: options?.limit || 50,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+            },
           },
         },
-      },
-    });
+      }),
+      this.prisma.socialMediaPost.count({ where }),
+    ]);
+
+    return {
+      posts,
+      total,
+      limit: options?.limit || 50,
+      offset: options?.offset || 0,
+    };
   }
 
   /**

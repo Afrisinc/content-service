@@ -158,3 +158,67 @@ export async function validateSocialMediaPayload(
     return error(reply, 400, err.message || 'Invalid payload');
   }
 }
+
+/**
+ * GET /social-media/posts
+ * Get all social media posts
+ */
+export async function getAllSocialMediaPosts(
+  req: FastifyRequest,
+  reply: FastifyReply
+) {
+  try {
+    const { platform, status, limit = 20, offset = 0 } = req.query as {
+      platform?: string;
+      status?: string;
+      limit?: number;
+      offset?: number;
+    };
+
+    const result = await service.getAllPosts({
+      platform,
+      status,
+      limit: Math.min(Number(limit), 100),
+      offset: Number(offset),
+    });
+
+    return success(reply, 200, 'Posts retrieved successfully', result);
+  } catch (err: any) {
+    return error(reply, 400, err.message || 'Error retrieving posts');
+  }
+}
+
+/**
+ * GET /social-media/user/posts
+ * Get posts by logged-in user
+ */
+export async function getUserSocialMediaPosts(
+  req: FastifyRequest,
+  reply: FastifyReply
+) {
+  try {
+    const userId = (req as any).user?.userId;
+
+    if (!userId) {
+      return error(reply, 401, 'User authentication required');
+    }
+
+    const { platform, status, limit = 20, offset = 0 } = req.query as {
+      platform?: string;
+      status?: string;
+      limit?: number;
+      offset?: number;
+    };
+
+    const result = await service.getUserPosts(userId, {
+      platform,
+      status,
+      limit: Math.min(Number(limit), 100),
+      offset: Number(offset),
+    });
+
+    return success(reply, 200, 'User posts retrieved successfully', result);
+  } catch (err: any) {
+    return error(reply, 400, err.message || 'Error retrieving user posts');
+  }
+}

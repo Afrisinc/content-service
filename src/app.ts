@@ -63,7 +63,7 @@ const createApp = async () => {
   await app.register(import('@fastify/swagger-ui'), {
     routePrefix: '/docs',
     uiConfig: {
-      docExpansion: 'full',
+      docExpansion: 'list',
       deepLinking: false,
     },
     staticCSP: true,

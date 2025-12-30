@@ -10,11 +10,14 @@ import {
   deleteSocialMediaPost,
   batchPostToSocialMedia,
   validateSocialMediaPayload,
+  getAllSocialMediaPosts,
+  getUserSocialMediaPosts,
 } from '../controllers/socialMedia.controller';
 import {
   PostToSocialMediaSchema,
   GetSocialMediaPostSchema,
 } from '@/schemas/requests/socialMedia.schema';
+import { authGuard } from '../middlewares/authGuard';
 
 export async function socialMediaRoutes(app: FastifyInstance) {
   // POST: Create a new social media post
@@ -166,5 +169,132 @@ export async function socialMediaRoutes(app: FastifyInstance) {
       },
     },
     validateSocialMediaPayload
+  );
+
+  // GET: Get all social media posts
+  app.get(
+    '/social-media/posts',
+    {
+      schema: {
+        tags: ['social-media'],
+        summary: 'Get all social media posts',
+        description: 'Retrieve all published social media posts with optional filtering',
+        querystring: {
+          type: 'object',
+          properties: {
+            platform: {
+              type: 'string',
+              enum: ['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok'],
+              description: 'Filter by platform (optional)',
+            },
+            status: {
+              type: 'string',
+              enum: ['pending', 'published', 'failed', 'deleted'],
+              description: 'Filter by status (optional)',
+            },
+            limit: {
+              type: 'integer',
+              default: 20,
+              maximum: 100,
+              description: 'Number of posts to return',
+            },
+            offset: {
+              type: 'integer',
+              default: 0,
+              description: 'Number of posts to skip',
+            },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              message: { type: 'string' },
+              data: {
+                type: 'object',
+                properties: {
+                  posts: {
+                    type: 'array',
+                  },
+                  total: { type: 'integer' },
+                  limit: { type: 'integer' },
+                  offset: { type: 'integer' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    getAllSocialMediaPosts
+  );
+
+  // GET: Get user's social media posts
+  app.get(
+    '/social-media/user/posts',
+    {
+      schema: {
+        tags: ['social-media'],
+        summary: 'Get user posts',
+        description: 'Retrieve authenticated user\'s social media posts',
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          properties: {
+            platform: {
+              type: 'string',
+              enum: ['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok'],
+              description: 'Filter by platform (optional)',
+            },
+            status: {
+              type: 'string',
+              enum: ['pending', 'published', 'failed', 'deleted'],
+              description: 'Filter by status (optional)',
+            },
+            limit: {
+              type: 'integer',
+              default: 20,
+              maximum: 100,
+              description: 'Number of posts to return',
+            },
+            offset: {
+              type: 'integer',
+              default: 0,
+              description: 'Number of posts to skip',
+            },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              message: { type: 'string' },
+              data: {
+                type: 'object',
+                properties: {
+                  posts: {
+                    type: 'array',
+                  },
+                  total: { type: 'integer' },
+                  limit: { type: 'integer' },
+                  offset: { type: 'integer' },
+                },
+              },
+            },
+          },
+          401: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              message: { type: 'string' },
+            },
+          },
+        },
+      },
+      onRequest: [authGuard],
+    },
+    getUserSocialMediaPosts
   );
 }

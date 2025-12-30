@@ -410,6 +410,18 @@ export class SocialMediaService {
   }
 
   /**
+   * Get all social media posts with optional filters
+   */
+  async getAllPosts(filters?: {
+    platform?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    return socialMediaPostRepository.getAllPosts(filters);
+  }
+
+  /**
    * Get user's post history
    */
   async getUserPosts(
