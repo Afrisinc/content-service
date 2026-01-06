@@ -44,7 +44,8 @@ const createApp = async () => {
           type: 'apiKey',
           name: 'Authorization',
           in: 'header',
-          description: 'Bearer token for authentication. Format: Bearer <token>',
+          description:
+            'Bearer token for authentication. Format: Bearer <token>',
         },
       },
       tags: [
