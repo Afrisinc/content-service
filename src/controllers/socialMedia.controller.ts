@@ -14,10 +14,7 @@ const service = new SocialMediaService();
  * POST /social-media/post
  * Create a new social media post
  */
-export async function postToSocialMedia(
-  req: FastifyRequest,
-  reply: FastifyReply
-) {
+export async function postToSocialMedia(req: FastifyRequest, reply: FastifyReply) {
   try {
     const payload = req.body as SocialMediaPostPayload;
     const userId = (req as any).user?.id;
@@ -25,11 +22,7 @@ export async function postToSocialMedia(
     const result = await service.postToSocialMedia(payload, userId);
 
     if (result.status === 'failed') {
-      return error(
-        reply,
-        400,
-        result.error || 'Failed to post to social media'
-      );
+      return error(reply, 400, result.error || 'Failed to post to social media');
     }
 
     return success(reply, 201, 'Post published successfully', result);
@@ -42,10 +35,7 @@ export async function postToSocialMedia(
  * GET /social-media/posts/:postId
  * Get details of a social media post
  */
-export async function getSocialMediaPost(
-  req: FastifyRequest,
-  reply: FastifyReply
-) {
+export async function getSocialMediaPost(req: FastifyRequest, reply: FastifyReply) {
   try {
     const { postId } = req.params as { postId: string };
     const { accessToken } = req.query as { accessToken: string };
@@ -66,10 +56,7 @@ export async function getSocialMediaPost(
  * DELETE /social-media/posts/:postId
  * Delete a social media post
  */
-export async function deleteSocialMediaPost(
-  req: FastifyRequest,
-  reply: FastifyReply
-) {
+export async function deleteSocialMediaPost(req: FastifyRequest, reply: FastifyReply) {
   try {
     const { postId } = req.params as { postId: string };
     const { accessToken, platform } = req.query as {
@@ -97,20 +84,13 @@ export async function deleteSocialMediaPost(
  * POST /social-media/batch
  * Post to multiple platforms at once
  */
-export async function batchPostToSocialMedia(
-  req: FastifyRequest,
-  reply: FastifyReply
-) {
+export async function batchPostToSocialMedia(req: FastifyRequest, reply: FastifyReply) {
   try {
     const payloads = req.body as SocialMediaPostPayload[];
     const userId = (req as any).user?.id;
 
     if (!Array.isArray(payloads) || payloads.length === 0) {
-      return error(
-        reply,
-        400,
-        'Payload must be an array of social media post requests'
-      );
+      return error(reply, 400, 'Payload must be an array of social media post requests');
     }
 
     const results = await service.batchPostToSocialMedia(payloads, userId);
@@ -118,19 +98,14 @@ export async function batchPostToSocialMedia(
     const successCount = results.filter(r => r.status === 'success').length;
     const failureCount = results.filter(r => r.status === 'failed').length;
 
-    return success(
-      reply,
-      201,
-      `Batch posting completed (${successCount} success, ${failureCount} failed)`,
-      {
-        results,
-        summary: {
-          total: results.length,
-          success: successCount,
-          failed: failureCount,
-        },
-      }
-    );
+    return success(reply, 201, `Batch posting completed (${successCount} success, ${failureCount} failed)`, {
+      results,
+      summary: {
+        total: results.length,
+        success: successCount,
+        failed: failureCount,
+      },
+    });
   } catch (err: any) {
     return error(reply, 400, err.message || 'Error in batch posting');
   }
@@ -140,10 +115,7 @@ export async function batchPostToSocialMedia(
  * POST /social-media/validate-payload
  * Validate social media payload without posting
  */
-export async function validateSocialMediaPayload(
-  req: FastifyRequest,
-  reply: FastifyReply
-) {
+export async function validateSocialMediaPayload(req: FastifyRequest, reply: FastifyReply) {
   try {
     const payload = req.body as SocialMediaPostPayload;
 
@@ -163,12 +135,14 @@ export async function validateSocialMediaPayload(
  * GET /social-media/posts
  * Get all social media posts
  */
-export async function getAllSocialMediaPosts(
-  req: FastifyRequest,
-  reply: FastifyReply
-) {
+export async function getAllSocialMediaPosts(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const { platform, status, limit = 20, offset = 0 } = req.query as {
+    const {
+      platform,
+      status,
+      limit = 20,
+      offset = 0,
+    } = req.query as {
       platform?: string;
       status?: string;
       limit?: number;
@@ -192,10 +166,7 @@ export async function getAllSocialMediaPosts(
  * GET /social-media/user/posts
  * Get posts by logged-in user
  */
-export async function getUserSocialMediaPosts(
-  req: FastifyRequest,
-  reply: FastifyReply
-) {
+export async function getUserSocialMediaPosts(req: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (req as any).user?.userId;
 
@@ -203,7 +174,12 @@ export async function getUserSocialMediaPosts(
       return error(reply, 401, 'User authentication required');
     }
 
-    const { platform, status, limit = 20, offset = 0 } = req.query as {
+    const {
+      platform,
+      status,
+      limit = 20,
+      offset = 0,
+    } = req.query as {
       platform?: string;
       status?: string;
       limit?: number;

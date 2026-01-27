@@ -3,28 +3,27 @@
  * Defines endpoints for AI content generation and scheduling
  */
 
+import { authGuard } from '@/middlewares/authGuard';
+import {
+  GeneratePostForPlatformSchema,
+  GeneratePostSchema,
+  GetGenerationHistorySchema,
+  PublishScheduledPostsSchema,
+} from '@/schemas/requests/aiGeneration.schema';
 import { FastifyInstance } from 'fastify';
 import {
   generatePost,
   generatePostForPlatform,
-  publishScheduledPosts,
   getGenerationHistory,
+  publishScheduledPosts,
 } from '../controllers/aiGeneration.controller';
-import {
-  GeneratePostSchema,
-  GeneratePostForPlatformSchema,
-  PublishScheduledPostsSchema,
-  GetGenerationHistorySchema,
-} from '@/schemas/requests/aiGeneration.schema';
-import { authGuard } from '@/middlewares/authGuard';
 
 export async function aiGenerationRoutes(app: FastifyInstance) {
   // POST: Generate posts from prompt
   app.post(
-    '/ai/generate',
+    '/content/ai/generate',
     {
       schema: GeneratePostSchema,
-      onRequest: [authGuard],
     },
     generatePost
   );

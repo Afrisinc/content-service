@@ -1,10 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import {
-  getUser,
-  updateUser,
-  getUserProfile,
-  updateUserProfile,
-} from '../controllers/user.controller';
+import { getUser, updateUser, getUserProfile, updateUserProfile } from '../controllers/user.controller';
 import { GetUserRouteSchema, UpdateUserRouteSchema } from '@/schemas';
 import { authGuard } from '@/middlewares/authGuard';
 

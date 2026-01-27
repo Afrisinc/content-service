@@ -72,3 +72,22 @@ export interface PostSchedulePayload {
   content: Record<string, string>;
   hashtags?: string[];
 }
+
+export interface AIAgentGeneratePostRequest {
+  topic: string;
+  keywords?: string;
+  link?: string;
+  submittedAt?: string;
+  formMode?: 'test' | 'production';
+}
+
+export interface AIAgentPostData {
+  id: string;
+  post_id: string;
+}
+
+export interface AIAgentGeneratePostResponse {
+  success: boolean;
+  message: string;
+  data?: AIAgentPostData[];
+}

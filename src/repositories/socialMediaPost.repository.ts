@@ -113,12 +113,7 @@ export class SocialMediaPostRepository {
   /**
    * Get all posts with optional filters
    */
-  async getAllPosts(options?: {
-    platform?: string;
-    status?: string;
-    limit?: number;
-    offset?: number;
-  }) {
+  async getAllPosts(options?: { platform?: string; status?: string; limit?: number; offset?: number }) {
     const where: any = {};
 
     if (options?.platform) {
@@ -238,12 +233,7 @@ export class SocialMediaPostRepository {
   /**
    * Get posts by platform
    */
-  async getPostsByPlatform(
-    userId: string,
-    platform: string,
-    limit = 50,
-    offset = 0
-  ) {
+  async getPostsByPlatform(userId: string, platform: string, limit = 50, offset = 0) {
     return this.prisma.socialMediaPost.findMany({
       where: {
         userId,
@@ -521,13 +511,7 @@ export class SocialMediaPostRepository {
   /**
    * Get posts by date range
    */
-  async getPostsByDateRange(
-    userId: string,
-    startDate: Date,
-    endDate: Date,
-    limit = 100,
-    offset = 0
-  ) {
+  async getPostsByDateRange(userId: string, startDate: Date, endDate: Date, limit = 100, offset = 0) {
     return this.prisma.socialMediaPost.findMany({
       where: {
         userId,

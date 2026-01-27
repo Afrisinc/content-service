@@ -74,8 +74,7 @@ async function main() {
         pageId: '123456789',
         pageeName: 'Alice Business Page',
         accessToken: 'EAAB2N7ZBX1sBAHgT9N2ZCN5lXzqZCZBmZAbQhCrO5Eo5T2ZA',
-        refreshToken:
-          'EAAB2N7ZBX1sBAHgT9N2ZCN5lXzqZCZBmZAbQhCrO5Eo5T2ZA_refresh',
+        refreshToken: 'EAAB2N7ZBX1sBAHgT9N2ZCN5lXzqZCZBmZAbQhCrO5Eo5T2ZA_refresh',
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         isActive: true,
       },
@@ -226,9 +225,7 @@ async function main() {
         status: 'pending',
         metadata: JSON.stringify({
           type: 'scheduled',
-          scheduledTime: new Date(
-            Date.now() + 1 * 24 * 60 * 60 * 1000
-          ).toISOString(),
+          scheduledTime: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString(),
         }),
       },
     });
@@ -255,8 +252,7 @@ async function main() {
         pageId: '555666777',
         postId: 'facebook_post_bob_1',
         postUrl: 'https://facebook.com/555666777/posts/facebook_post_bob_1',
-        message:
-          'Congratulations to our team for winning the innovation award!',
+        message: 'Congratulations to our team for winning the innovation award!',
         link: 'https://example.com/award-announcement',
         status: 'published',
         publishedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
@@ -275,8 +271,7 @@ async function main() {
         pageId: '555666777',
         message: 'Check out our latest blog post about sustainable practices!',
         link: 'https://example.com/blog/sustainability',
-        description:
-          'Learn how we are committed to environmental responsibility',
+        description: 'Learn how we are committed to environmental responsibility',
         status: 'published',
         publishedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
         aiGenerated: true,
@@ -407,12 +402,8 @@ async function main() {
     console.log('   3. Test the API endpoints\n');
 
     console.log('Facebook Test Tokens (for testing):');
-    console.log(
-      '   Account 1 (Alice): EAAB2N7ZBX1sBAHgT9N2ZCN5lXzqZCZBmZAbQhCrO5Eo5T2ZA'
-    );
-    console.log(
-      '   Account 2 (Bob): EAAB2N7ZBX1sBAHgT9N2ZCN5lXzqZCZBmZAbQhCrO5Eo5T2ZA_bob\n'
-    );
+    console.log('   Account 1 (Alice): EAAB2N7ZBX1sBAHgT9N2ZCN5lXzqZCZBmZAbQhCrO5Eo5T2ZA');
+    console.log('   Account 2 (Bob): EAAB2N7ZBX1sBAHgT9N2ZCN5lXzqZCZBmZAbQhCrO5Eo5T2ZA_bob\n');
 
     console.log('Test Data Details:');
     console.log('   - Published posts with various engagement metrics');

@@ -9,12 +9,7 @@ export class AppError extends Error {
   public readonly isOperational: boolean;
   public readonly code?: string;
 
-  constructor(
-    message: string,
-    statusCode: number = 500,
-    isOperational: boolean = true,
-    code?: string
-  ) {
+  constructor(message: string, statusCode: number = 500, isOperational: boolean = true, code?: string) {
     super(message);
     this.statusCode = statusCode;
     this.isOperational = isOperational;
@@ -102,11 +97,7 @@ const sanitizeError = (error: any, statusCode: number) => {
   };
 };
 
-export const errorHandler = (
-  error: FastifyError | AppError | Error,
-  request: FastifyRequest,
-  reply: FastifyReply
-) => {
+export const errorHandler = (error: FastifyError | AppError | Error, request: FastifyRequest, reply: FastifyReply) => {
   let statusCode = 500;
   let errorCode: string | undefined;
   let message = 'Internal Server Error';
@@ -273,13 +264,11 @@ function getErrorName(statusCode: number): string {
 
 // Helper function to create standardized errors
 export const createError = {
-  badRequest: (message: string, details?: any) =>
-    new ValidationError(message, details),
+  badRequest: (message: string, details?: any) => new ValidationError(message, details),
   unauthorized: (message?: string) => new AuthenticationError(message),
   forbidden: (message?: string) => new AuthorizationError(message),
   notFound: (message?: string) => new NotFoundError(message),
   conflict: (message?: string) => new ConflictError(message),
-  internal: (message?: string) =>
-    new AppError(message || 'Internal Server Error', 500),
+  internal: (message?: string) => new AppError(message || 'Internal Server Error', 500),
   database: (message?: string) => new DatabaseError(message),
 };

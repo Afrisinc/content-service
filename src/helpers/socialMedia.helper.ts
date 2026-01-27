@@ -56,8 +56,7 @@ class SocialMediaHelper {
 
     // Add scheduling
     if (payload.scheduling?.scheduled_publish_time) {
-      facebookPayload.scheduled_publish_time =
-        payload.scheduling.scheduled_publish_time;
+      facebookPayload.scheduled_publish_time = payload.scheduling.scheduled_publish_time;
     }
 
     // Add targeting if present
@@ -116,9 +115,7 @@ class SocialMediaHelper {
     } else {
       const { message, link, picture } = payload.content;
       if (!message && !link && !picture) {
-        errors.push(
-          'At least one of message, link, or picture must be provided'
-        );
+        errors.push('At least one of message, link, or picture must be provided');
       }
     }
 
@@ -151,16 +148,9 @@ class SocialMediaHelper {
   /**
    * Build error result
    */
-  buildErrorResult(
-    platform: SocialMediaPlatform,
-    error: any
-  ): SocialMediaPostResult {
-    const errorMessage =
-      error.response?.data?.error?.message ||
-      error.message ||
-      'Unknown error occurred';
-    const errorCode =
-      error.response?.data?.error?.code || error.response?.status;
+  buildErrorResult(platform: SocialMediaPlatform, error: any): SocialMediaPostResult {
+    const errorMessage = error.response?.data?.error?.message || error.message || 'Unknown error occurred';
+    const errorCode = error.response?.data?.error?.code || error.response?.status;
 
     return {
       platform,
@@ -188,12 +178,7 @@ class SocialMediaHelper {
   /**
    * Build metadata for AI-generated content
    */
-  buildAIMetadata(aiConfig?: {
-    enabled: boolean;
-    provider?: string;
-    model?: string;
-    prompt?: string;
-  }): any {
+  buildAIMetadata(aiConfig?: { enabled: boolean; provider?: string; model?: string; prompt?: string }): any {
     if (!aiConfig?.enabled) {
       return null;
     }
@@ -245,9 +230,7 @@ class SocialMediaHelper {
           warnings.push(`Message exceeds Facebook limit of 63206 characters`);
         }
         if (content.description && content.description.length > 4000) {
-          warnings.push(
-            `Description exceeds Facebook limit of 4000 characters`
-          );
+          warnings.push(`Description exceeds Facebook limit of 4000 characters`);
         }
         break;
 
@@ -273,9 +256,7 @@ class SocialMediaHelper {
   /**
    * Sanitize content to prevent issues
    */
-  sanitizeContent(
-    content: SocialMediaPostPayload['content']
-  ): SocialMediaPostPayload['content'] {
+  sanitizeContent(content: SocialMediaPostPayload['content']): SocialMediaPostPayload['content'] {
     return {
       ...content,
       message: content.message?.trim(),
@@ -317,11 +298,7 @@ class SocialMediaHelper {
   /**
    * Log post attempt for debugging
    */
-  logPostAttempt(
-    platform: SocialMediaPlatform,
-    pageId: string,
-    contentLength: number
-  ): void {
+  logPostAttempt(platform: SocialMediaPlatform, pageId: string, contentLength: number): void {
     logger.info(
       {
         platform,
@@ -335,11 +312,7 @@ class SocialMediaHelper {
   /**
    * Log post success
    */
-  logPostSuccess(
-    platform: SocialMediaPlatform,
-    postId: string,
-    pageId: string
-  ): void {
+  logPostSuccess(platform: SocialMediaPlatform, postId: string, pageId: string): void {
     logger.info(
       {
         platform,
@@ -353,11 +326,7 @@ class SocialMediaHelper {
   /**
    * Log post failure
    */
-  logPostFailure(
-    platform: SocialMediaPlatform,
-    pageId: string,
-    error: string
-  ): void {
+  logPostFailure(platform: SocialMediaPlatform, pageId: string, error: string): void {
     logger.error(
       {
         platform,

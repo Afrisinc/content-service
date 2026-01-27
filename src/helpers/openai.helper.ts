@@ -102,9 +102,7 @@ class OpenAIHelper {
     }
 
     if (config.maxLength) {
-      parts.push(
-        `Keep content under ${config.maxLength} characters for each platform.`
-      );
+      parts.push(`Keep content under ${config.maxLength} characters for each platform.`);
     }
 
     return parts.join(' ');
@@ -131,14 +129,10 @@ class OpenAIHelper {
   /**
    * Generate content using OpenAI API with official SDK
    */
-  async generateContent(
-    request: AIGenerationRequest
-  ): Promise<AIGeneratedContent> {
+  async generateContent(request: AIGenerationRequest): Promise<AIGeneratedContent> {
     const config = this.validateConfiguration();
     if (!config.valid) {
-      throw new Error(
-        `OpenAI configuration invalid: ${config.errors.join(', ')}`
-      );
+      throw new Error(`OpenAI configuration invalid: ${config.errors.join(', ')}`);
     }
 
     try {
@@ -183,16 +177,12 @@ class OpenAIHelper {
         } else {
           // If no JSON found, treat entire response as single platform content
           const platform = request.platform || 'facebook';
-          parsedContent = request.platform
-            ? { [platform]: content }
-            : { facebook: content, instagram: content };
+          parsedContent = request.platform ? { [platform]: content } : { facebook: content, instagram: content };
         }
       } catch {
         // If JSON parsing fails, treat as plain text
         const platform = request.platform || 'facebook';
-        parsedContent = request.platform
-          ? { [platform]: content }
-          : { facebook: content, instagram: content };
+        parsedContent = request.platform ? { [platform]: content } : { facebook: content, instagram: content };
       }
 
       const result: AIGeneratedContent = {
@@ -235,9 +225,7 @@ class OpenAIHelper {
   /**
    * Generate content for specific platform
    */
-  async generateContentForPlatform(
-    request: AIGenerationRequest
-  ): Promise<string> {
+  async generateContentForPlatform(request: AIGenerationRequest): Promise<string> {
     const result = await this.generateContent(request);
 
     const platform = request.platform || 'facebook';
@@ -255,9 +243,7 @@ class OpenAIHelper {
    */
   async generateContentForMultiplePlatforms(
     request: AIGenerationRequest,
-    platforms: Array<
-      'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'tiktok'
-    >
+    platforms: Array<'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'tiktok'>
   ): Promise<Record<string, string>> {
     const result = await this.generateContent(request);
     const output: Record<string, string> = {};
@@ -275,14 +261,10 @@ class OpenAIHelper {
   /**
    * Stream content generation for real-time display
    */
-  async *generateContentStream(
-    request: AIGenerationRequest
-  ): AsyncGenerator<string, void, unknown> {
+  async *generateContentStream(request: AIGenerationRequest): AsyncGenerator<string, void, unknown> {
     const config = this.validateConfiguration();
     if (!config.valid) {
-      throw new Error(
-        `OpenAI configuration invalid: ${config.errors.join(', ')}`
-      );
+      throw new Error(`OpenAI configuration invalid: ${config.errors.join(', ')}`);
     }
 
     try {
@@ -332,15 +314,10 @@ class OpenAIHelper {
   /**
    * Generate content with vision (image analysis)
    */
-  async generateContentWithVision(
-    imageUrl: string,
-    prompt: string
-  ): Promise<string> {
+  async generateContentWithVision(imageUrl: string, prompt: string): Promise<string> {
     const config = this.validateConfiguration();
     if (!config.valid) {
-      throw new Error(
-        `OpenAI configuration invalid: ${config.errors.join(', ')}`
-      );
+      throw new Error(`OpenAI configuration invalid: ${config.errors.join(', ')}`);
     }
 
     try {
@@ -395,15 +372,10 @@ class OpenAIHelper {
   /**
    * Generate image using DALL-E
    */
-  async generateImage(
-    prompt: string,
-    style?: 'realistic' | 'cartoon' | 'abstract' | 'minimalist'
-  ): Promise<string> {
+  async generateImage(prompt: string, style?: 'realistic' | 'cartoon' | 'abstract' | 'minimalist'): Promise<string> {
     const config = this.validateConfiguration();
     if (!config.valid) {
-      throw new Error(
-        `OpenAI configuration invalid: ${config.errors.join(', ')}`
-      );
+      throw new Error(`OpenAI configuration invalid: ${config.errors.join(', ')}`);
     }
 
     try {

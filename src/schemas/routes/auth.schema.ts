@@ -1,12 +1,5 @@
-import {
-  RegisterRequestSchema,
-  LoginRequestSchema,
-} from '../requests/auth.schema';
-import {
-  RegisterResponseSchema,
-  LoginResponseSchema,
-  ProfileResponseSchema,
-} from '../responses/auth.schema';
+import { RegisterRequestSchema, LoginRequestSchema } from '../requests/auth.schema';
+import { RegisterResponseSchema, LoginResponseSchema, ProfileResponseSchema } from '../responses/auth.schema';
 import { ErrorResponseSchema } from '../responses/common.schema';
 
 export const RegisterRouteSchema = {

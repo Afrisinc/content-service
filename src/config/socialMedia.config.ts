@@ -3,10 +3,7 @@
  * Centralized configuration for social media platforms and AI integration
  */
 
-import {
-  SocialMediaConfig,
-  SocialMediaPlatform,
-} from '@/types/socialMedia.types';
+import { SocialMediaConfig, SocialMediaPlatform } from '@/types/socialMedia.types';
 
 /**
  * Social Media Platform Configuration
@@ -50,17 +47,10 @@ export const socialMediaConfig: SocialMediaConfig = {
 
   aiContent: {
     enabled: process.env.AI_CONTENT_GENERATION_ENABLED === 'true',
-    provider:
-      (process.env.AI_PROVIDER as 'openai' | 'anthropic' | 'huggingface') ||
-      'openai',
+    provider: (process.env.AI_PROVIDER as 'openai' | 'anthropic' | 'huggingface') || 'openai',
     model: process.env.AI_MODEL || 'gpt-4',
     maxLength: parseInt(process.env.AI_CONTENT_MAX_LENGTH || '500'),
-    tone:
-      (process.env.AI_TONE as
-        | 'professional'
-        | 'casual'
-        | 'humorous'
-        | 'promotional') || 'professional',
+    tone: (process.env.AI_TONE as 'professional' | 'casual' | 'humorous' | 'promotional') || 'professional',
     includeEmojis: process.env.AI_INCLUDE_EMOJIS === 'true',
     includeHashtags: process.env.AI_INCLUDE_HASHTAGS === 'true',
     language: process.env.AI_LANGUAGE || 'en',
@@ -210,9 +200,7 @@ export function validateSocialMediaConfig(): {
 
   if (socialMediaConfig.platforms[SocialMediaPlatform.FACEBOOK]?.enabled) {
     if (!process.env.FACEBOOK_PAGE_ACCESS_TOKEN) {
-      errors.push(
-        'FACEBOOK_PAGE_ACCESS_TOKEN is required for Facebook integration'
-      );
+      errors.push('FACEBOOK_PAGE_ACCESS_TOKEN is required for Facebook integration');
     }
     if (!process.env.FACEBOOK_PAGE_ID) {
       errors.push('FACEBOOK_PAGE_ID is required for Facebook integration');
@@ -242,18 +230,14 @@ export function getPlatformConfig(platform: SocialMediaPlatform) {
  * Get platform API configuration
  */
 export function getPlatformApiConfig(platform: SocialMediaPlatform) {
-  return platformApiConfig[
-    platform.toLowerCase() as keyof typeof platformApiConfig
-  ];
+  return platformApiConfig[platform.toLowerCase() as keyof typeof platformApiConfig];
 }
 
 /**
  * Get platform content limits
  */
 export function getPlatformLimits(platform: SocialMediaPlatform) {
-  return platformContentLimits[
-    platform.toLowerCase() as keyof typeof platformContentLimits
-  ];
+  return platformContentLimits[platform.toLowerCase() as keyof typeof platformContentLimits];
 }
 
 /**

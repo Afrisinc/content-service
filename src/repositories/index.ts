@@ -1,4 +1,1 @@
-export {
-  socialMediaPostRepository,
-  SocialMediaPostRepository,
-} from './socialMediaPost.repository';
+export { socialMediaPostRepository, SocialMediaPostRepository } from './socialMediaPost.repository';

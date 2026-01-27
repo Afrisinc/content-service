@@ -66,13 +66,9 @@ class MetricsStore {
 
   getMetrics() {
     const averageResponseTime =
-      this.responseTimes.length > 0
-        ? this.responseTimes.reduce((a, b) => a + b, 0) /
-          this.responseTimes.length
-        : 0;
+      this.responseTimes.length > 0 ? this.responseTimes.reduce((a, b) => a + b, 0) / this.responseTimes.length : 0;
 
-    const errorRate =
-      this.requestCount > 0 ? (this.errorCount / this.requestCount) * 100 : 0;
+    const errorRate = this.requestCount > 0 ? (this.errorCount / this.requestCount) * 100 : 0;
 
     return {
       requestCount: this.requestCount,
@@ -313,9 +309,7 @@ export default async function healthRoutes(fastify: FastifyInstance) {
 
       // Determine overall health status
       const isHealthy =
-        databaseCheck.status === 'healthy' &&
-        memoryCheck.status !== 'critical' &&
-        diskCheck.status !== 'critical';
+        databaseCheck.status === 'healthy' && memoryCheck.status !== 'critical' && diskCheck.status !== 'critical';
 
       const response: DetailedHealthResponse = {
         status: isHealthy ? 'healthy' : 'unhealthy',

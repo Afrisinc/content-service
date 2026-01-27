@@ -4,74 +4,37 @@
  */
 
 export const GeneratePostSchema = {
-  description: 'Generate social media posts using AI',
+  description: 'Generate social media posts using external AI Agent service',
   tags: ['ai-generation'],
-  security: [{ bearerAuth: [] }],
   body: {
     type: 'object',
-    required: ['prompt', 'platforms'],
+    required: ['Topic'],
     properties: {
-      prompt: {
+      Topic: {
         type: 'string',
-        minLength: 10,
-        maxLength: 2000,
-        description: 'Content prompt for AI generation',
+        minLength: 1,
+        maxLength: 500,
+        description: 'Topic for post generation',
       },
-      platforms: {
-        type: 'array',
-        items: {
-          type: 'string',
-          enum: ['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok'],
-        },
-        minItems: 1,
-        maxItems: 5,
-        description: 'Target social media platforms',
-      },
-      tone: {
+      'Keywords or Hashtags (optional)': {
         type: 'string',
-        enum: ['professional', 'casual', 'humorous', 'promotional'],
-        default: 'professional',
-        description: 'Content tone',
+        description: 'Keywords or hashtags to include (optional)',
       },
-      includeEmojis: {
-        type: 'boolean',
-        default: true,
-        description: 'Include emojis in generated content',
-      },
-      includeHashtags: {
-        type: 'boolean',
-        default: true,
-        description: 'Include hashtags in generated content',
-      },
-      maxLength: {
-        type: 'integer',
-        minimum: 100,
-        maximum: 2000,
-        default: 500,
-        description: 'Maximum character length for content',
-      },
-      language: {
+      'Link (optional)': {
         type: 'string',
-        default: 'en',
-        description: 'Language code for content generation',
+        format: 'uri',
+        description: 'Link to include in the post (optional)',
       },
-      scheduleFor: {
+      submittedAt: {
         type: 'string',
         format: 'date-time',
-        description:
-          'ISO 8601 timestamp for scheduling post publication (optional)',
+        description: 'ISO 8601 timestamp of submission (optional, defaults to current time)',
       },
-      includeImage: {
-        type: 'boolean',
-        default: false,
-        description: 'Generate image using DALL-E 3 when true (optional)',
-      },
-      imageStyle: {
+      formMode: {
         type: 'string',
-        enum: ['realistic', 'cartoon', 'abstract', 'minimalist'],
-        default: 'realistic',
-        description:
-          'Style for AI-generated image (only used when includeImage is true)',
+        enum: ['test', 'production'],
+        default: 'production',
+        description: 'Mode of operation - test or production',
       },
     },
   },
@@ -86,54 +49,21 @@ export const GeneratePostSchema = {
           type: 'string',
         },
         data: {
-          type: 'object',
-          properties: {
-            postIds: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Generated post IDs',
-            },
-            platforms: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Platforms with generated content',
-            },
-            content: {
-              type: 'object',
-              additionalProperties: { type: 'string' },
-              description: 'Generated content by platform',
-            },
-            scheduledFor: {
-              type: 'string',
-              format: 'date-time',
-              description: 'Scheduled publication time if applicable',
-            },
-            hashtags: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Recommended hashtags',
-            },
-            imageUrl: {
-              type: 'string',
-              description:
-                'URL of the image included in the post (if provided)',
-            },
-            imageCaption: {
-              type: 'string',
-              description:
-                'AI-generated caption for the image (if image was provided)',
-            },
-            metadata: {
-              type: 'object',
-              properties: {
-                model: { type: 'string' },
-                provider: { type: 'string' },
-                generationPrompt: { type: 'string' },
-                timestamp: { type: 'string' },
-                tokensUsed: { type: 'number' },
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: {
+                type: 'string',
+                description: 'Generated post ID',
+              },
+              post_id: {
+                type: 'string',
+                description: 'Platform post ID',
               },
             },
           },
+          description: 'Generated posts with IDs',
         },
       },
     },

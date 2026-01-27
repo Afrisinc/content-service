@@ -1,12 +1,6 @@
-import {
-  UpdateUserRequestSchema,
-  UserParamsSchema,
-} from '../requests/user.schema';
+import { UpdateUserRequestSchema, UserParamsSchema } from '../requests/user.schema';
 import { UserPublicSchema } from '../entities/user.schema';
-import {
-  SuccessResponseSchema,
-  ErrorResponseSchema,
-} from '../responses/common.schema';
+import { SuccessResponseSchema, ErrorResponseSchema } from '../responses/common.schema';
 
 export const GetUserRouteSchema = {
   tags: ['users'],

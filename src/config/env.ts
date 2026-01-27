@@ -8,4 +8,5 @@ export const env = {
   OPENAI_TEXT_MODEL: process.env.OPENAI_TEXT_MODEL || 'gpt-4',
   OPENAI_IMAGE_MODEL: process.env.OPENAI_IMAGE_MODEL || 'dall-e-3',
   CORS_ORIGIN: process.env.CORS_ORIGIN || '*',
+  SM_AI_AGENT_URL: process.env.SM_AI_AGENT_URL || '',
 } as const;

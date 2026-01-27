@@ -119,10 +119,7 @@ describe('Authentication Tests', () => {
 
       const body = JSON.parse(response.body);
       expect(body).toHaveProperty('error', 'Conflict');
-      expect(body).toHaveProperty(
-        'message',
-        'User with this email already exists'
-      );
+      expect(body).toHaveProperty('message', 'User with this email already exists');
     });
 
     it('should require all fields', async () => {
@@ -172,9 +169,7 @@ describe('Authentication Tests', () => {
       expect(body.data.user).not.toHaveProperty('password');
 
       // Verify JWT token format
-      expect(body.data.token).toMatch(
-        /^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$/
-      );
+      expect(body.data.token).toMatch(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$/);
     });
 
     it('should return 401 for invalid email', async () => {
@@ -305,10 +300,7 @@ describe('Authentication Tests', () => {
 
       const body = JSON.parse(response.body);
       expect(body).toHaveProperty('error', 'Unauthorized');
-      expect(body).toHaveProperty(
-        'message',
-        'Authorization header is required'
-      );
+      expect(body).toHaveProperty('message', 'Authorization header is required');
     });
 
     it('should reject request with invalid token', async () => {

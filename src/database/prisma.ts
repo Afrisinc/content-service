@@ -157,8 +157,7 @@ export async function checkDatabaseConnection(): Promise<{
     };
   } catch (error) {
     const responseTime = Date.now() - startTime;
-    const errorMessage =
-      error instanceof Error ? error.message : 'Unknown database error';
+    const errorMessage = error instanceof Error ? error.message : 'Unknown database error';
 
     dbLogger.error(
       {
@@ -183,9 +182,7 @@ export async function getDatabaseInfo(): Promise<{
   activeConnections: number;
 }> {
   try {
-    const versionResult = await prisma.$queryRaw<
-      Array<{ version: string }>
-    >`SELECT version()`;
+    const versionResult = await prisma.$queryRaw<Array<{ version: string }>>`SELECT version()`;
     const version = versionResult[0]?.version || 'Unknown';
 
     // Get connection stats
@@ -237,10 +234,7 @@ export async function getDatabaseInfo(): Promise<{
 // Database transaction helper
 export async function withTransaction<T>(
   operation: (
-    prisma: Omit<
-      PrismaClient,
-      '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
-    >
+    prisma: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
   ) => Promise<T>
 ): Promise<T> {
   const startTime = Date.now();

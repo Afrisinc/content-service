@@ -5,8 +5,7 @@ export type LogLevel = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
 
 // Environment-based configuration
 const isDevelopment = process.env.NODE_ENV !== 'production';
-const logLevel =
-  (process.env.LOG_LEVEL as LogLevel) || (isDevelopment ? 'debug' : 'info');
+const logLevel = (process.env.LOG_LEVEL as LogLevel) || (isDevelopment ? 'debug' : 'info');
 
 // Create logger instance
 export const logger = pino({
@@ -87,11 +86,7 @@ export const requestLogger = pino({
     },
     timestamp: pino.stdTimeFunctions.isoTime,
     redact: {
-      paths: [
-        'req.headers.authorization',
-        'req.headers.cookie',
-        'res.headers["set-cookie"]',
-      ],
+      paths: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
       censor: '[REDACTED]',
     },
   }),
@@ -114,10 +109,7 @@ export const authLogger = logger.child({ component: 'auth' });
 export const perfLogger = logger.child({ component: 'performance' });
 
 // Error logger with stack trace
-export const logError = (
-  error: Error | unknown,
-  context?: Record<string, any>
-) => {
+export const logError = (error: Error | unknown, context?: Record<string, any>) => {
   if (error instanceof Error) {
     logger.error(
       {
@@ -139,11 +131,7 @@ export const logError = (
 };
 
 // Performance monitoring helper
-export const logPerformance = (
-  operation: string,
-  duration: number,
-  context?: Record<string, any>
-) => {
+export const logPerformance = (operation: string, duration: number, context?: Record<string, any>) => {
   perfLogger.info(
     {
       operation,

@@ -3,11 +3,7 @@
  * Handles business logic for social media posting operations
  */
 
-import {
-  SocialMediaPlatform,
-  SocialMediaPostPayload,
-  SocialMediaPostResult,
-} from '@/types/socialMedia.types';
+import { SocialMediaPlatform, SocialMediaPostPayload, SocialMediaPostResult } from '@/types/socialMedia.types';
 import { socialMediaHelper } from '@/helpers/socialMedia.helper';
 import { socialMediaPostRepository } from '@/repositories/socialMediaPost.repository';
 import { logger } from '@/utils/logger';
@@ -16,10 +12,7 @@ export class SocialMediaService {
   /**
    * Post content to social media platform and save to database
    */
-  async postToSocialMedia(
-    payload: SocialMediaPostPayload,
-    userId?: string
-  ): Promise<SocialMediaPostResult> {
+  async postToSocialMedia(payload: SocialMediaPostPayload, userId?: string): Promise<SocialMediaPostResult> {
     let dbPostId: string | undefined;
 
     try {
@@ -39,16 +32,11 @@ export class SocialMediaService {
       }
 
       // Sanitize content
-      const sanitizedContent = socialMediaHelper.sanitizeContent(
-        payload.content
-      );
+      const sanitizedContent = socialMediaHelper.sanitizeContent(payload.content);
       const sanitizedPayload = { ...payload, content: sanitizedContent };
 
       // Check content limits
-      const contentCheck = socialMediaHelper.checkContentLimits(
-        sanitizedPayload.content,
-        payload.platform
-      );
+      const contentCheck = socialMediaHelper.checkContentLimits(sanitizedPayload.content, payload.platform);
       if (!contentCheck.valid) {
         logger.warn(
           {
@@ -73,14 +61,10 @@ export class SocialMediaService {
           caption: sanitizedPayload.content.caption,
           tags: sanitizedPayload.content.tags,
           mediaType: sanitizedPayload.media?.type,
-          mediaUrls:
-            sanitizedPayload.media?.urls ||
-            (sanitizedPayload.media?.url ? [sanitizedPayload.media.url] : []),
+          mediaUrls: sanitizedPayload.media?.urls || (sanitizedPayload.media?.url ? [sanitizedPayload.media.url] : []),
           altText: sanitizedPayload.media?.alt_text,
           scheduledAt: sanitizedPayload.scheduling?.scheduled_publish_time
-            ? new Date(
-                sanitizedPayload.scheduling.scheduled_publish_time * 1000
-              )
+            ? new Date(sanitizedPayload.scheduling.scheduled_publish_time * 1000)
             : undefined,
           ageMin: sanitizedPayload.targeting?.age_min,
           ageMax: sanitizedPayload.targeting?.age_max,
@@ -94,27 +78,16 @@ export class SocialMediaService {
           aiProvider: sanitizedPayload.metadata?.generatedBy,
           aiPrompt: sanitizedPayload.metadata?.generationPrompt,
           status: 'pending',
-          metadata: sanitizedPayload.metadata
-            ? JSON.stringify(sanitizedPayload.metadata)
-            : undefined,
+          metadata: sanitizedPayload.metadata ? JSON.stringify(sanitizedPayload.metadata) : undefined,
         });
 
         dbPostId = dbPost.id;
-        logger.info(
-          { dbPostId, platform: payload.platform },
-          'Post saved to database'
-        );
+        logger.info({ dbPostId, platform: payload.platform }, 'Post saved to database');
       }
 
       // Log attempt
-      const contentLength = socialMediaHelper.estimateContentLength(
-        sanitizedPayload.content
-      );
-      socialMediaHelper.logPostAttempt(
-        payload.platform,
-        payload.pageId,
-        contentLength
-      );
+      const contentLength = socialMediaHelper.estimateContentLength(sanitizedPayload.content);
+      socialMediaHelper.logPostAttempt(payload.platform, payload.pageId, contentLength);
 
       // Route to appropriate platform handler
       let result: SocialMediaPostResult;
@@ -155,18 +128,13 @@ export class SocialMediaService {
       }
 
       // Log success
-      socialMediaHelper.logPostSuccess(
-        payload.platform,
-        result.postId,
-        payload.pageId
-      );
+      socialMediaHelper.logPostSuccess(payload.platform, result.postId, payload.pageId);
 
       return result;
     } catch (error) {
       const platform = payload?.platform || SocialMediaPlatform.FACEBOOK;
       const pageId = payload?.pageId || 'unknown';
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
 
       // Mark post as failed in database
       if (dbPostId) {
@@ -182,9 +150,7 @@ export class SocialMediaService {
   /**
    * Post to Facebook
    */
-  private async postToFacebook(
-    payload: SocialMediaPostPayload
-  ): Promise<SocialMediaPostResult> {
+  private async postToFacebook(payload: SocialMediaPostPayload): Promise<SocialMediaPostResult> {
     // Transform payload to Facebook-specific format
     const facebookPayload = socialMediaHelper.transformPayload(payload);
 
@@ -206,9 +172,7 @@ export class SocialMediaService {
     const responseData = (await response.json()) as any;
 
     if (!response.ok) {
-      throw new Error(
-        responseData.error?.message || `Facebook API error: ${response.status}`
-      );
+      throw new Error(responseData.error?.message || `Facebook API error: ${response.status}`);
     }
 
     // Parse response
@@ -302,9 +266,7 @@ export class SocialMediaService {
       const data = (await response.json()) as any;
 
       if (!response.ok) {
-        throw new Error(
-          data.error?.message || `Facebook API error: ${response.status}`
-        );
+        throw new Error(data.error?.message || `Facebook API error: ${response.status}`);
       }
 
       return data;
@@ -342,9 +304,7 @@ export class SocialMediaService {
 
       if (!response.ok) {
         const data = (await response.json()) as any;
-        throw new Error(
-          data.error?.message || `Facebook API error: ${response.status}`
-        );
+        throw new Error(data.error?.message || `Facebook API error: ${response.status}`);
       }
 
       // Mark as deleted in database
@@ -377,14 +337,9 @@ export class SocialMediaService {
   /**
    * Batch post to multiple platforms
    */
-  async batchPostToSocialMedia(
-    payloads: SocialMediaPostPayload[],
-    userId?: string
-  ): Promise<SocialMediaPostResult[]> {
+  async batchPostToSocialMedia(payloads: SocialMediaPostPayload[], userId?: string): Promise<SocialMediaPostResult[]> {
     try {
-      const promises = payloads.map(payload =>
-        this.postToSocialMedia(payload, userId)
-      );
+      const promises = payloads.map(payload => this.postToSocialMedia(payload, userId));
       const results = await Promise.allSettled(promises);
 
       return results.map((result, index) => {
@@ -392,10 +347,7 @@ export class SocialMediaService {
           return result.value;
         } else {
           const payload = payloads[index];
-          return socialMediaHelper.buildErrorResult(
-            payload.platform,
-            result.reason
-          );
+          return socialMediaHelper.buildErrorResult(payload.platform, result.reason);
         }
       });
     } catch (error) {
@@ -412,12 +364,7 @@ export class SocialMediaService {
   /**
    * Get all social media posts with optional filters
    */
-  async getAllPosts(filters?: {
-    platform?: string;
-    status?: string;
-    limit?: number;
-    offset?: number;
-  }) {
+  async getAllPosts(filters?: { platform?: string; status?: string; limit?: number; offset?: number }) {
     return socialMediaPostRepository.getAllPosts(filters);
   }
 

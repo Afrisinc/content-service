@@ -3,14 +3,8 @@
  * Handles AI content generation and scheduling
  */
 
-import {
-  SocialMediaPlatform,
-  SocialMediaPostPayload,
-} from '@/types/socialMedia.types';
-import {
-  GeneratePostRequest,
-  GeneratePostResponse,
-} from '@/types/aiGeneration.types';
+import { SocialMediaPlatform, SocialMediaPostPayload } from '@/types/socialMedia.types';
+import { GeneratePostRequest, GeneratePostResponse } from '@/types/aiGeneration.types';
 import { openaiHelper } from '@/helpers/openai.helper';
 import { socialMediaPostRepository } from '@/repositories/socialMediaPost.repository';
 import { socialMediaService } from './socialMedia.service';
@@ -20,9 +14,7 @@ class AIGenerationService {
   /**
    * Generate posts from prompt and optionally schedule them
    */
-  async generateAndSchedulePosts(
-    request: GeneratePostRequest
-  ): Promise<GeneratePostResponse> {
+  async generateAndSchedulePosts(request: GeneratePostRequest): Promise<GeneratePostResponse> {
     try {
       logger.info(
         {
@@ -46,10 +38,7 @@ class AIGenerationService {
             'Generating image with DALL-E'
           );
 
-          generatedImageUrl = await openaiHelper.generateImage(
-            request.prompt,
-            request.imageStyle
-          );
+          generatedImageUrl = await openaiHelper.generateImage(request.prompt, request.imageStyle);
 
           // Generate caption for the generated image
           try {
@@ -60,10 +49,7 @@ class AIGenerationService {
           } catch (captionError) {
             logger.warn(
               {
-                error:
-                  captionError instanceof Error
-                    ? captionError.message
-                    : String(captionError),
+                error: captionError instanceof Error ? captionError.message : String(captionError),
               },
               'Failed to generate image caption'
             );
@@ -109,8 +95,7 @@ class AIGenerationService {
       const validPlatforms: SocialMediaPlatform[] = [];
 
       for (const platform of request.platforms) {
-        const content =
-          generatedContent[platform as keyof typeof generatedContent];
+        const content = generatedContent[platform as keyof typeof generatedContent];
         if (content && typeof content === 'string') {
           platformContent[platform] = content;
           validPlatforms.push(platform);
@@ -202,8 +187,7 @@ class AIGenerationService {
       return {
         success: false,
         message: 'Failed to generate posts',
-        error:
-          error instanceof Error ? error.message : 'Unknown error occurred',
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
       };
     }
   }
@@ -255,8 +239,7 @@ class AIGenerationService {
     try {
       logger.info({}, 'Checking for posts to publish');
 
-      const postsToPublish =
-        await socialMediaPostRepository.getPostsReadyToPublish();
+      const postsToPublish = await socialMediaPostRepository.getPostsReadyToPublish();
 
       let published = 0;
       let failed = 0;
@@ -281,16 +264,11 @@ class AIGenerationService {
           };
 
           // Post to platform
-          const result = await socialMediaService.postToSocialMedia(
-            payload,
-            post.userId
-          );
+          const result = await socialMediaService.postToSocialMedia(payload, post.userId);
 
           if (result.status === 'success' || result.status === 'pending') {
             // Update post in database
-            const postUrl =
-              result.metadata?.postUrl ||
-              `https://${post.platform}.com/${result.postId}`;
+            const postUrl = result.metadata?.postUrl || `https://${post.platform}.com/${result.postId}`;
             await socialMediaPostRepository.updatePostAfterPublish(post.id, {
               status: 'published',
               platformPostId: result.postId || '',
@@ -324,8 +302,7 @@ class AIGenerationService {
           }
         } catch (error) {
           failed++;
-          const errorMsg =
-            error instanceof Error ? error.message : String(error);
+          const errorMsg = error instanceof Error ? error.message : String(error);
           errors.push(errorMsg);
 
           await socialMediaPostRepository.markPostFailed(post.id, errorMsg);
@@ -357,11 +334,7 @@ class AIGenerationService {
    */
   async getUserGenerationHistory(userId: string, limit = 10, offset = 0) {
     try {
-      const posts = await socialMediaPostRepository.getAIGeneratedPosts(
-        userId,
-        limit,
-        offset
-      );
+      const posts = await socialMediaPostRepository.getAIGeneratedPosts(userId, limit, offset);
 
       return {
         success: true,

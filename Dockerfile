@@ -49,7 +49,7 @@ RUN npx prisma generate
 USER nodejs
 
 # Expose port
-EXPOSE 3000
+EXPOSE 8093
 
 # Set environment to production
 ENV NODE_ENV=production

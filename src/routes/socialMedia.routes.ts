@@ -13,10 +13,7 @@ import {
   getAllSocialMediaPosts,
   getUserSocialMediaPosts,
 } from '../controllers/socialMedia.controller';
-import {
-  PostToSocialMediaSchema,
-  GetSocialMediaPostSchema,
-} from '@/schemas/requests/socialMedia.schema';
+import { PostToSocialMediaSchema, GetSocialMediaPostSchema } from '@/schemas/requests/socialMedia.schema';
 import { authGuard } from '../middlewares/authGuard';
 
 export async function socialMediaRoutes(app: FastifyInstance) {
@@ -237,7 +234,7 @@ export async function socialMediaRoutes(app: FastifyInstance) {
       schema: {
         tags: ['social-media'],
         summary: 'Get user posts',
-        description: 'Retrieve authenticated user\'s social media posts',
+        description: "Retrieve authenticated user's social media posts",
         security: [{ bearerAuth: [] }],
         querystring: {
           type: 'object',

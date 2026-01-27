@@ -18,10 +18,7 @@ declare module 'fastify' {
   }
 }
 
-export const authGuard = async (
-  request: FastifyRequest,
-  reply: FastifyReply
-) => {
+export const authGuard = async (request: FastifyRequest, reply: FastifyReply) => {
   try {
     const authHeader = request.headers.authorization;
 
@@ -40,9 +37,7 @@ export const authGuard = async (
       });
     }
 
-    const token = authHeader.startsWith('Bearer ')
-      ? authHeader.slice(7)
-      : authHeader;
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
 
     if (!token) {
       logger.warn(
@@ -131,10 +126,7 @@ export const authGuard = async (
   }
 };
 
-export const optionalAuthGuard = async (
-  request: FastifyRequest,
-  reply: FastifyReply
-) => {
+export const optionalAuthGuard = async (request: FastifyRequest, reply: FastifyReply) => {
   const authHeader = request.headers.authorization;
 
   if (!authHeader) {

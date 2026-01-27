@@ -35,10 +35,7 @@ export async function updateUser(req: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-export async function updateUserProfile(
-  req: FastifyRequest,
-  reply: FastifyReply
-) {
+export async function updateUserProfile(req: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (req as any).user?.id;
     if (!userId) {

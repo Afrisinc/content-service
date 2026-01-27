@@ -10,11 +10,7 @@ const createApp = async () => {
   // Parse allowed origins: can be '*', 'true', or comma-separated URLs
   let corsOrigin: boolean | string | RegExp | (string | RegExp)[] = '*';
 
-  if (
-    env.CORS_ORIGIN &&
-    env.CORS_ORIGIN !== '*' &&
-    env.CORS_ORIGIN !== 'true'
-  ) {
+  if (env.CORS_ORIGIN && env.CORS_ORIGIN !== '*' && env.CORS_ORIGIN !== 'true') {
     // If multiple origins, split by comma and trim
     corsOrigin = env.CORS_ORIGIN.split(',').map(url => url.trim());
   } else if (env.CORS_ORIGIN === 'true') {

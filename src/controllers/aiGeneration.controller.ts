@@ -4,93 +4,46 @@
  */
 
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { GeneratePostRequest } from '@/types/aiGeneration.types';
+import { GeneratePostRequest, AIAgentGeneratePostRequest } from '@/types/aiGeneration.types';
 import { aiGenerationService } from '@/services/aiGeneration.service';
+import { aiAgentService } from '@/services/aiAgent.service';
 import { logger } from '@/utils/logger';
 
 /**
- * Generate posts from prompt (with optional scheduling)
+ * Generate posts from prompt using external AI Agent service
  */
-export async function generatePost(
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<void> {
+export async function generatePost(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   try {
-    const userId = request.user?.userId || '';
-    const body = request.body as Partial<GeneratePostRequest>;
+    const body = request.body as Partial<AIAgentGeneratePostRequest>;
 
     // Validate required fields
-    if (!body.prompt) {
+    if (!body.topic) {
       return reply.status(400).send({
         success: false,
-        message: 'Prompt is required',
-        error: 'Missing required field: prompt',
+        message: 'Topic is required',
+        error: 'Missing required field: topic',
       });
     }
 
-    if (!body.platforms || body.platforms.length === 0) {
-      return reply.status(400).send({
-        success: false,
-        message: 'At least one platform is required',
-        error: 'Missing required field: platforms',
-      });
-    }
-
-    // Parse schedule time if provided
-    let scheduleFor: Date | null = null;
-    if (body.scheduleFor) {
-      const scheduledTime = new Date(body.scheduleFor);
-      if (isNaN(scheduledTime.getTime())) {
-        return reply.status(400).send({
-          success: false,
-          message: 'Invalid schedule time format',
-          error: 'scheduleFor must be a valid ISO 8601 datetime',
-        });
-      }
-      scheduleFor = scheduledTime;
-    }
-
-    // Validate userId is present
-    if (!userId) {
-      return reply.status(401).send({
-        success: false,
-        message: 'User authentication required',
-        error: 'Valid user ID not found in token',
-      });
-    }
-
-    const generateRequest: GeneratePostRequest = {
-      prompt: body.prompt,
-      platforms: body.platforms,
-      tone: body.tone || 'professional',
-      includeEmojis: body.includeEmojis ?? true,
-      includeHashtags: body.includeHashtags ?? true,
-      maxLength: body.maxLength || 500,
-      language: body.language || 'en',
-      scheduleFor,
-      userId,
-      imageUrl: body.imageUrl,
-      includeImage: body.includeImage ?? false,
-      imageStyle: body.imageStyle,
+    const aiAgentRequest: AIAgentGeneratePostRequest = {
+      topic: body.topic,
+      keywords: body.keywords,
+      link: body.link,
+      submittedAt: body.submittedAt || new Date().toISOString(),
+      formMode: body.formMode || 'production',
     };
 
     logger.info(
       {
-        userId,
-        platforms: generateRequest.platforms,
-        scheduled: !!scheduleFor,
+        topic: aiAgentRequest.topic,
+        formMode: aiAgentRequest.formMode,
       },
-      'Generating posts from prompt'
+      'Generating post with external AI Agent'
     );
 
-    const result =
-      await aiGenerationService.generateAndSchedulePosts(generateRequest);
+    const result = await aiAgentService.generatePost(aiAgentRequest);
 
-    if (result.success) {
-      return reply.status(201).send(result);
-    } else {
-      return reply.status(400).send(result);
-    }
+    return reply.status(201).send(result);
   } catch (error) {
     logger.error(
       {
@@ -102,7 +55,7 @@ export async function generatePost(
 
     return reply.status(500).send({
       success: false,
-      message: 'Failed to generate posts',
+      message: 'Failed to generate post',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
@@ -111,10 +64,7 @@ export async function generatePost(
 /**
  * Generate post for specific platform
  */
-export async function generatePostForPlatform(
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<void> {
+export async function generatePostForPlatform(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   try {
     const body = request.body as Partial<GeneratePostRequest>;
 
@@ -143,16 +93,12 @@ export async function generatePostForPlatform(
       'Generating platform-specific content'
     );
 
-    const content = await aiGenerationService.generatePostForPlatform(
-      body.prompt,
-      platform,
-      {
-        tone: body.tone || 'professional',
-        maxLength: body.maxLength,
-        includeEmojis: body.includeEmojis,
-        includeHashtags: body.includeHashtags,
-      }
-    );
+    const content = await aiGenerationService.generatePostForPlatform(body.prompt, platform, {
+      tone: body.tone || 'professional',
+      maxLength: body.maxLength,
+      includeEmojis: body.includeEmojis,
+      includeHashtags: body.includeHashtags,
+    });
 
     return reply.status(200).send({
       success: true,
@@ -181,10 +127,7 @@ export async function generatePostForPlatform(
 /**
  * Publish all scheduled posts due for publication
  */
-export async function publishScheduledPosts(
-  _request: FastifyRequest,
-  reply: FastifyReply
-): Promise<void> {
+export async function publishScheduledPosts(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
   try {
     logger.info({}, 'Publishing scheduled posts');
 
@@ -214,10 +157,7 @@ export async function publishScheduledPosts(
 /**
  * Get user's AI generation history
  */
-export async function getGenerationHistory(
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<void> {
+export async function getGenerationHistory(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   try {
     const userId = request.user?.userId;
     if (!userId) {
@@ -241,11 +181,7 @@ export async function getGenerationHistory(
       'Fetching generation history'
     );
 
-    const result = await aiGenerationService.getUserGenerationHistory(
-      userId,
-      limit,
-      offset
-    );
+    const result = await aiGenerationService.getUserGenerationHistory(userId, limit, offset);
 
     return reply.status(200).send(result);
   } catch (error) {
