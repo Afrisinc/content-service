@@ -65,6 +65,10 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    env:
+      DEPLOY_GHCR_USERNAME: ${{ secrets.DEPLOY_GHCR_USERNAME }}
+      DEPLOY_GHCR_TOKEN: ${{ secrets.DEPLOY_GHCR_TOKEN }}
+
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/master')
 
     steps:
@@ -77,11 +81,16 @@ jobs:
           port: ${{ secrets.VPS_PORT != '' && secrets.VPS_PORT || 22 }}
           timeout: 30s
           command_timeout: 10m
+          # 🔐 PASS DEPLOY CREDS TO VPS
+          envs: DEPLOY_GHCR_USERNAME,DEPLOY_GHCR_TOKEN
+
           script: |
             set -e
             APP_PATH="${{ secrets.VPS_APP_PATH }}"
             APP_PATH=${APP_PATH:=/opt/apps/afrisinc/content-service}
             cd $APP_PATH
+
+            echo "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u "$DEPLOY_GHCR_USERNAME" --password-stdin
 
             docker compose pull
             docker compose up -d --remove-orphans
