@@ -8,9 +8,9 @@ export const GeneratePostSchema = {
   tags: ['ai-generation'],
   body: {
     type: 'object',
-    required: ['Topic'],
+    required: ['topic'],
     properties: {
-      Topic: {
+      topic: {
         type: 'string',
         minLength: 1,
         maxLength: 500,
@@ -49,21 +49,7 @@ export const GeneratePostSchema = {
           type: 'string',
         },
         data: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              id: {
-                type: 'string',
-                description: 'Generated post ID',
-              },
-              post_id: {
-                type: 'string',
-                description: 'Platform post ID',
-              },
-            },
-          },
-          description: 'Generated posts with IDs',
+          description: 'Generated posts data from AI Agent service',
         },
       },
     },
