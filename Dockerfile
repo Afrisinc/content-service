@@ -1,8 +1,9 @@
 # ---------- Build Stage ----------
 FROM node:20-bullseye AS builder
 WORKDIR /app
+ENV DOCKER_BUILD=true
 COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile --ignore-scripts
+RUN yarn install --frozen-lockfile
 COPY . .
 RUN yarn build
 
