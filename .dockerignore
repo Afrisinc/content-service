@@ -27,4 +27,3 @@ Dockerfile
 .prettierignore
 .prettierrc
 eslint.config.js
-tsconfig.json
