@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "esbuild src/server.ts --bundle --platform=node --target=es2020 --outfile=dist/server.js --external:@prisma/client --external:dotenv --external:fastify --external:@fastify/cors --external:@fastify/swagger --external:@fastify/swagger-ui --external:axios --external:bcryptjs --external:jsonwebtoken --external:openai --external:pino --external:pino-pretty --external:zod",
+    "build": "esbuild src/server.ts --bundle --platform=node --format=esm --target=es2020 --outfile=dist/server.js --external:@prisma/client --external:dotenv --external:fastify --external:@fastify/cors --external:@fastify/swagger --external:@fastify/swagger-ui --external:axios --external:bcryptjs --external:jsonwebtoken --external:openai --external:pino --external:pino-pretty --external:zod",
     "start": "tsx src/server.ts",
     "test": "vitest",
     "test:watch": "vitest --watch",
