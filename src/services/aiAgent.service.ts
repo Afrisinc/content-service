@@ -36,7 +36,7 @@ class AIAgentService {
           topic: request.topic,
           formMode: request.formMode,
         },
-        'Calling external AI Agent service'
+        'Calling external AI Agent service - available at ' + env.SM_AI_AGENT_URL
       );
 
       const response = await this.client.post('/sm-ai-agent', payload);

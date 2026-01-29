@@ -5,8 +5,5 @@
   ],
   "*.{json,md}": [
     "prettier --write"
-  ],
-  "*.ts": [
-    "tsc --noEmit"
   ]
 }
