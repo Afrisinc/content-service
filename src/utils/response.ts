@@ -1,7 +1,22 @@
-import { FastifyReply } from 'fastify';
+import type { FastifyReply } from 'fastify';
 
-export const success = (reply: FastifyReply, code: number, message: string, data?: any) =>
-  reply.status(code).send({ success: true, message, data });
+/**
+ * Success response following Afrisinc standard
+ * @param reply FastifyReply object
+ * @param httpCode HTTP status code
+ * @param message Human-readable message (resp_msg)
+ * @param respCode Internal response code (1xxx for success)
+ * @param data Response payload
+ */
+export const success = (reply: FastifyReply, httpCode: number, message: string, respCode: number = 1000, data?: any) =>
+  reply.status(httpCode).send({ success: true, resp_msg: message, resp_code: respCode, data });
 
-export const error = (reply: FastifyReply, code: number, message: string) =>
-  reply.status(code).send({ success: false, message });
+/**
+ * Error response following Afrisinc standard
+ * @param reply FastifyReply object
+ * @param httpCode HTTP status code
+ * @param message Human-readable message (resp_msg)
+ * @param respCode Internal response code (2xxx/3xxx/4xxx/5xxx/9xxx)
+ */
+export const error = (reply: FastifyReply, httpCode: number, message: string, respCode: number = 2000) =>
+  reply.status(httpCode).send({ success: false, resp_msg: message, resp_code: respCode });

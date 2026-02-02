@@ -55,5 +55,6 @@
   // Terminal settings
   "terminal.integrated.env.linux": {
     "NODE_ENV": "development"
-  }
+  },
+  "prisma.pinToPrisma6": true
 }

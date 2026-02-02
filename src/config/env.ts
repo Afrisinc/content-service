@@ -9,4 +9,5 @@ export const env = {
   OPENAI_IMAGE_MODEL: process.env.OPENAI_IMAGE_MODEL || 'dall-e-3',
   CORS_ORIGIN: process.env.CORS_ORIGIN || '*',
   SM_AI_AGENT_URL: process.env.SM_AI_AGENT_URL || '',
+  API_BASE_URL: process.env.API_BASE_URL || `localhost:${process.env.PORT || 3000}`,
 } as const;
