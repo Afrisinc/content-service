@@ -7,7 +7,7 @@ const service = new AuthService();
 export async function registerUser(req: FastifyRequest, reply: FastifyReply) {
   try {
     const result = await service.register(req.body);
-    return success(reply, 201, 'User registered successfully', result);
+    return success(reply, 201, 'User registered successfully', 1001, result);
   } catch (err: any) {
     return error(reply, 400, err.message);
   }
@@ -16,7 +16,7 @@ export async function registerUser(req: FastifyRequest, reply: FastifyReply) {
 export async function loginUser(req: FastifyRequest, reply: FastifyReply) {
   try {
     const result = await service.login(req.body);
-    return success(reply, 200, 'Login successful', result);
+    return success(reply, 200, 'Login successful', 1000, result);
   } catch (err: any) {
     return error(reply, 400, err.message);
   }
@@ -31,7 +31,7 @@ export async function getProfile(req: FastifyRequest, reply: FastifyReply) {
     }
 
     const result = await service.getProfile(userId);
-    return success(reply, 200, 'Profile retrieved successfully', result);
+    return success(reply, 200, 'Profile retrieved successfully', 1000, result);
   } catch (err: any) {
     return error(reply, 400, err.message);
   }

@@ -72,7 +72,7 @@ async function main() {
         userId: testUser1.id,
         platform: 'facebook',
         pageId: '123456789',
-        pageeName: 'Alice Business Page',
+        pageName: 'Alice Business Page',
         accessToken: 'EAAB2N7ZBX1sBAHgT9N2ZCN5lXzqZCZBmZAbQhCrO5Eo5T2ZA',
         refreshToken: 'EAAB2N7ZBX1sBAHgT9N2ZCN5lXzqZCZBmZAbQhCrO5Eo5T2ZA_refresh',
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -93,7 +93,7 @@ async function main() {
         userId: testUser1.id,
         platform: 'instagram',
         pageId: '987654321',
-        pageeName: 'Alice_Business_IG',
+        pageName: 'Alice_Business_IG',
         accessToken: 'IGQVJYNUszREY1ZBX2ZCN5lXzqZCZBmZAbQhCrO5Eo5T2ZA',
         isActive: true,
       },
@@ -112,16 +112,16 @@ async function main() {
         userId: testUser2.id,
         platform: 'facebook',
         pageId: '555666777',
-        pageeName: "Bob's Company",
+        pageName: "Bob's Company",
         accessToken: 'EAAB2N7ZBX1sBAHgT9N2ZCN5lXzqZCZBmZAbQhCrO5Eo5T2ZA_bob',
         isActive: true,
       },
     });
 
     console.log('Created 3 social media accounts');
-    console.log(`   - Facebook: ${facebookAccount1.pageeName}`);
-    console.log(`   - Instagram: ${instagramAccount1.pageeName}`);
-    console.log(`   - Facebook: ${facebookAccount2.pageeName}\n`);
+    console.log(`   - Facebook: ${facebookAccount1.pageName}`);
+    console.log(`   - Instagram: ${instagramAccount1.pageName}`);
+    console.log(`   - Facebook: ${facebookAccount2.pageName}\n`);
 
     // ============================================
     // 3. Create Social Media Posts

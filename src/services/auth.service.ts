@@ -39,14 +39,14 @@ export class AuthService {
     }
 
     // Exclude password from response
-    const { password, socialAccounts, ...profile } = user;
+    const { password, socialAccounts, ...profile } = user as any;
 
     // Format social accounts to exclude sensitive tokens
-    const formattedAccounts = socialAccounts.map((account: any) => ({
+    const formattedAccounts = (socialAccounts || []).map((account: any) => ({
       id: account.id,
       platform: account.platform,
       pageId: account.pageId,
-      pageName: account.pageeName,
+      pageName: account.pageName,
       isActive: account.isActive,
       createdAt: account.createdAt,
       updatedAt: account.updatedAt,

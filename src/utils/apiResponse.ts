@@ -83,7 +83,7 @@ function serializeData(data: any): any {
     // Fallback: manually convert object properties
     const serialized: any = Array.isArray(data) ? [] : {};
     for (const key in data) {
-      if (Object.hasOwn(data, key)) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
         const value = data[key];
         serialized[key] = typeof value === 'bigint' ? value.toString() : value;
       }

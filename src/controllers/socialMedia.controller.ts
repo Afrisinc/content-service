@@ -25,7 +25,7 @@ export async function postToSocialMedia(req: FastifyRequest, reply: FastifyReply
       return error(reply, 400, result.error || 'Failed to post to social media');
     }
 
-    return success(reply, 201, 'Post published successfully', result);
+    return success(reply, 201, 'Post published successfully', 1001, result);
   } catch (err: any) {
     return error(reply, 400, err.message || 'Error posting to social media');
   }
@@ -46,7 +46,7 @@ export async function getSocialMediaPost(req: FastifyRequest, reply: FastifyRepl
 
     const result = await service.getPostDetails(postId, accessToken);
 
-    return success(reply, 200, 'Post retrieved successfully', result);
+    return success(reply, 200, 'Post retrieved successfully', 1000, result);
   } catch (err: any) {
     return error(reply, 400, err.message || 'Error retrieving post');
   }
@@ -98,7 +98,7 @@ export async function batchPostToSocialMedia(req: FastifyRequest, reply: Fastify
     const successCount = results.filter(r => r.status === 'success').length;
     const failureCount = results.filter(r => r.status === 'failed').length;
 
-    return success(reply, 201, `Batch posting completed (${successCount} success, ${failureCount} failed)`, {
+    return success(reply, 201, `Batch posting completed (${successCount} success, ${failureCount} failed)`, 1001, {
       results,
       summary: {
         total: results.length,
@@ -122,7 +122,7 @@ export async function validateSocialMediaPayload(req: FastifyRequest, reply: Fas
     // This can be extended to validate content with AI generation preview
     // or check for content policy violations
 
-    return success(reply, 200, 'Payload is valid', {
+    return success(reply, 200, 'Payload is valid', 1000, {
       valid: true,
       payload,
     });
@@ -156,7 +156,7 @@ export async function getAllSocialMediaPosts(req: FastifyRequest, reply: Fastify
       offset: Number(offset),
     });
 
-    return success(reply, 200, 'Posts retrieved successfully', result);
+    return success(reply, 200, 'Posts retrieved successfully', 1000, result);
   } catch (err: any) {
     return error(reply, 400, err.message || 'Error retrieving posts');
   }
@@ -193,7 +193,7 @@ export async function getUserSocialMediaPosts(req: FastifyRequest, reply: Fastif
       offset: Number(offset),
     });
 
-    return success(reply, 200, 'User posts retrieved successfully', result);
+    return success(reply, 200, 'User posts retrieved successfully', 1000, result);
   } catch (err: any) {
     return error(reply, 400, err.message || 'Error retrieving user posts');
   }

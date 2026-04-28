@@ -7,195 +7,555 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id            String          @id @default(uuid())
-  email         String          @unique
-  password      String
-  name          String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  socialPosts   SocialMediaPost[]
-  socialAccounts SocialMediaAccount[]
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum MediaPostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
 }
 
-// Social Media Account Configuration
+enum SocialPlatform {
+  facebook
+  instagram
+  twitter
+  linkedin
+  tiktok
+  youtube
+  whatsapp
+}
+
+enum AiProvider {
+  anthropic
+  openai
+  huggingface
+}
+
+enum PostStatus {
+  pending
+  published
+  failed
+  deleted
+}
+
+// ─────────────────────────────────────────────
+// USER
+// ─────────────────────────────────────────────
+
+model User {
+  id             String               @id @default(uuid())
+  email          String               @unique
+  password       String
+  name           String?
+  avatar         String?
+  role           String               @default("editor") // admin, editor, viewer
+  isActive       Boolean              @default(true)
+  lastLoginAt    DateTime?
+
+  // Relations
+  socialPosts    SocialMediaPost[]
+  socialAccounts SocialMediaAccount[]
+  mediaPosts     MediaPost[]
+
+  createdAt      DateTime             @default(now()) @db.Timestamptz()
+  updatedAt      DateTime             @updatedAt      @db.Timestamptz()
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// SOCIAL MEDIA ACCOUNTS
+// ─────────────────────────────────────────────
+
 model SocialMediaAccount {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  platform      String   // facebook, instagram, twitter, linkedin, tiktok
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  platform      String    // facebook, instagram, twitter, linkedin, tiktok
   pageId        String
-  pageeName     String?
+  pageName      String?
+  pageAvatar    String?
   accessToken   String
   refreshToken  String?
   expiresAt     DateTime?
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  isActive      Boolean   @default(true)
+  scopes        String[]  @default([]) // granted OAuth scopes
+
+  createdAt     DateTime  @default(now()) @db.Timestamptz()
+  updatedAt     DateTime  @updatedAt      @db.Timestamptz()
 
   @@unique([userId, platform, pageId])
   @@index([userId])
   @@index([platform])
+  @@map("social_media_accounts")
 }
 
-// Social Media Post Record
-model SocialMediaPost {
-  id                  String   @id @default(uuid())
-  userId              String
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+// ─────────────────────────────────────────────
+// SOCIAL MEDIA POSTS
+// ─────────────────────────────────────────────
 
-  // Post Identification
-  platform            String   // facebook, instagram, twitter, linkedin, tiktok
-  pageId              String
-  postId              String?  // ID returned from platform
-  postUrl             String?  // URL to the post on the platform
+model SocialMediaPost {
+  id          String  @id @default(uuid())
+  userId      String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Source article (optional — set when post derives from a MediaPost)
+  mediaPostId String?
+  mediaPost   MediaPost? @relation(fields: [mediaPostId], references: [id], onDelete: SetNull)
+
+  // Post identification
+  platform    String   // facebook, instagram, twitter, linkedin, tiktok
+  pageId      String
+  postId      String?  // ID returned from platform after publishing
+  postUrl     String?  // Live URL on the platform
 
   // Content
-  message             String?
-  link                String?
-  description         String?
-  picture             String?
-  name                String?
-  caption             String?
-  tags                String[] // Array of tags
+  message     String?
+  link        String?
+  description String?
+  picture     String?
+  name        String?
+  caption     String?
+  tags        String[] @default([])
 
   // Media
-  mediaType           String?  // image, video, carousel
-  mediaUrls           String[] // Array of media URLs
-  altText             String?
+  mediaType   String?  // image, video, carousel
+  mediaUrls   String[] @default([])
+  altText     String?
 
-  // Scheduling & Timing
-  scheduledAt         DateTime?
-  publishedAt         DateTime?
+  // Scheduling
+  scheduledAt  DateTime? @db.Timestamptz()
+  publishedAt  DateTime? @db.Timestamptz()
 
-  // Targeting (for ads)
-  ageMin              Int?
-  ageMax              Int?
-  genders             Int[]
-  countries           String[]
-  regions             String[]
-  cities              String[]
-  interests           String[]
-  keywords            String[]
+  // Audience targeting (for boosted/ad posts)
+  ageMin      Int?
+  ageMax      Int?
+  genders     Int[]    @default([])
+  countries   String[] @default([])
+  regions     String[] @default([])
+  cities      String[] @default([])
+  interests   String[] @default([])
+  keywords    String[] @default([])
 
-  // AI Generation Tracking
-  aiGenerated         Boolean  @default(false)
-  aiProvider          String?  // openai, anthropic, huggingface
-  aiModel             String?
-  aiPrompt            String?
+  // AI generation
+  aiGenerated Boolean  @default(false)
+  aiProvider  String?
+  aiModel     String?
+  aiPrompt    String?
 
-  // Status & Metrics
-  status              String   @default("pending") // pending, published, failed, deleted
-  errorMessage        String?
+  // Status
+  status        String   @default("pending") // pending, published, failed, deleted
+  errorMessage  String?
+  retryCount    Int      @default(0)
 
-  // Engagement Metrics (updated periodically)
-  likes               Int      @default(0)
-  comments            Int      @default(0)
-  shares              Int      @default(0)
-  views               Int      @default(0)
-  lastMetricsUpdate   DateTime?
+  // Engagement metrics (synced periodically)
+  likes         Int      @default(0)
+  comments      Int      @default(0)
+  shares        Int      @default(0)
+  views         Int      @default(0)
+  reach         Int      @default(0)
+  impressions   Int      @default(0)
+  lastMetricsUpdate DateTime?
 
-  // Metadata
-  metadata            String?  // JSON stored as string for flexibility
+  // Flexible metadata (JSON string)
+  metadata      String?
 
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt     DateTime @default(now()) @db.Timestamptz()
+  updatedAt     DateTime @updatedAt      @db.Timestamptz()
 
   @@index([userId])
   @@index([platform])
   @@index([status])
   @@index([publishedAt])
   @@index([aiGenerated])
+  @@index([mediaPostId])
+  @@map("social_media_posts")
 }
 
-// Social Media Post Analytics
+// ─────────────────────────────────────────────
+// SOCIAL MEDIA ANALYTICS
+// ─────────────────────────────────────────────
+
 model SocialMediaAnalytics {
-  id                String   @id @default(uuid())
-  postId            String   @unique
+  id          String   @id @default(uuid())
+  postId      String   @unique
 
-  // Aggregated metrics by day
-  date              DateTime
-  platform          String
+  date        DateTime @db.Timestamptz()
+  platform    String
 
-  // Daily metrics
-  impressions       Int      @default(0)
-  reaches           Int      @default(0)
-  engagements       Int      @default(0)
-  clicks            Int      @default(0)
+  // Volume metrics
+  impressions Int      @default(0)
+  reaches     Int      @default(0)
+  engagements Int      @default(0)
+  clicks      Int      @default(0)
 
   // Engagement breakdown
-  likes             Int      @default(0)
-  comments          Int      @default(0)
-  shares            Int      @default(0)
-  saves             Int      @default(0)
-  views             Int      @default(0)
+  likes       Int      @default(0)
+  comments    Int      @default(0)
+  shares      Int      @default(0)
+  saves       Int      @default(0)
+  views       Int      @default(0)
 
-  // Audience insights
-  topCountries      String[] // JSON array
-  topCities         String[] // JSON array
-  genderBreakdown   String[] // JSON array
-  ageBreakdown      String[] // JSON array
+  // Audience insights (stored as JSON string arrays)
+  topCountries     String[] @default([])
+  topCities        String[] @default([])
+  genderBreakdown  String[] @default([])
+  ageBreakdown     String[] @default([])
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt   DateTime @default(now()) @db.Timestamptz()
+  updatedAt   DateTime @updatedAt      @db.Timestamptz()
 
   @@index([postId])
   @@index([platform])
   @@index([date])
+  @@map("social_media_analytics")
 }
 
-// N8N Articles
+// ─────────────────────────────────────────────
+// N8N RAW ARTICLE INGESTION
+// ─────────────────────────────────────────────
+
 model N8nArticle {
-  id              BigInt      @id @default(autoincrement())
-  guid            String      @unique
+  id               BigInt      @id @default(autoincrement())
+  guid             String      @unique
   source_url       String      @unique
   source_headline  String?
   source_summary   String?
   image_url        String?
   pub_date         DateTime?   @db.Timestamptz()
-  category        String?
-  creator         String?
-  status          String      @default("draft")
+  category         String?
+  creator          String?
+
+  // Processing status
+  status           String      @default("draft") // draft, processing, published, skipped, failed
+  processing_error String?
   is_featured      Boolean     @default(false)
+
+  // Relations
+  mediaPosts       MediaPost[]
+  generatedPosts   N8nGeneratedPost[]
+
   created_at       DateTime    @default(now()) @db.Timestamptz()
-  updated_at       DateTime    @updatedAt @db.Timestamptz()
+  updated_at       DateTime    @updatedAt      @db.Timestamptz()
 
   @@index([guid])
   @@index([source_url])
   @@index([category])
   @@index([status])
   @@index([created_at])
-
   @@map("n8n_articles")
 }
 
-// N8N Generated Posts
+// ─────────────────────────────────────────────
+// N8N GENERATED SOCIAL POSTS
+// ─────────────────────────────────────────────
+
 model N8nGeneratedPost {
-  id              BigInt      @id @default(autoincrement())
-  post_id         String?
-  topic           String?
-  platform        String?
+  id           BigInt    @id @default(autoincrement())
 
-  // Facebook fields
-  fb_post_id      String?
-  fb_url          String?
-  fb_content      String?
-  fb_hashtags     String?
+  // Source references
+  n8nArticleId BigInt?
+  n8nArticle   N8nArticle? @relation(fields: [n8nArticleId], references: [id], onDelete: SetNull)
 
-  // Instagram fields
-  insta_post_id   String?
-  insta_url       String?
-  insta_content   String?
-  insta_hashtags  String?
+  mediaPostId  String?
+  mediaPost    MediaPost?  @relation(fields: [mediaPostId], references: [id], onDelete: SetNull)
 
-  status          String      @default("draft")
-  created_at      DateTime    @default(now()) @db.Timestamptz()
-  published_at    DateTime?   @db.Timestamptz()
+  topic        String?
+  platform     String?   // facebook, instagram, twitter, linkedin, tiktok, whatsapp
 
-  @@index([post_id])
+  // Facebook
+  fb_post_id   String?
+  fb_url       String?
+  fb_content   String?
+  fb_hashtags  String?
+
+  // Instagram
+  insta_post_id String?
+  insta_url     String?
+  insta_content String?
+  insta_hashtags String?
+
+  // Twitter / X
+  twitter_post_id String?
+  twitter_url     String?
+  twitter_content String?
+  twitter_thread  String? // JSON array of tweet texts for threads
+
+  // LinkedIn
+  linkedin_post_id String?
+  linkedin_url     String?
+  linkedin_content String?
+
+  // WhatsApp (via Notify)
+  whatsapp_content    String?
+  whatsapp_campaign_id String? // Notify campaign ID
+  whatsapp_sent_at    DateTime? @db.Timestamptz()
+
+  // Status
+  status         String    @default("draft") // draft, queued, published, failed
+  error_message  String?
+
+  created_at     DateTime  @default(now()) @db.Timestamptz()
+  published_at   DateTime? @db.Timestamptz()
+
+  @@index([n8nArticleId])
+  @@index([mediaPostId])
   @@index([platform])
   @@index([status])
   @@index([created_at])
-
   @@map("n8n_generated_posts")
+}
+
+// ─────────────────────────────────────────────
+// MEDIA POST (published articles)
+// ─────────────────────────────────────────────
+
+model MediaPost {
+  id           String  @id @default(uuid())
+
+  // Author
+  authorId     String?
+  author       User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  // Source (raw ingested article this was generated from)
+  n8nArticleId BigInt?
+  n8nArticle   N8nArticle? @relation(fields: [n8nArticleId], references: [id], onDelete: SetNull)
+
+  // Core content
+  title        String
+  slug         String  @unique
+  content      String  // Full HTML body generated by Claude
+  excerpt      String? // 2–3 sentence summary for cards + OG
+
+  // Media
+  cover_image  String? // Final cover image URL
+  cover_alt    String? // Alt text for accessibility + SEO
+  media_type   String? // image, video, carousel
+  video_url    String? // Direct video URL if article's primary media is video
+  video_poster String? // Thumbnail/poster frame for video
+  video_duration Int?  // Duration in seconds
+  media_urls   String[] @default([]) // Multiple media items (images/videos)
+
+  // Taxonomy
+  category     String?
+  tags         String[] @default([])
+  topic        String?  // Broad topic bucket: finance, tech, politics, etc.
+
+  // SEO
+  meta_title       String? // Falls back to title if null
+  meta_description String? // 155 chars max
+  canonical_url    String? // For syndicated / republished content
+
+  // Open Graph (social link previews)
+  og_title       String?
+  og_description String?
+  og_image       String? // Often same as cover_image but can differ
+
+  // Twitter Card
+  twitter_card    String? @default("summary_large_image")
+  twitter_title   String?
+  twitter_description String?
+
+  // Publishing
+  status        MediaPostStatus @default(DRAFT)
+  is_featured   Boolean         @default(false)
+  is_breaking   Boolean         @default(false)
+  is_sponsored  Boolean         @default(false)
+  sponsor_name  String?
+  sponsor_url   String?
+
+  published_at  DateTime? @db.Timestamptz()
+  scheduled_at  DateTime? @db.Timestamptz()
+
+  // Reading experience
+  read_time     Int      @default(3)  // estimated minutes
+  language      String   @default("en")
+  word_count    Int?
+
+  // AI generation audit trail
+  ai_generated     Boolean  @default(false)
+  ai_provider      String?  // anthropic, openai
+  ai_model         String?  // claude-sonnet-4-6
+  ai_prompt        String?  // exact prompt used — critical for improvement loop
+  ai_score         Float?   // 0–1 quality/relevance score from filter step
+  source_url       String?  // original news source credited
+  source_name      String?  // "Reuters", "TechCrunch", etc.
+
+  // Article analytics
+  views            Int      @default(0)
+  unique_views     Int      @default(0)
+  shares           Int      @default(0)
+  read_completions Int      @default(0) // reached 90% scroll depth
+  avg_read_time    Float?   // actual seconds spent reading (avg)
+  bounce_rate      Float?   // % who left without scrolling past fold
+
+  // Newsletter tracking
+  in_newsletter       Boolean   @default(false)
+  newsletter_sent_at  DateTime? @db.Timestamptz()
+  newsletter_opens    Int       @default(0)
+  newsletter_clicks   Int       @default(0)
+
+  // RSS
+  rss_guid     String?  @unique // stable GUID for RSS feed item
+
+  // Relations
+  socialPosts      SocialMediaPost[]   // manual social posts linked to this article
+  generatedPosts   N8nGeneratedPost[]  // AI-generated social captions for this article
+
+  created_at   DateTime @default(now()) @db.Timestamptz()
+  updated_at   DateTime @updatedAt      @db.Timestamptz()
+
+  @@index([slug])
+  @@index([status])
+  @@index([category])
+  @@index([topic])
+  @@index([is_featured])
+  @@index([is_breaking])
+  @@index([published_at(sort: Desc)])
+  @@index([ai_generated])
+  @@index([n8nArticleId])
+  @@index([authorId])
+  @@index([in_newsletter])
+  @@index([rss_guid])
+  @@map("media_posts")
+}
+
+// ─────────────────────────────────────────────
+// NEWSLETTER SUBSCRIBERS (via Notify sync)
+// ─────────────────────────────────────────────
+
+model NewsletterSubscriber {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String?
+  phone         String?   // for WhatsApp via Notify
+
+  // Notify sync
+  notify_contact_id  String?  @unique // ID in your Notify product
+  notify_synced_at   DateTime? @db.Timestamptz()
+
+  // Tags for segmentation
+  tags          String[]  @default([]) // ["media-subscriber", "tech", "finance"]
+
+  // Status
+  status        String    @default("active") // active, unsubscribed, bounced
+  source        String?   // "article-widget", "homepage", "import", "notify"
+  ip_address    String?
+  user_agent    String?
+
+  // Engagement
+  total_emails_sent     Int   @default(0)
+  total_emails_opened   Int   @default(0)
+  total_emails_clicked  Int   @default(0)
+  last_opened_at        DateTime? @db.Timestamptz()
+  last_clicked_at       DateTime? @db.Timestamptz()
+
+  // Welcome drip
+  drip_step         Int       @default(0) // 0=not started, 1=welcome sent, 2=day2, 3=day5
+  drip_completed    Boolean   @default(false)
+  drip_started_at   DateTime? @db.Timestamptz()
+
+  subscribed_at   DateTime  @default(now()) @db.Timestamptz()
+  unsubscribed_at DateTime? @db.Timestamptz()
+  created_at      DateTime  @default(now()) @db.Timestamptz()
+  updated_at      DateTime  @updatedAt      @db.Timestamptz()
+
+  @@index([email])
+  @@index([status])
+  @@index([notify_contact_id])
+  @@index([drip_step])
+  @@index([subscribed_at])
+  @@map("newsletter_subscribers")
+}
+
+// ─────────────────────────────────────────────
+// NEWSLETTER CAMPAIGNS
+// ─────────────────────────────────────────────
+
+model NewsletterCampaign {
+  id              String    @id @default(uuid())
+
+  // Identity
+  subject         String
+  preview_text    String?
+  type            String    @default("digest") // digest, breaking, drip, manual
+
+  // Content
+  html_content    String
+  text_content    String?
+
+  // Notify sync
+  notify_campaign_id  String? @unique
+  notify_sent_at      DateTime? @db.Timestamptz()
+
+  // Articles included (slugs)
+  article_ids     String[]  @default([]) // MediaPost IDs included in this campaign
+
+  // Status
+  status          String    @default("draft") // draft, scheduled, sent, failed
+  scheduled_at    DateTime? @db.Timestamptz()
+  sent_at         DateTime? @db.Timestamptz()
+
+  // Metrics
+  recipients      Int       @default(0)
+  opens           Int       @default(0)
+  clicks          Int       @default(0)
+  unsubscribes    Int       @default(0)
+  bounces         Int       @default(0)
+
+  // AI generation
+  ai_generated    Boolean   @default(false)
+  ai_prompt       String?
+
+  created_at      DateTime  @default(now()) @db.Timestamptz()
+  updated_at      DateTime  @updatedAt      @db.Timestamptz()
+
+  @@index([status])
+  @@index([type])
+  @@index([sent_at])
+  @@index([notify_campaign_id])
+  @@map("newsletter_campaigns")
+}
+
+// ─────────────────────────────────────────────
+// MEDIA ANALYTICS (per-article daily rollup)
+// ─────────────────────────────────────────────
+
+model MediaAnalytics {
+  id              String    @id @default(uuid())
+  mediaPostId     String
+  date            DateTime  @db.Date // daily rollup
+
+  // Traffic
+  views           Int       @default(0)
+  unique_views    Int       @default(0)
+  read_completions Int      @default(0)
+
+  // Source breakdown
+  views_direct    Int       @default(0)
+  views_search    Int       @default(0)
+  views_social    Int       @default(0)
+  views_newsletter Int      @default(0)
+  views_referral  Int       @default(0)
+
+  // Social shares per platform
+  shares_facebook  Int      @default(0)
+  shares_twitter   Int      @default(0)
+  shares_linkedin  Int      @default(0)
+  shares_whatsapp  Int      @default(0)
+  shares_other     Int      @default(0)
+
+  created_at      DateTime  @default(now()) @db.Timestamptz()
+  updated_at      DateTime  @updatedAt      @db.Timestamptz()
+
+  @@unique([mediaPostId, date])
+  @@index([mediaPostId])
+  @@index([date])
+  @@map("media_analytics")
 }

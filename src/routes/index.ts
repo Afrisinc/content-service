@@ -6,6 +6,7 @@ import { GeneratedPostsRoutes } from './n8nGeneratedPosts.routes';
 import { authRoutes } from './auth.routes';
 import { socialMediaRoutes } from './socialMedia.routes';
 import { userRoutes } from './user.routes';
+import { mediaPostRoutes } from './mediaPost.routes';
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get(
@@ -21,6 +22,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.register(authRoutes);
   app.register(userRoutes);
   app.register(socialMediaRoutes);
+  app.register(mediaPostRoutes);
   app.register(aiGenerationRoutes);
   app.register(ArticlesRoutes);
   app.register(GeneratedPostsRoutes);

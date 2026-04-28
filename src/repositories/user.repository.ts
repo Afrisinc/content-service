@@ -18,7 +18,7 @@ export class UserRepository {
             id: true,
             platform: true,
             pageId: true,
-            pageeName: true,
+            pageName: true,
             isActive: true,
             createdAt: true,
             updatedAt: true,
