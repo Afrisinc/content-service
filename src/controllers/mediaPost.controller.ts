@@ -36,6 +36,29 @@ export async function createMediaPost(req: FastifyRequest, reply: FastifyReply) 
 }
 
 /**
+ * POST /media-posts/n8n-ingest
+ * Create a new media post from n8n workflow (no auth required — internal automation)
+ * n8nArticleId is passed as a string and converted to BigInt
+ */
+export async function n8nIngestMediaPost(req: FastifyRequest, reply: FastifyReply) {
+  try {
+    const raw = req.body as CreateMediaPostPayload & { n8nArticleId?: string };
+
+    const payload: CreateMediaPostPayload = {
+      ...raw,
+      n8nArticleId: raw.n8nArticleId ? BigInt(raw.n8nArticleId) : undefined,
+      ai_generated: true,
+    };
+
+    const result = await service.createPost(payload);
+
+    return success(reply, 201, result.message, 1001, result.data);
+  } catch (err: any) {
+    return error(reply, 400, err.message || 'Error ingesting media post from n8n');
+  }
+}
+
+/**
  * GET /media-posts/:id
  * Get media post by ID
  */
