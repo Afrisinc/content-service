@@ -33,6 +33,7 @@ const ArrayResponseSchema = {
 };
 import {
   createMediaPost,
+  n8nIngestMediaPost,
   getMediaPostById,
   getMediaPostBySlug,
   getMediaPosts,
@@ -83,6 +84,23 @@ export async function mediaPostRoutes(app: FastifyInstance) {
       onRequest: [authGuard],
     },
     createMediaPost
+  );
+
+  // POST: Ingest a media post from n8n workflow (no auth — internal automation)
+  // Must be registered before /media-posts/:id to avoid route conflict
+  app.post(
+    '/media-posts/n8n-ingest',
+    {
+      schema: {
+        ...CreateMediaPostSchema,
+        description: 'Ingest a new AI-generated media post from n8n WF2 (no auth)',
+        tags: ['media-posts'],
+        response: {
+          201: SingleMediaPostResponseSchema,
+        },
+      },
+    },
+    n8nIngestMediaPost
   );
 
   // GET: Get all media posts with pagination and filters
