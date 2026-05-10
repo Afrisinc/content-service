@@ -47,8 +47,8 @@ jobs:
           docker push ghcr.io/${{ secrets.GHCR_OWNER }}/content-service:${{ steps.meta.outputs.short_sha }}
           docker push ghcr.io/${{ secrets.GHCR_OWNER }}/content-service:${{ steps.meta.outputs.production_tag }}
 
-      # Step 5: SSH deploy to VPS
-      - name: Deploy to VPS
+      # Step 5: SSH deploy to Server
+      - name: Deploy to Server
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.VPS_HOST }}

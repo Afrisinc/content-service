@@ -11,9 +11,13 @@ export class N8nArticleRepository {
   /**
    * Find all articles with search and pagination
    */
-  async findAll(search?: string, page: number = 1, limit: number = 10) {
+  async findAll(search?: string, page: number = 1, limit: number = 10, status?: string) {
     const offset = calculateOffset(page, limit);
     const where: Prisma.N8nArticleWhereInput = {};
+
+    if (status && status.trim()) {
+      where.status = status.trim();
+    }
 
     if (search && search.trim()) {
       where.OR = [
@@ -73,6 +77,34 @@ export class N8nArticleRepository {
   async findById(id: bigint) {
     return prisma.n8nArticle.findUnique({
       where: { id },
+    });
+  }
+
+  /**
+   * Find article by GUID (used for deduplication check)
+   */
+  async findByGuid(guid: string) {
+    return prisma.n8nArticle.findUnique({
+      where: { guid },
+    });
+  }
+
+  /**
+   * Create a new article (RSS ingestion)
+   */
+  async create(data: Prisma.N8nArticleCreateInput) {
+    return prisma.n8nArticle.create({
+      data,
+    });
+  }
+
+  /**
+   * Update an article (used by n8n WF2 to update status, image_url, processing_error)
+   */
+  async update(id: bigint, data: Prisma.N8nArticleUpdateInput) {
+    return prisma.n8nArticle.update({
+      where: { id },
+      data,
     });
   }
 
