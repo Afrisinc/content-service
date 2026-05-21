@@ -3,28 +3,46 @@
  * Registers Swagger and Swagger UI for API documentation
  */
 
-import { env } from '@/config/env';
 import { FastifyInstance } from 'fastify';
 
 export async function registerSwagger(app: FastifyInstance) {
-  // Register Swagger documentation
+  // Register Swagger documentation using OpenAPI 3.0 format
+  // This enables server switching dropdown in Swagger UI
   await app.register(import('@fastify/swagger'), {
-    swagger: {
+    openapi: {
+      openapi: '3.0.0',
       info: {
-        title: 'Backend Template API',
-        description: 'Node.js backend template with Fastify and Prisma',
+        title: 'Afrisinc Media Service API',
+        description:
+          'API for managing media posts, articles, N8N-generated content, and news content for the Afrisinc platform',
         version: '1.0.0',
       },
-      host: env.API_BASE_URL || 'localhost:8093',
-      schemes: ['http'],
-      consumes: ['application/json'],
-      produces: ['application/json'],
-      securityDefinitions: {
-        bearerAuth: {
-          type: 'apiKey',
-          name: 'Authorization',
-          in: 'header',
-          description: 'Bearer token for authentication. Format: Bearer <token>',
+      servers: [
+        {
+          url: 'http://localhost:8093',
+          description: 'Local Development',
+        },
+        {
+          url: 'https://mediaqa.api.afrisinc.com/',
+          description: 'Production',
+        },
+        {
+          url: 'https://mediastaging.api.afrisinc.com/',
+          description: 'Production',
+        },
+        {
+          url: 'https://media.api.afrisinc.com/',
+          description: 'Production',
+        },
+      ],
+      components: {
+        securitySchemes: {
+          bearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT',
+            description: 'Bearer token for authentication. Format: Bearer <token>',
+          },
         },
       },
       tags: [
