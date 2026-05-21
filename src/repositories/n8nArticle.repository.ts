@@ -43,29 +43,25 @@ export class N8nArticleRepository {
   /**
    * Find articles by category with pagination
    */
-  async findByCategory(category: string, page: number = 1, limit: number = 10) {
+  async findByCategory(category: string, page: number = 1, limit: number = 10, status: string = 'published') {
     const offset = calculateOffset(page, limit);
+
+    const where: Prisma.N8nArticleWhereInput = {
+      status,
+      category: {
+        equals: category,
+        mode: 'insensitive',
+      },
+    };
 
     const [articles, total] = await Promise.all([
       prisma.n8nArticle.findMany({
-        where: {
-          category: {
-            equals: category,
-            mode: 'insensitive',
-          },
-        },
+        where,
         orderBy: { created_at: 'desc' },
         skip: offset,
         take: limit,
       }),
-      prisma.n8nArticle.count({
-        where: {
-          category: {
-            equals: category,
-            mode: 'insensitive',
-          },
-        },
-      }),
+      prisma.n8nArticle.count({ where }),
     ]);
 
     return { articles, total };

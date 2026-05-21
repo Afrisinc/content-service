@@ -72,7 +72,7 @@ export async function createArticle(request: FastifyRequest, reply: FastifyReply
 
   const data: Prisma.N8nArticleCreateInput = {
     guid: body.guid.trim(),
-    source_url: body.source_url.trim(),
+    source_url: body.source_url.trim().replace(/&amp;/g, '&'),
     source_headline: body.source_headline?.trim() ?? null,
     source_summary: body.source_summary?.trim() ?? null,
     pub_date: body.pub_date ? new Date(body.pub_date) : null,
@@ -101,7 +101,7 @@ export async function getAllArticles(request: FastifyRequest, reply: FastifyRepl
   const query = request.query as { search?: string; status?: string; page?: string; limit?: string };
   const { page, limit } = parsePagination({ page: query.page, limit: query.limit }, 10, 100);
   const search = query.search?.trim();
-  const status = query.status?.trim();
+  const status = query.status?.trim() ?? 'published';
 
   logger.info(
     {
@@ -190,6 +190,10 @@ export async function updateArticle(request: FastifyRequest, reply: FastifyReply
     image_url?: string;
     processing_error?: string;
     is_featured?: boolean;
+    slug?: string;
+    ai_generated?: boolean;
+    tags?: string[];
+    read_time?: number;
   };
 
   if (!params.id) {
@@ -210,6 +214,10 @@ export async function updateArticle(request: FastifyRequest, reply: FastifyReply
   if (body.image_url !== undefined) data.image_url = body.image_url;
   if (body.processing_error !== undefined) data.processing_error = body.processing_error;
   if (body.is_featured !== undefined) data.is_featured = body.is_featured;
+  if (body.slug !== undefined) data.slug = body.slug;
+  if (body.ai_generated !== undefined) data.ai_generated = body.ai_generated;
+  if (body.tags !== undefined) data.tags = body.tags;
+  if (body.read_time !== undefined) data.read_time = body.read_time;
 
   logger.info(
     {

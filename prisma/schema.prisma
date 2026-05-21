@@ -237,6 +237,12 @@ model N8nArticle {
   processing_error String?
   is_featured      Boolean     @default(false)
 
+  // AI enhancement fields (populated by n8n WF2 when article is processed)
+  slug             String?     @unique
+  ai_generated     Boolean     @default(false)
+  tags             String[]    @default([])
+  read_time        Int         @default(1)
+
   // Relations
   mediaPosts       MediaPost[]
   generatedPosts   N8nGeneratedPost[]
@@ -246,6 +252,7 @@ model N8nArticle {
 
   @@index([guid])
   @@index([source_url])
+  @@index([slug])
   @@index([category])
   @@index([status])
   @@index([created_at])
