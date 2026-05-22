@@ -8,6 +8,7 @@ import {
   createArticle,
   getAllArticles,
   getArticleById,
+  getArticleBySlug,
   getArticlesByCategory,
   updateArticle,
 } from '@/controllers/n8nArticles.controller';
@@ -69,6 +70,9 @@ export async function ArticlesRoutes(fastify: FastifyInstance) {
     },
     getArticlesByCategory
   );
+
+  // Get article by slug — must be registered BEFORE /articles/:id
+  fastify.get<{ Params: { slug: string } }>('/articles/slug/:slug', {}, getArticleBySlug);
 
   // Get article by ID
   fastify.get<{ Params: { id: string } }>(
