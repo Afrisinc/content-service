@@ -164,16 +164,32 @@ export async function getArticleById(request: FastifyRequest, reply: FastifyRepl
 
   const id = BigInt(params.id);
 
-  logger.info(
-    {
-      id: id.toString(),
-    },
-    'Fetching article by ID'
-  );
+  logger.info({ id: id.toString() }, 'Fetching article by ID');
 
   const article = await n8nArticleRepository.findById(id);
   if (!article) {
     throw createError.notFound(`Article with ID ${id} not found`);
+  }
+
+  return ApiResponseHelper.success(reply, 'Article fetched successfully', article, ResponseCode.SUCCESS, 200);
+}
+
+/**
+ * Get article by slug
+ * GET /articles/slug/:slug
+ */
+export async function getArticleBySlug(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const params = request.params as { slug: string };
+
+  if (!params.slug) {
+    throw createError.badRequest('Article slug is required');
+  }
+
+  logger.info({ slug: params.slug }, 'Fetching article by slug');
+
+  const article = await n8nArticleRepository.findBySlug(params.slug);
+  if (!article) {
+    throw createError.notFound(`Article with slug "${params.slug}" not found`);
   }
 
   return ApiResponseHelper.success(reply, 'Article fetched successfully', article, ResponseCode.SUCCESS, 200);

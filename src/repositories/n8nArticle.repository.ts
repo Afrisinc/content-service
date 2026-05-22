@@ -77,6 +77,15 @@ export class N8nArticleRepository {
   }
 
   /**
+   * Find article by slug
+   */
+  async findBySlug(slug: string) {
+    return prisma.n8nArticle.findFirst({
+      where: { slug },
+    });
+  }
+
+  /**
    * Find article by GUID (used for deduplication check)
    */
   async findByGuid(guid: string) {
