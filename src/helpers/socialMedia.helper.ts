@@ -9,59 +9,71 @@ import {
   SocialMediaPostPayload,
   SocialMediaPostResult,
 } from '@/types/socialMedia.types';
-import axios, { AxiosInstance } from 'axios';
 import { logger } from '@/utils/logger';
 
 class SocialMediaHelper {
-  private httpClient: AxiosInstance;
   private readonly FACEBOOK_API_VERSION = 'v24.0';
   private readonly FACEBOOK_GRAPH_API_URL = 'https://graph.facebook.com';
 
-  constructor() {
-    this.httpClient = axios.create({
-      timeout: 30000,
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-    });
-  }
-
   /**
    * Transform generic social media payload to platform-specific payload
+   * Note: When posting to external URLs (with link field), Facebook API restrictions prevent
+   * setting picture, name, and description metadata. This method automatically excludes
+   * these fields to prevent API errors (#100).
    */
   transformPayload(payload: SocialMediaPostPayload): FacebookPostPayload {
     const facebookPayload: FacebookPostPayload = {
       access_token: payload.accessToken,
-      message: payload.content.message,
-      link: payload.content.link,
-      description: payload.content.description,
-      picture: payload.content.picture,
-      name: payload.content.name,
-      caption: payload.content.caption,
     };
 
-    // Add tags if present
-    if (payload.content.tags && payload.content.tags.length > 0) {
-      facebookPayload.story = payload.content.tags.join(' ');
+    // Check if posting to external URL - Facebook has restrictions on metadata fields
+    const isExternalUrlPost = !!payload.content.link;
+
+    // Add content fields - only valid Facebook fields
+    if (payload.content.message) {
+      facebookPayload.message = payload.content.message;
+    }
+    if (payload.content.link) {
+      facebookPayload.link = payload.content.link;
     }
 
-    // Add media information
-    if (payload.media) {
-      if (payload.media.type === 'image' && payload.media.url) {
-        facebookPayload.picture = payload.media.url;
-      } else if (payload.media.type === 'video' && payload.media.url) {
-        facebookPayload.source = payload.media.url;
+    // Only add metadata fields if NOT posting to external URL (Facebook restriction #100)
+    if (!isExternalUrlPost) {
+      if (payload.content.description) {
+        facebookPayload.description = payload.content.description;
+      }
+      if (payload.content.name) {
+        facebookPayload.name = payload.content.name;
+      }
+
+      // Handle picture - prefer media.url if provided for images, otherwise use content.picture
+      let pictureUrl = payload.content.picture;
+      if (payload.media?.type === 'image' && payload.media?.url) {
+        pictureUrl = payload.media.url;
+      }
+      if (pictureUrl) {
+        facebookPayload.picture = pictureUrl;
       }
     }
 
-    // Add scheduling
-    if (payload.scheduling?.scheduled_publish_time) {
-      facebookPayload.scheduled_publish_time = payload.scheduling.scheduled_publish_time;
+    // Handle video - use media.url for videos (not affected by external URL restriction)
+    if (payload.media?.type === 'video' && payload.media?.url) {
+      facebookPayload.source = payload.media.url;
     }
 
-    // Add targeting if present
-    if (payload.targeting) {
-      facebookPayload.targeting = payload.targeting;
+    // Add tags to message if present (Facebook doesn't have separate tags field for feed posts)
+    if (payload.content.tags && payload.content.tags.length > 0) {
+      const tagString = payload.content.tags.map(tag => `#${tag}`).join(' ');
+      if (facebookPayload.message) {
+        facebookPayload.message = `${facebookPayload.message}\n\n${tagString}`;
+      } else {
+        facebookPayload.message = tagString;
+      }
+    }
+
+    // Handle scheduling - only add if scheduled_publish_time is provided
+    if (payload.scheduling?.scheduled_publish_time) {
+      facebookPayload.scheduled_publish_time = payload.scheduling.scheduled_publish_time;
     }
 
     return facebookPayload;
@@ -76,17 +88,30 @@ class SocialMediaHelper {
 
   /**
    * Convert payload to URL-encoded form data
+   * Only includes scalar values (strings, numbers, booleans)
+   * Objects and arrays are excluded as Facebook doesn't accept them in form data
    */
   payloadToFormData(payload: any): string {
     const params = new URLSearchParams();
 
     for (const [key, value] of Object.entries(payload)) {
-      if (value !== undefined && value !== null) {
-        if (typeof value === 'object') {
-          params.append(key, JSON.stringify(value));
-        } else {
+      // Skip undefined, null, empty arrays, and objects
+      if (value !== undefined && value !== null && value !== '') {
+        // Only add scalar values - skip objects and arrays
+        if (typeof value !== 'object') {
           params.append(key, String(value));
         }
+        // If it's an array, add each element individually (for multi-value params)
+        else if (Array.isArray(value) && value.length > 0) {
+          value.forEach(item => {
+            if (typeof item === 'object') {
+              params.append(key + '[]', JSON.stringify(item));
+            } else {
+              params.append(key + '[]', String(item));
+            }
+          });
+        }
+        // Skip plain objects - Facebook doesn't accept them in feed posts
       }
     }
 

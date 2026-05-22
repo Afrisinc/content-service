@@ -172,7 +172,23 @@ export class SocialMediaService {
     const responseData = (await response.json()) as any;
 
     if (!response.ok) {
-      throw new Error(responseData.error?.message || `Facebook API error: ${response.status}`);
+      const errorMessage = responseData.error?.message || `Facebook API error: ${response.status}`;
+      const errorCode = responseData.error?.code || '';
+      let errorDetails = errorMessage;
+      if (errorCode) {
+        errorDetails = `${errorMessage} (Code: ${errorCode})`;
+      }
+
+      logger.error(
+        {
+          status: response.status,
+          error: responseData.error,
+          pageId: payload.pageId,
+        },
+        `Facebook API request failed: ${errorDetails}`
+      );
+
+      throw new Error(errorDetails);
     }
 
     // Parse response
