@@ -182,15 +182,16 @@ export async function getArticleById(request: FastifyRequest, reply: FastifyRepl
 export async function getArticleBySlug(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const params = request.params as { slug: string };
 
-  if (!params.slug) {
+  if (!params.slug || !params.slug.trim()) {
     throw createError.badRequest('Article slug is required');
   }
 
-  logger.info({ slug: params.slug }, 'Fetching article by slug');
+  const slug = params.slug.trim();
+  logger.info({ slug }, 'Fetching article by slug');
 
-  const article = await n8nArticleRepository.findBySlug(params.slug);
+  const article = await n8nArticleRepository.findBySlug(slug);
   if (!article) {
-    throw createError.notFound(`Article with slug "${params.slug}" not found`);
+    throw createError.notFound(`Article with slug "${slug}" not found`);
   }
 
   return ApiResponseHelper.success(reply, 'Article fetched successfully', article, ResponseCode.SUCCESS, 200);

@@ -77,11 +77,20 @@ export class N8nArticleRepository {
   }
 
   /**
-   * Find article by slug
+   * Find article by slug (case-insensitive)
    */
   async findBySlug(slug: string) {
+    if (!slug || !slug.trim()) {
+      return null;
+    }
+
     return prisma.n8nArticle.findFirst({
-      where: { slug },
+      where: {
+        slug: {
+          equals: slug.trim(),
+          mode: 'insensitive',
+        },
+      },
     });
   }
 
