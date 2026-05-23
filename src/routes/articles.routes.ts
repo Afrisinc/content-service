@@ -18,6 +18,7 @@ import {
   CreateArticleSchema,
   GetAllArticlesSchema,
   GetArticleByIdSchema,
+  GetArticleBySlugSchema,
   GetArticlesByCategorySchema,
   UpdateArticleSchema,
   GetTopArticlesSchema,
@@ -91,7 +92,13 @@ export async function ArticlesRoutes(fastify: FastifyInstance) {
   );
 
   // Get article by slug — must be registered BEFORE /articles/:id
-  fastify.get<{ Params: { slug: string } }>('/articles/slug/:slug', {}, getArticleBySlug);
+  fastify.get<{ Params: { slug: string } }>(
+    '/articles/slug/:slug',
+    {
+      schema: GetArticleBySlugSchema,
+    },
+    getArticleBySlug
+  );
 
   // Get article by ID
   fastify.get<{ Params: { id: string } }>(

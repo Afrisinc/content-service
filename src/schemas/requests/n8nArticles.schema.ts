@@ -374,6 +374,63 @@ export const UpdateArticleSchema = {
   },
 };
 
+export const GetArticleBySlugSchema = {
+  description: 'Get a single N8N article by slug (URL-safe identifier)',
+  tags: ['articles'],
+  params: {
+    type: 'object',
+    required: ['slug'],
+    properties: {
+      slug: {
+        type: 'string',
+        description: 'Article slug (URL-safe identifier, case-insensitive)',
+      },
+    },
+  },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        resp_msg: { type: 'string' },
+        resp_code: { type: 'integer' },
+        data: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            id: { type: 'string' },
+            guid: { type: 'string' },
+            source_url: { type: 'string' },
+            source_headline: { type: 'string' },
+            source_summary: { type: 'string' },
+            image_url: { type: 'string' },
+            pub_date: { type: 'string' },
+            category: { type: 'string' },
+            creator: { type: 'string' },
+            status: { type: 'string' },
+            is_featured: { type: 'boolean' },
+            slug: { type: 'string' },
+            ai_generated: { type: 'boolean' },
+            tags: { type: 'array', items: { type: 'string' } },
+            read_time: { type: 'integer' },
+            created_at: { type: 'string' },
+            updated_at: { type: 'string' },
+          },
+          description: 'Article object with all fields including AI enhancement fields',
+        },
+      },
+    },
+    404: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        resp_msg: { type: 'string' },
+        resp_code: { type: 'integer' },
+      },
+    },
+  },
+};
+
 export const GetArticleByIdSchema = {
   description: 'Get a single N8N article by ID',
   tags: ['articles'],
