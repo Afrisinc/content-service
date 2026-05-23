@@ -11,6 +11,7 @@ import {
   getArticleBySlug,
   getArticlesByCategory,
   updateArticle,
+  getTopArticles,
 } from '@/controllers/n8nArticles.controller';
 import {
   CheckGuidSchema,
@@ -19,6 +20,7 @@ import {
   GetArticleByIdSchema,
   GetArticlesByCategorySchema,
   UpdateArticleSchema,
+  GetTopArticlesSchema,
 } from '@/schemas/requests/n8nArticles.schema';
 import { FastifyInstance } from 'fastify';
 
@@ -51,6 +53,23 @@ export async function ArticlesRoutes(fastify: FastifyInstance) {
       schema: CreateArticleSchema,
     },
     createArticle
+  );
+
+  // Get top articles sorted by engagement metrics
+  fastify.get<{
+    Querystring: {
+      status?: string;
+      sortBy?: string;
+      sortOrder?: string;
+      limit?: string;
+      publishedAfter?: string;
+    };
+  }>(
+    '/articles/top',
+    {
+      schema: GetTopArticlesSchema,
+    },
+    getTopArticles
   );
 
   // Get all articles with search and pagination

@@ -5,6 +5,7 @@
 
 import { createError } from '@/middlewares/errorHandler';
 import { n8nArticleRepository } from '@/repositories/n8nArticle.repository';
+import { mediaPostRepository } from '@/repositories/mediaPost.repository';
 import { ApiResponseHelper, ResponseCode } from '@/utils/apiResponse';
 import { logger } from '@/utils/logger';
 import { buildPaginatedResponse, parsePagination } from '@/utils/pagination';
@@ -246,4 +247,47 @@ export async function updateArticle(request: FastifyRequest, reply: FastifyReply
   const article = await n8nArticleRepository.update(id, data);
 
   return ApiResponseHelper.success(reply, 'Article updated successfully', article, ResponseCode.SUCCESS, 200);
+}
+
+/**
+ * Get top articles sorted by engagement metrics
+ * Supports filtering by status, sorting by views/shares/reads, and time range
+ * Query params: status, sortBy, sortOrder, limit, publishedAfter
+ */
+export async function getTopArticles(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const query = request.query as {
+    status?: string;
+    sortBy?: string;
+    sortOrder?: string;
+    limit?: string;
+    publishedAfter?: string;
+  };
+
+  // Defaults
+  const status = query.status?.trim() || 'PUBLISHED';
+  const sortBy = query.sortBy?.trim() || 'views';
+  const sortOrder = (query.sortOrder?.trim() || 'desc').toLowerCase() as 'asc' | 'desc';
+  const limit = Math.min(parseInt(query.limit || '20'), 100); // Max 100
+  const publishedAfter = query.publishedAfter?.trim();
+
+  logger.info(
+    {
+      status,
+      sortBy,
+      sortOrder,
+      limit,
+      publishedAfter,
+    },
+    'Fetching top articles'
+  );
+
+  const articles = await mediaPostRepository.getTopArticles({
+    status,
+    sortBy,
+    sortOrder,
+    limit,
+    publishedAfter,
+  });
+
+  return ApiResponseHelper.success(reply, 'Top articles fetched successfully', articles, ResponseCode.SUCCESS, 200);
 }

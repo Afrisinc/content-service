@@ -423,3 +423,90 @@ export const GetArticleByIdSchema = {
     },
   },
 };
+
+export const GetTopArticlesSchema = {
+  description: 'Get top published articles sorted by engagement metrics (views, shares, reads)',
+  tags: ['articles'],
+  querystring: {
+    type: 'object',
+    properties: {
+      status: {
+        type: 'string',
+        enum: ['DRAFT', 'SCHEDULED', 'PUBLISHED', 'ARCHIVED'],
+        default: 'PUBLISHED',
+        description: 'Article publication status to filter by',
+      },
+      sortBy: {
+        type: 'string',
+        enum: ['views', 'shares', 'reads', 'published', 'trending', 'latest'],
+        default: 'views',
+        description: 'Field to sort by (trending and latest are aliases)',
+      },
+      sortOrder: {
+        type: 'string',
+        enum: ['asc', 'desc'],
+        default: 'desc',
+        description: 'Sort order (ascending or descending)',
+      },
+      limit: {
+        type: ['integer', 'string'],
+        minimum: 1,
+        maximum: 100,
+        default: 20,
+        description: 'Maximum number of articles to return (capped at 100)',
+      },
+      publishedAfter: {
+        type: 'string',
+        enum: ['24h', '7d', '30d', 'week', 'month'],
+        description: 'Filter articles published within the specified time range (optional)',
+      },
+    },
+  },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        resp_msg: { type: 'string' },
+        resp_code: { type: 'integer' },
+        data: {
+          type: 'array',
+          description: 'Array of top articles sorted by engagement metrics',
+          items: {
+            type: 'object',
+            additionalProperties: true,
+            properties: {
+              id: { type: 'string' },
+              title: { type: 'string' },
+              slug: { type: 'string' },
+              excerpt: { type: 'string' },
+              cover_image: { type: 'string' },
+              cover_alt: { type: 'string' },
+              category: { type: 'string' },
+              topic: { type: 'string' },
+              tags: { type: 'array', items: { type: 'string' } },
+              published_at: { type: 'string' },
+              read_time: { type: 'integer' },
+              views: { type: 'integer' },
+              shares: { type: 'integer' },
+              read_completions: { type: 'integer' },
+              unique_views: { type: 'integer' },
+              is_featured: { type: 'boolean' },
+              is_breaking: { type: 'boolean' },
+              ai_generated: { type: 'boolean' },
+              source_name: { type: 'string' },
+              source_url: { type: 'string' },
+              author: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  name: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+};

@@ -541,4 +541,107 @@ export class MediaPostRepository {
     }
     return true;
   }
+
+  /**
+   * Get top articles sorted by engagement metrics
+   * Supports filtering by status, sorting by views/shares/reads, and time range
+   */
+  async getTopArticles(params: {
+    status?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+    limit?: number;
+    publishedAfter?: string;
+  }) {
+    const { status = 'PUBLISHED', sortBy = 'views', sortOrder = 'desc', limit = 20, publishedAfter } = params;
+
+    const where: Prisma.MediaPostWhereInput = {
+      status: status as any,
+    };
+
+    // Handle publishedAfter time range (e.g., "24h", "7d", "30d")
+    if (publishedAfter) {
+      const now = new Date();
+      let publishedSince = new Date();
+
+      if (publishedAfter === '24h') {
+        publishedSince = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      } else if (publishedAfter === '7d') {
+        publishedSince = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else if (publishedAfter === '30d') {
+        publishedSince = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      } else if (publishedAfter === 'week') {
+        publishedSince = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else if (publishedAfter === 'month') {
+        publishedSince = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      }
+
+      where.published_at = { gte: publishedSince };
+    }
+
+    // Map sortBy to valid MediaPost fields
+    const sortByField = this.mapSortByField(sortBy);
+
+    const orderBy: Prisma.MediaPostOrderByWithRelationInput = {
+      [sortByField]: sortOrder,
+    };
+
+    const posts = await this.prisma.mediaPost.findMany({
+      where,
+      take: Math.min(limit || 20, 100), // Max 100
+      orderBy,
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        excerpt: true,
+        cover_image: true,
+        cover_alt: true,
+        category: true,
+        topic: true,
+        tags: true,
+        published_at: true,
+        read_time: true,
+        views: true,
+        shares: true,
+        read_completions: true,
+        unique_views: true,
+        is_featured: true,
+        is_breaking: true,
+        ai_generated: true,
+        source_name: true,
+        source_url: true,
+        author: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    return posts;
+  }
+
+  /**
+   * Map sortBy parameter to valid MediaPost field names
+   */
+  private mapSortByField(sortBy?: string): string {
+    const fieldMap: { [key: string]: string } = {
+      views: 'views',
+      shares: 'shares',
+      reads: 'read_completions',
+      read_completions: 'read_completions',
+      published: 'published_at',
+      published_at: 'published_at',
+      latest: 'published_at',
+      trending: 'views',
+      engagement: 'shares',
+      comments: 'shares', // Fallback to shares if comments not available
+    };
+
+    return fieldMap[sortBy?.toLowerCase() || 'views'] || 'views';
+  }
 }
+
+export const mediaPostRepository = new MediaPostRepository();
