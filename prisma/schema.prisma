@@ -224,7 +224,7 @@ model SocialMediaAnalytics {
 model N8nArticle {
   id               BigInt      @id @default(autoincrement())
   guid             String      @unique
-  source_url       String      @unique
+  source_url       String
   source_headline  String?
   source_summary   String?
   image_url        String?
