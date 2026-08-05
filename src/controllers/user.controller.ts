@@ -15,7 +15,7 @@ export async function getUser(req: FastifyRequest, reply: FastifyReply) {
 
 export async function getUserProfile(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.userId;
     if (!userId) {
       return error(reply, 401, 'Unauthorized');
     }
@@ -37,7 +37,7 @@ export async function updateUser(req: FastifyRequest, reply: FastifyReply) {
 
 export async function updateUserProfile(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.userId;
     if (!userId) {
       return error(reply, 401, 'Unauthorized');
     }

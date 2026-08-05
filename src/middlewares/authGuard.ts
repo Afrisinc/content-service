@@ -1,10 +1,14 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import jwt from 'jsonwebtoken';
 import { logger } from '@/utils/logger.js';
+import { UserRepository } from '@/repositories/user.repository';
 
 interface JwtPayload {
-  userId: string;
+  sub?: string;
+  userId?: string;
   email: string;
+  name?: string;
+  role?: string;
   iat: number;
   exp: number;
 }
@@ -17,6 +21,24 @@ declare module 'fastify' {
     };
   }
 }
+
+const userRepository = new UserRepository();
+const provisionedUsers = new Set<string>();
+
+const ensureLocalUser = async (userId: string, email: string, name?: string) => {
+  if (!userId || !email || provisionedUsers.has(userId)) {
+    return;
+  }
+
+  const user = await userRepository.ensureUser(userId, email, name);
+
+  if (user.name) {
+    if (provisionedUsers.size >= 10000) {
+      provisionedUsers.clear();
+    }
+    provisionedUsers.add(userId);
+  }
+};
 
 export const authGuard = async (request: FastifyRequest, reply: FastifyReply) => {
   try {
@@ -64,15 +86,16 @@ export const authGuard = async (request: FastifyRequest, reply: FastifyReply) =>
 
     const decoded = jwt.verify(token, jwtSecret) as JwtPayload;
 
-    // Attach user info to request object
     request.user = {
-      userId: decoded.userId,
+      userId: decoded.sub || decoded.userId || '',
       email: decoded.email,
     };
 
+    await ensureLocalUser(request.user.userId, decoded.email, decoded.name);
+
     logger.debug(
       {
-        userId: decoded.userId,
+        userId: request.user.userId,
         email: decoded.email,
         path: request.url,
       },
