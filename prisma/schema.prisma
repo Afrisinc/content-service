@@ -41,6 +41,11 @@ enum PostStatus {
   deleted
 }
 
+enum TokenType {
+  SHORT_LIVED
+  LONG_LIVED
+}
+
 // ─────────────────────────────────────────────
 // USER
 // ─────────────────────────────────────────────
@@ -56,9 +61,10 @@ model User {
   lastLoginAt    DateTime?
 
   // Relations
-  socialPosts    SocialMediaPost[]
-  socialAccounts SocialMediaAccount[]
-  mediaPosts     MediaPost[]
+  socialPosts        SocialMediaPost[]
+  socialAccounts     SocialMediaAccount[]
+  socialIntegrations SocialMediaIntegration[]
+  mediaPosts         MediaPost[]
 
   createdAt      DateTime             @default(now()) @db.Timestamptz()
   updatedAt      DateTime             @updatedAt      @db.Timestamptz()
@@ -77,13 +83,23 @@ model SocialMediaAccount {
   userId        String
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  platform      String    // facebook, instagram, twitter, linkedin, tiktok
+  platform      String    // website, facebook, instagram, tiktok, youtube, linkedin, x
   pageId        String
   pageName      String?
   pageAvatar    String?
-  accessToken   String
+  meta          String?
+
+  // Token management — supports short-lived and long-lived tokens
+  accessToken   String?   // Currently active token
+  shortLivedToken    String?
+  shortLivedExpiresAt DateTime?
+  longLivedToken     String?
+  longLivedExpiresAt DateTime?
+  tokenType     TokenType @default(LONG_LIVED)
   refreshToken  String?
-  expiresAt     DateTime?
+  tokenExpiresAt DateTime? // Deprecated: use specific *ExpiresAt fields
+
+  oauthState    String?   // Temporary state for OAuth callback validation
   isActive      Boolean   @default(true)
   scopes        String[]  @default([]) // granted OAuth scopes
 
@@ -94,6 +110,29 @@ model SocialMediaAccount {
   @@index([userId])
   @@index([platform])
   @@map("social_media_accounts")
+}
+
+// ─────────────────────────────────────────────
+// SOCIAL MEDIA INTEGRATIONS (app-level credentials per platform)
+// ─────────────────────────────────────────────
+
+model SocialMediaIntegration {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  platform     String    // website, facebook, instagram, tiktok, youtube, linkedin, x
+  appId        String
+  appSecretEnc String
+  callbackUrl  String?   // OAuth callback/redirect URI (environment-specific)
+  syncedAt     DateTime?
+
+  createdAt    DateTime  @default(now()) @db.Timestamptz()
+  updatedAt    DateTime  @updatedAt      @db.Timestamptz()
+
+  @@unique([userId, platform])
+  @@index([userId])
+  @@map("social_media_integrations")
 }
 
 // ─────────────────────────────────────────────

@@ -62,6 +62,13 @@ export class DatabaseError extends AppError {
   }
 }
 
+export class RateLimitError extends AppError {
+  constructor(message: string = 'Too many requests') {
+    super(message, 429, true, 'RATE_LIMIT_ERROR');
+    this.name = 'RateLimitError';
+  }
+}
+
 // Error response interface
 interface ErrorResponse {
   error: string;
@@ -91,6 +98,7 @@ const sanitizeError = (error: any, statusCode: number) => {
     };
   }
 
+  // In development, always show the full error message
   return {
     message: error.message || 'An error occurred',
     details: error.details || undefined,
@@ -217,15 +225,13 @@ export const errorHandler = (error: FastifyError | AppError | Error, request: Fa
     );
   }
 
-  // Create error response
-  const errorResponse: ErrorResponse = {
-    error: getErrorName(statusCode),
-    message: sanitized.message,
-    statusCode,
-    timestamp: new Date().toISOString(),
-    path: request.url,
-    ...(errorCode && { code: errorCode }),
-    ...(sanitized.details && { details: sanitized.details }),
+  // Create error response using ApiResponseHelper format
+  const respCode = statusCode >= 400 && statusCode < 500 ? 2000 + (statusCode - 400) : statusCode >= 500 ? 5000 : 1000;
+
+  const errorResponse = {
+    success: false,
+    resp_msg: sanitized.message,
+    resp_code: respCode,
   };
 
   // Send error response
@@ -269,6 +275,7 @@ export const createError = {
   forbidden: (message?: string) => new AuthorizationError(message),
   notFound: (message?: string) => new NotFoundError(message),
   conflict: (message?: string) => new ConflictError(message),
+  tooManyRequests: (message?: string) => new RateLimitError(message),
   internal: (message?: string) => new AppError(message || 'Internal Server Error', 500),
   database: (message?: string) => new DatabaseError(message),
 };

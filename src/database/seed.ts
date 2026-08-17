@@ -75,7 +75,7 @@ async function main() {
         pageName: 'Alice Business Page',
         accessToken: 'EAAB2N7ZBX1sBAHgT9N2ZCN5lXzqZCZBmZAbQhCrO5Eo5T2ZA',
         refreshToken: 'EAAB2N7ZBX1sBAHgT9N2ZCN5lXzqZCZBmZAbQhCrO5Eo5T2ZA_refresh',
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        tokenExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         isActive: true,
       },
     });
