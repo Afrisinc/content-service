@@ -1,17 +1,4 @@
-/**
- * Meta Client
- * Handles Facebook Graph API and Instagram Graph API calls.
- *
- * Media is published through the endpoints that actually render it:
- *   - photos  -> POST /{page-id}/photos
- *   - videos  -> POST /{page-id}/videos
- *   - text    -> POST /{page-id}/feed
- * Multi-photo posts upload unpublished photos first, then reference their ids
- * through `attached_media` on /feed.
- *
- * Instagram publishes in two steps: create a media container, poll it until it
- * reports FINISHED, then publish it via /media_publish.
- */
+/** Instagram publishes in two steps: create a container, poll it, then publish. */
 
 import axios, { AxiosInstance } from 'axios';
 import { logger } from '@/utils/logger';

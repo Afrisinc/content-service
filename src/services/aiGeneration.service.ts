@@ -3,9 +3,10 @@
  * Handles AI content generation and scheduling
  */
 
-import { SocialMediaPlatform, SocialMediaPostPayload } from '@/types/socialMedia.types';
+import { SocialMediaPlatform } from '@/types/socialMedia.types';
 import { GeneratePostRequest, GeneratePostResponse } from '@/types/aiGeneration.types';
 import { openaiHelper } from '@/helpers/openai.helper';
+import { buildSocialMediaPayloadFromPost } from '@/helpers/socialMediaPayload.helper';
 import { socialMediaPostRepository } from '@/repositories/socialMediaPost.repository';
 import { socialMediaService } from './socialMedia.service';
 import { logger } from '@/utils/logger';
@@ -250,11 +251,9 @@ class AIGenerationService {
         try {
           let accessToken = '';
 
-          // Priority 1: Use token stored directly in post (encrypted)
           if (post.accessTokenEnc) {
             accessToken = decryptToken(post.accessTokenEnc);
           } else {
-            // Priority 2: Get from user's social media accounts
             const accounts = await socialMediaPostRepository.getUserAccounts(post.userId);
             const account = accounts?.find(acc => acc.platform === post.platform);
 
@@ -266,32 +265,8 @@ class AIGenerationService {
             accessToken = decryptToken(account.accessToken);
           }
 
-          // Create payload from post data
-          const payload: SocialMediaPostPayload = {
-            platform: post.platform as SocialMediaPlatform,
-            pageId: post.pageId,
-            content: {
-              message: post.message || '',
-              link: post.link || undefined,
-              description: post.description || undefined,
-              picture: post.picture || undefined,
-              name: post.name || undefined,
-              caption: post.caption || undefined,
-              tags: post.tags,
-            },
-            media: post.mediaType
-              ? {
-                  type: post.mediaType as 'image' | 'video' | 'carousel',
-                  url: post.mediaUrls?.[0],
-                  urls: post.mediaUrls,
-                  alt_text: post.altText || undefined,
-                }
-              : undefined,
-            accessToken,
-            metadata: post.metadata ? JSON.parse(post.metadata) : undefined,
-          };
+          const payload = buildSocialMediaPayloadFromPost(post, accessToken);
 
-          // Post to platform
           const result = await socialMediaService.postToSocialMedia(payload, post.userId);
 
           if (result.status === 'success' || result.status === 'pending') {

@@ -9,6 +9,7 @@ import {
   SocialMediaPostResult,
 } from '@/types/socialMedia.types';
 import { socialMediaHelper } from '@/helpers/socialMedia.helper';
+import { buildSocialMediaPayloadFromPost } from '@/helpers/socialMediaPayload.helper';
 import { socialMediaPostRepository } from '@/repositories/socialMediaPost.repository';
 import { socialMediaAccountRepository } from '@/repositories/socialMediaAccount.repository';
 import { decryptToken, encryptToken } from '@/utils/oauthToken';
@@ -298,15 +299,10 @@ export class SocialMediaService {
   }
 
   /**
-   * Upload a photo, falling back to a raw byte upload if Meta cannot fetch the
-   * URL itself.
-   *
-   * Handing Meta a URL is the fast path — it downloads the file directly rather
-   * than streaming it through this service. But that only works when the host is
-   * reachable from Meta's network, which a private or staging asset host is not,
-   * and the failure is indistinguishable from a bad image until it comes back.
-   * Facebook accepts a multipart file attachment as an alternative, so retry that
-   * way rather than losing the post.
+   * A URL only works when the host is reachable from Meta's network, which a
+   * private or staging asset host is not, and the failure is indistinguishable
+   * from a bad image until it comes back. Retry as a multipart upload rather
+   * than losing the post.
    */
   private async uploadPhotoResiliently(
     pageId: string,
@@ -778,7 +774,6 @@ export class SocialMediaService {
    * Publish a scheduled post immediately (with retry support)
    */
   async publishScheduledPostNow(postId: string, userId: string): Promise<SocialMediaPostResult> {
-    // Get post from database
     const post = await socialMediaPostRepository.getPostById(postId);
 
     if (!post) {
@@ -800,7 +795,6 @@ export class SocialMediaService {
       };
     }
 
-    // If already published, return success
     if (post.status === 'published' && post.postId) {
       return {
         platform: post.platform as SocialMediaPlatform,
@@ -812,7 +806,6 @@ export class SocialMediaService {
     }
 
     try {
-      // Get access token with retry fallback
       let accessToken = '';
       if (post.accessTokenEnc) {
         try {
@@ -845,32 +838,8 @@ export class SocialMediaService {
         accessToken = decryptToken(account.accessToken);
       }
 
-      // Create payload
-      const payload: SocialMediaPostPayload = {
-        platform: post.platform as SocialMediaPlatform,
-        pageId: post.pageId,
-        content: {
-          message: post.message || '',
-          link: post.link || undefined,
-          description: post.description || undefined,
-          picture: post.picture || undefined,
-          name: post.name || undefined,
-          caption: post.caption || undefined,
-          tags: post.tags,
-        },
-        media: post.mediaType
-          ? {
-              type: post.mediaType as 'image' | 'video' | 'carousel',
-              url: post.mediaUrls?.[0],
-              urls: post.mediaUrls,
-              alt_text: post.altText || undefined,
-            }
-          : undefined,
-        accessToken,
-        metadata: post.metadata ? JSON.parse(post.metadata) : undefined,
-      };
+      const payload = buildSocialMediaPayloadFromPost(post, accessToken);
 
-      // Post to platform
       let apiResponse: SocialMediaPostResult;
       try {
         if (post.platform === SocialMediaPlatform.FACEBOOK) {
@@ -896,7 +865,6 @@ export class SocialMediaService {
         };
       }
 
-      // Update database
       await socialMediaPostRepository.updatePostAfterPublish(postId, {
         platformPostId: apiResponse.postId || '',
         postUrl: apiResponse.metadata?.permalink_url,

@@ -3,7 +3,7 @@ name: Deploy Media Service Production
 on:
   push:
     branches:
-      - main  # deploy on pushes to main
+      - main # deploy on pushes to main
 
 jobs:
   deploy:
@@ -11,7 +11,6 @@ jobs:
     env:
       DEPLOY_GHCR_USERNAME: ${{ secrets.DEPLOY_GHCR_USERNAME }}
       DEPLOY_GHCR_TOKEN: ${{ secrets.DEPLOY_GHCR_TOKEN }}
-
 
     steps:
       # Step 1: Checkout code
@@ -31,8 +30,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ secrets.GHCR_OWNER }}  # org name, e.g., afrisinc
-          password: ${{ secrets.GHCR_TOKEN }}  # your PAT
+          username: ${{ secrets.GHCR_OWNER }} # org name, e.g., afrisinc
+          password: ${{ secrets.GHCR_TOKEN }} # your PAT
 
       # Step 4: Build Docker image
       - name: Build Docker image
@@ -67,7 +66,6 @@ jobs:
 
             echo "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u "$DEPLOY_GHCR_USERNAME" --password-stdin
 
-            docker compose -p media-production --env-file .env.production -f docker-compose.yml pull
-            docker compose -p media-production --env-file .env.production -f docker-compose.yml up -d
+            docker compose pull
+            docker compose up -d
             docker image prune -af
-            docker compose -p media-production --env-file .env.production -f docker-compose.yml ps

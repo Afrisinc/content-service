@@ -12,6 +12,7 @@ import {
   encryptToken,
   calculateExpiresAt,
   fetchFacebookPages,
+  fetchInstagramBusinessAccount,
   type FacebookPage,
 } from '@/utils/oauthToken';
 import { logger } from '@/utils/logger';
@@ -158,8 +159,7 @@ export class SocialMediaIntegrationService {
       createdAt: account.createdAt.toISOString(),
     };
 
-    logger.info({ response }, 'Service returning account with oauthState');
-    console.log('[SERVICE] addAccount returning:', response);
+    logger.info({ accountId: account.id, platform }, 'Account created, awaiting OAuth callback');
 
     return response;
   }
@@ -232,6 +232,10 @@ export class SocialMediaIntegrationService {
 
         availablePages = await fetchFacebookPages(decryptedToken);
 
+        if (platform === 'instagram') {
+          availablePages = await this.attachInstagramAccounts(availablePages, decryptedToken);
+        }
+
         logger.info(
           { userId, platform, pageCount: availablePages.length },
           'Successfully fetched pages from Facebook'
@@ -252,8 +256,22 @@ export class SocialMediaIntegrationService {
       );
     }
 
-    const connected = availablePages.filter(page => connectedPageIds.has(page.id));
-    const available = availablePages.filter(page => !connectedPageIds.has(page.id));
+    // An Instagram account is stored under its IG User ID, so "already
+    // connected" is decided by that id rather than the Page's.
+    const identify = (page: FacebookPage) =>
+      platform === 'instagram' ? page.instagramBusinessAccount?.id : page.id;
+
+    const connected = availablePages
+      .filter(page => {
+        const id = identify(page);
+        return !!id && connectedPageIds.has(id);
+      })
+      .map(page => this.asConnectedAccount(page, platform));
+
+    const available = availablePages.filter(page => {
+      const id = identify(page);
+      return !id || !connectedPageIds.has(id);
+    });
 
     logger.info(
       { userId, platform, availableCount: available.length, connectedCount: connected.length },
@@ -261,6 +279,47 @@ export class SocialMediaIntegrationService {
     );
 
     return { available, connected };
+  }
+
+  /**
+   * Present a connected entry under the id publishing actually addresses.
+   *
+   * Callers pick an account here and send its `id` back as the post's `pageId`,
+   * which is then matched against the stored account. For Instagram that stored
+   * id is the IG User ID, so returning the Page id would produce a selection
+   * that resolves to no account at publish time.
+   */
+  private asConnectedAccount(page: FacebookPage, platform: SocialPlatformKey): FacebookPage {
+    const instagram = page.instagramBusinessAccount;
+
+    if (platform !== 'instagram' || !instagram) {
+      return page;
+    }
+
+    return {
+      ...page,
+      id: instagram.id,
+      name: instagram.username ? `@${instagram.username}` : page.name,
+    };
+  }
+
+  /**
+   * Pages with no linked Instagram account are returned with a null account
+   * rather than dropped, so the picker can explain why they cannot be selected.
+   */
+  private async attachInstagramAccounts(
+    pages: FacebookPage[],
+    userAccessToken: string
+  ): Promise<FacebookPage[]> {
+    return Promise.all(
+      pages.map(async page => ({
+        ...page,
+        instagramBusinessAccount: await fetchInstagramBusinessAccount(
+          page.id,
+          page.access_token || userAccessToken
+        ),
+      }))
+    );
   }
 
   async addAccountFromFacebookPage(
@@ -281,12 +340,35 @@ export class SocialMediaIntegrationService {
 
     const encryptedToken = encryptToken(accessToken);
 
+    // Instagram publishes against the IG User ID, not the Page id — but with the
+    // Page's token. Storing the Page id here would address the wrong node.
+    let pageId = facebookPageId;
+    let pageName = page.name;
+    let meta = page.category || null;
+
+    if (platform === 'instagram') {
+      const instagramAccount =
+        page.instagramBusinessAccount ??
+        (await fetchInstagramBusinessAccount(facebookPageId, accessToken));
+
+      if (!instagramAccount) {
+        throw createError.badRequest(
+          `The Page "${page.name}" has no linked Instagram professional account. ` +
+            'Link an Instagram Business or Creator account to this Page, then try again.'
+        );
+      }
+
+      pageId = instagramAccount.id;
+      pageName = instagramAccount.username ? `@${instagramAccount.username}` : page.name;
+      meta = page.name;
+    }
+
     const account = await socialMediaAccountRepository.create({
       userId,
       platform,
-      pageId: facebookPageId,
-      pageName: page.name,
-      meta: page.category || null,
+      pageId,
+      pageName,
+      meta,
       scopes,
       accessToken: encryptedToken,
       longLivedToken: encryptedToken,

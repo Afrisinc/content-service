@@ -1,15 +1,4 @@
-/**
- * Meta Platforms (Facebook/Instagram) types and interfaces
- *
- * IMPORTANT — Graph API constraints these types encode:
- *  - Media CANNOT be attached via POST /{page-id}/feed. The `picture` / `name` /
- *    `caption` / `description` fields were removed from link posts in Graph API v2.9
- *    and are silently ignored. Photos go to /photos, videos go to /videos.
- *  - Media URLs must be publicly fetchable by Meta's servers. Base64 data URIs are
- *    rejected; use a CDN URL, or fall back to a multipart binary upload.
- *  - Multi-photo posts are built by uploading unpublished photos, then referencing
- *    their ids via `attached_media` on /feed. `child_attachments` is link-ad only.
- */
+/** `picture` on /feed only sets a link thumbnail — it never attaches an image. */
 
 export enum MetaPlatform {
   FACEBOOK = 'facebook',

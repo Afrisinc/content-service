@@ -20,7 +20,13 @@ export interface TokenData {
 const PLATFORM_ENDPOINTS: Record<SocialPlatformKey, { tokenUrl: string }> = {
   website: { tokenUrl: '' },
   facebook: { tokenUrl: 'https://graph.facebook.com/v18.0/oauth/access_token' },
-  instagram: { tokenUrl: 'https://graph.instagram.com/v18.0/oauth/access_token' },
+  /**
+   * Instagram publishes through Instagram API with Facebook Login: the user
+   * authenticates with Facebook and the token is a Facebook Page token, so the
+   * exchange runs against graph.facebook.com. graph.instagram.com belongs to the
+   * separate Instagram Login flow, whose tokens the publisher cannot use.
+   */
+  instagram: { tokenUrl: 'https://graph.facebook.com/v18.0/oauth/access_token' },
   x: { tokenUrl: 'https://api.twitter.com/2/oauth2/token' },
   linkedin: { tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken' },
   tiktok: { tokenUrl: 'https://open.tiktok.com/oauth/access_token' },
@@ -147,6 +153,15 @@ export interface FacebookPage {
       width: number;
     };
   };
+  /** Populated only for Instagram: the IG professional account linked to this Page. */
+  instagramBusinessAccount?: InstagramBusinessAccount | null;
+}
+
+export interface InstagramBusinessAccount {
+  /** The IG User ID. This — not the Page id — is what publishing calls address. */
+  id: string;
+  username?: string;
+  profilePictureUrl?: string;
 }
 
 export async function fetchFacebookPages(accessToken: string): Promise<FacebookPage[]> {
@@ -176,5 +191,50 @@ export async function fetchFacebookPages(accessToken: string): Promise<FacebookP
       'Failed to fetch Facebook pages'
     );
     throw error;
+  }
+}
+
+/**
+ * Resolve the Instagram professional account linked to a Page.
+ *
+ * Returns null when the Page has no linked account, which is a normal state the
+ * caller presents as "not eligible" — only the user can create that link, from
+ * Instagram or Page settings.
+ */
+export async function fetchInstagramBusinessAccount(
+  pageId: string,
+  pageAccessToken: string
+): Promise<InstagramBusinessAccount | null> {
+  try {
+    const response = await httpClient.get<{
+      instagram_business_account?: {
+        id: string;
+        username?: string;
+        profile_picture_url?: string;
+      };
+    }>(`https://graph.facebook.com/v18.0/${pageId}`, {
+      params: {
+        access_token: pageAccessToken,
+        fields: 'instagram_business_account{id,username,profile_picture_url}',
+      },
+    });
+
+    const linked = response.data.instagram_business_account;
+    if (!linked?.id) {
+      logger.info({ pageId }, 'Page has no linked Instagram professional account');
+      return null;
+    }
+
+    return {
+      id: linked.id,
+      username: linked.username,
+      profilePictureUrl: linked.profile_picture_url,
+    };
+  } catch (error) {
+    logger.warn(
+      { pageId, error: error instanceof Error ? error.message : String(error) },
+      'Failed to resolve Instagram account for Page'
+    );
+    return null;
   }
 }

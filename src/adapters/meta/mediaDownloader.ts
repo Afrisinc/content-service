@@ -1,9 +1,3 @@
-/**
- * Meta Media Downloader
- * Downloads and converts media (images/videos) to proper formats for Facebook and Instagram
- * Handles URL validation, format conversion, and error recovery
- */
-
 import axios, { AxiosInstance } from 'axios';
 import { logger } from '@/utils/logger';
 

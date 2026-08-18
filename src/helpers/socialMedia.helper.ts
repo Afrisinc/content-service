@@ -11,6 +11,12 @@ import {
 } from '@/types/socialMedia.types';
 import { logger } from '@/utils/logger';
 
+/** Platforms with a working publish path. Twitter/LinkedIn/TikTok are stubs. */
+const PUBLISHABLE_PLATFORMS = new Set<SocialMediaPlatform>([
+  SocialMediaPlatform.FACEBOOK,
+  SocialMediaPlatform.INSTAGRAM,
+]);
+
 class SocialMediaHelper {
   private readonly FACEBOOK_API_VERSION = 'v24.0';
   private readonly FACEBOOK_GRAPH_API_URL = 'https://graph.facebook.com';
@@ -146,10 +152,17 @@ class SocialMediaHelper {
       }
     }
 
-    if (payload.platform && payload.platform !== SocialMediaPlatform.FACEBOOK) {
-      // Currently only Facebook is fully implemented
-      // Other platforms can be added later
+    if (payload.platform && !PUBLISHABLE_PLATFORMS.has(payload.platform)) {
       errors.push(`Platform ${payload.platform} is not yet supported`);
+    }
+
+    // Instagram has no text-only post type; the Graph API rejects a container
+    // with no image_url or video_url.
+    if (payload.platform === SocialMediaPlatform.INSTAGRAM) {
+      const hasMedia = !!(payload.media?.url || payload.media?.urls?.length);
+      if (!hasMedia) {
+        errors.push('Instagram posts require an image or video');
+      }
     }
 
     return {

@@ -1,28 +1,20 @@
-/**
- * Meta Payload Transformer
- *
- * Turns a generic SocialMediaPostPayload into the exact Graph API call each
- * platform needs. The constraints being satisfied here are documented in
- * meta.types.ts; the one that governs the whole design is that media cannot ride
- * along on /feed — a photo goes to /photos, a video to /videos, and an album is
- * composed from unpublished photo ids.
- */
+/** Media cannot ride on /feed: photos go to /photos, videos to /videos. */
 
 import { SocialMediaPostPayload } from '@/types/socialMedia.types';
 import { logger } from '@/utils/logger';
-import { mediaDownloader, DownloadedMedia } from './mediaDownloader';
+import { DownloadedMedia, mediaDownloader } from './mediaDownloader';
 import {
+  FACEBOOK_MESSAGE_MAX_LENGTH,
+  INSTAGRAM_CAPTION_MAX_LENGTH,
+  InstagramContainerRequest,
+  InstagramPost,
+  META_CAROUSEL_LIMITS,
+  MetaBinaryMedia,
+  MetaFacebookPost,
+  MetaFeedRequest,
+  MetaMediaSource,
   MetaPlatform,
   MetaPostKind,
-  MetaFacebookPost,
-  MetaBinaryMedia,
-  MetaMediaSource,
-  MetaFeedRequest,
-  InstagramPost,
-  InstagramContainerRequest,
-  META_CAROUSEL_LIMITS,
-  INSTAGRAM_CAPTION_MAX_LENGTH,
-  FACEBOOK_MESSAGE_MAX_LENGTH,
 } from './meta.types';
 
 /**
@@ -41,14 +33,6 @@ const FACEBOOK_MIN_SCHEDULE_LEAD_SECONDS = 600;
 const FACEBOOK_MAX_SCHEDULE_LEAD_SECONDS = 75 * 24 * 60 * 60;
 
 export class MetaPayloadTransformer {
-  // ---------------------------------------------------------------------------
-  // Facebook
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Resolve a payload into the single Facebook call that will render it.
-   * The returned `kind` tells the caller which edge to post to.
-   */
   async transformForFacebook(payload: SocialMediaPostPayload): Promise<MetaFacebookPost> {
     const message = this.buildBody(payload, FACEBOOK_MESSAGE_MAX_LENGTH, {
       disclose: !!payload.metadata?.aiGenerated,
@@ -105,16 +89,10 @@ export class MetaPayloadTransformer {
     };
   }
 
-  // ---------------------------------------------------------------------------
-  // Instagram
-  // ---------------------------------------------------------------------------
-
   /**
-   * Resolve a payload into Instagram container(s).
-   *
    * Instagram only ever fetches media from a public URL — there is no binary
-   * upload path — so unreachable media is a hard failure here rather than a
-   * silent text-only post.
+   * upload path — so unreachable media fails here rather than publishing as
+   * text.
    */
   async transformForInstagram(payload: SocialMediaPostPayload): Promise<InstagramPost> {
     const caption = this.buildBody(payload, INSTAGRAM_CAPTION_MAX_LENGTH, { disclose: false });
@@ -170,10 +148,6 @@ export class MetaPayloadTransformer {
     };
   }
 
-  // ---------------------------------------------------------------------------
-  // Validation
-  // ---------------------------------------------------------------------------
-
   validateCarousel(
     urls: string[] | undefined,
     platform: MetaPlatform
@@ -201,10 +175,6 @@ export class MetaPayloadTransformer {
     return { valid: true };
   }
 
-  // ---------------------------------------------------------------------------
-  // Internals
-  // ---------------------------------------------------------------------------
-
   private buildFeedRequest(
     payload: SocialMediaPostPayload,
     message: string,
@@ -218,10 +188,6 @@ export class MetaPayloadTransformer {
     };
   }
 
-  /**
-   * Compose the visible post body: the message, then hashtags, then the AI
-   * disclosure line. Truncated to the platform limit so Meta does not reject it.
-   */
   private buildBody(
     payload: SocialMediaPostPayload,
     maxLength: number,
@@ -311,12 +277,9 @@ export class MetaPayloadTransformer {
   }
 
   /**
-   * Decide how Meta should receive this media.
-   *
-   * A public https URL is handed over as-is — Meta fetches it directly, which is
-   * both faster and more reliable than streaming bytes through this service.
-   * Anything Meta cannot fetch (a data: URI, plain http) is downloaded here and
-   * uploaded as multipart instead.
+   * A public https URL is handed over as-is so Meta fetches it directly rather
+   * than streaming the bytes through this service. Anything Meta cannot fetch
+   * (a data: URI, plain http) is downloaded and uploaded as multipart instead.
    */
   private async resolveMedia(url: string, kind: 'image' | 'video'): Promise<MetaMediaSource> {
     if (this.isPublicUrl(url)) {
@@ -339,13 +302,7 @@ export class MetaPayloadTransformer {
     };
   }
 
-  /**
-   * Download media so it can be uploaded as raw bytes.
-   *
-   * Facebook accepts either a URL it fetches itself or a multipart file
-   * attachment; this is the second path, used when Meta cannot reach the host.
-   * Instagram has no equivalent — it only ever cURLs a public URL.
-   */
+  /** Facebook only. Instagram has no multipart path. */
   async toBinary(url: string, kind: 'image' | 'video'): Promise<MetaBinaryMedia> {
     const media = await this.fetchMedia(url, kind);
     return {
@@ -388,9 +345,9 @@ export class MetaPayloadTransformer {
   }
 
   /**
-   * Only hand Meta a scheduled time it will accept. Anything outside the
-   * 10-minute–30-day window publishes immediately, which is the correct
-   * behaviour here because the cron only invokes this once the time has arrived.
+   * A time outside Meta's accepted window publishes immediately, which is
+   * correct here — the cron only invokes this once the time has arrived, so by
+   * then the timestamp is in the past.
    */
   private facebookScheduleTime(payload: SocialMediaPostPayload): number | undefined {
     const scheduledAt = payload.scheduling?.scheduled_publish_time;

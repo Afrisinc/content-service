@@ -229,6 +229,26 @@ export const OAuthCallbackSchema = {
   },
 };
 
+/** Shared by `available` and `connected` — a field added to one belongs on both. */
+const ConnectablePageSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    name: { type: 'string' },
+    access_token: { type: 'string', nullable: true },
+    category: { type: 'string', nullable: true },
+    instagramBusinessAccount: {
+      type: 'object',
+      nullable: true,
+      properties: {
+        id: { type: 'string' },
+        username: { type: 'string', nullable: true },
+        profilePictureUrl: { type: 'string', nullable: true },
+      },
+    },
+  },
+};
+
 export const AvailablePagesSchema = {
   description: 'Get available and connected pages for a social media platform',
   tags: ['social-media-integrations'],
@@ -244,32 +264,8 @@ export const AvailablePagesSchema = {
         data: {
           type: 'object',
           properties: {
-            available: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  name: { type: 'string' },
-                  access_token: { type: 'string', nullable: true },
-                  category: { type: 'string', nullable: true },
-                },
-              },
-              default: [],
-            },
-            connected: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  name: { type: 'string' },
-                  access_token: { type: 'string', nullable: true },
-                  category: { type: 'string', nullable: true },
-                },
-              },
-              default: [],
-            },
+            available: { type: 'array', items: ConnectablePageSchema, default: [] },
+            connected: { type: 'array', items: ConnectablePageSchema, default: [] },
           },
         },
       },
