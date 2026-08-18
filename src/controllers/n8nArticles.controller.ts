@@ -34,7 +34,13 @@ export async function checkGuid(request: FastifyRequest, reply: FastifyReply): P
     return ApiResponseHelper.notFound(reply, `Article with GUID "${guid}" not found`);
   }
 
-  return ApiResponseHelper.success(reply, 'Article GUID exists', { exists: true, guid }, ResponseCode.SUCCESS, 200);
+  return ApiResponseHelper.success(
+    reply,
+    'Article GUID exists',
+    { exists: true, guid },
+    ResponseCode.SUCCESS,
+    200
+  );
 }
 
 /**
@@ -99,7 +105,12 @@ export async function createArticle(request: FastifyRequest, reply: FastifyReply
  * Get all articles with search and pagination
  */
 export async function getAllArticles(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-  const query = request.query as { search?: string; status?: string; page?: string; limit?: string };
+  const query = request.query as {
+    search?: string;
+    status?: string;
+    page?: string;
+    limit?: string;
+  };
   const { page, limit } = parsePagination({ page: query.page, limit: query.limit }, 10, 100);
   const search = query.search?.trim();
   const status = query.status?.trim() ?? 'published';
@@ -117,13 +128,22 @@ export async function getAllArticles(request: FastifyRequest, reply: FastifyRepl
   const { articles, total } = await n8nArticleRepository.findAll(search, page, limit, status);
   const response = buildPaginatedResponse(articles, total, page, limit);
 
-  return ApiResponseHelper.success(reply, 'Articles fetched successfully', response, ResponseCode.SUCCESS, 200);
+  return ApiResponseHelper.success(
+    reply,
+    'Articles fetched successfully',
+    response,
+    ResponseCode.SUCCESS,
+    200
+  );
 }
 
 /**
  * Get articles by category with pagination
  */
-export async function getArticlesByCategory(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+export async function getArticlesByCategory(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
   const params = request.params as { category: string };
   const query = request.query as { page?: string; limit?: string };
   const { page, limit } = parsePagination({ page: query.page, limit: query.limit }, 10, 100);
@@ -141,7 +161,11 @@ export async function getArticlesByCategory(request: FastifyRequest, reply: Fast
     'Fetching articles by category'
   );
 
-  const { articles, total } = await n8nArticleRepository.findByCategory(params.category, page, limit);
+  const { articles, total } = await n8nArticleRepository.findByCategory(
+    params.category,
+    page,
+    limit
+  );
   const response = buildPaginatedResponse(articles, total, page, limit);
 
   return ApiResponseHelper.success(
@@ -172,14 +196,23 @@ export async function getArticleById(request: FastifyRequest, reply: FastifyRepl
     throw createError.notFound(`Article with ID ${id} not found`);
   }
 
-  return ApiResponseHelper.success(reply, 'Article fetched successfully', article, ResponseCode.SUCCESS, 200);
+  return ApiResponseHelper.success(
+    reply,
+    'Article fetched successfully',
+    article,
+    ResponseCode.SUCCESS,
+    200
+  );
 }
 
 /**
  * Get article by slug
  * GET /articles/slug/:slug
  */
-export async function getArticleBySlug(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+export async function getArticleBySlug(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
   const params = request.params as { slug: string };
 
   if (!params.slug || !params.slug.trim()) {
@@ -194,7 +227,13 @@ export async function getArticleBySlug(request: FastifyRequest, reply: FastifyRe
     throw createError.notFound(`Article with slug "${slug}" not found`);
   }
 
-  return ApiResponseHelper.success(reply, 'Article fetched successfully', article, ResponseCode.SUCCESS, 200);
+  return ApiResponseHelper.success(
+    reply,
+    'Article fetched successfully',
+    article,
+    ResponseCode.SUCCESS,
+    200
+  );
 }
 
 /**
@@ -247,7 +286,13 @@ export async function updateArticle(request: FastifyRequest, reply: FastifyReply
 
   const article = await n8nArticleRepository.update(id, data);
 
-  return ApiResponseHelper.success(reply, 'Article updated successfully', article, ResponseCode.SUCCESS, 200);
+  return ApiResponseHelper.success(
+    reply,
+    'Article updated successfully',
+    article,
+    ResponseCode.SUCCESS,
+    200
+  );
 }
 
 /**
@@ -290,5 +335,11 @@ export async function getTopArticles(request: FastifyRequest, reply: FastifyRepl
     publishedAfter,
   });
 
-  return ApiResponseHelper.success(reply, 'Top articles fetched successfully', articles, ResponseCode.SUCCESS, 200);
+  return ApiResponseHelper.success(
+    reply,
+    'Top articles fetched successfully',
+    articles,
+    ResponseCode.SUCCESS,
+    200
+  );
 }

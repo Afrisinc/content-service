@@ -5,7 +5,11 @@
 
 import { PrismaClient, Prisma } from '@prisma/client';
 import { prisma } from '@/database/prismaClient';
-import { CreateMediaPostPayload, UpdateMediaPostPayload, MediaPostQueryParams } from '@/types/mediaPost.types';
+import {
+  CreateMediaPostPayload,
+  UpdateMediaPostPayload,
+  MediaPostQueryParams,
+} from '@/types/mediaPost.types';
 
 export class MediaPostRepository {
   private prisma: PrismaClient;
@@ -446,29 +450,40 @@ export class MediaPostRepository {
    * Get statistics
    */
   async getStats() {
-    const [total, published, draft, scheduled, archived, featured, breaking, totalViews, totalShares] =
-      await Promise.all([
-        this.prisma.mediaPost.count(),
-        this.prisma.mediaPost.count({ where: { status: 'PUBLISHED' } }),
-        this.prisma.mediaPost.count({ where: { status: 'DRAFT' } }),
-        this.prisma.mediaPost.count({ where: { status: 'SCHEDULED' } }),
-        this.prisma.mediaPost.count({ where: { status: 'ARCHIVED' } }),
-        this.prisma.mediaPost.count({ where: { is_featured: true } }),
-        this.prisma.mediaPost.count({ where: { is_breaking: true } }),
-        this.prisma.mediaPost.aggregate({
-          _sum: { views: true },
-        }),
-        this.prisma.mediaPost.aggregate({
-          _sum: { shares: true },
-        }),
-      ]);
+    const [
+      total,
+      published,
+      draft,
+      scheduled,
+      archived,
+      featured,
+      breaking,
+      totalViews,
+      totalShares,
+    ] = await Promise.all([
+      this.prisma.mediaPost.count(),
+      this.prisma.mediaPost.count({ where: { status: 'PUBLISHED' } }),
+      this.prisma.mediaPost.count({ where: { status: 'DRAFT' } }),
+      this.prisma.mediaPost.count({ where: { status: 'SCHEDULED' } }),
+      this.prisma.mediaPost.count({ where: { status: 'ARCHIVED' } }),
+      this.prisma.mediaPost.count({ where: { is_featured: true } }),
+      this.prisma.mediaPost.count({ where: { is_breaking: true } }),
+      this.prisma.mediaPost.aggregate({
+        _sum: { views: true },
+      }),
+      this.prisma.mediaPost.aggregate({
+        _sum: { shares: true },
+      }),
+    ]);
 
     const allPosts = await this.prisma.mediaPost.findMany({
       select: { read_time: true },
     });
 
     const averageReadTime =
-      allPosts.length > 0 ? allPosts.reduce((sum, p) => sum + (p.read_time || 0), 0) / allPosts.length : 0;
+      allPosts.length > 0
+        ? allPosts.reduce((sum, p) => sum + (p.read_time || 0), 0) / allPosts.length
+        : 0;
 
     return {
       totalPosts: total,
@@ -553,7 +568,13 @@ export class MediaPostRepository {
     limit?: number;
     publishedAfter?: string;
   }) {
-    const { status = 'PUBLISHED', sortBy = 'views', sortOrder = 'desc', limit = 20, publishedAfter } = params;
+    const {
+      status = 'PUBLISHED',
+      sortBy = 'views',
+      sortOrder = 'desc',
+      limit = 20,
+      publishedAfter,
+    } = params;
 
     const where: Prisma.MediaPostWhereInput = {
       status: status as any,

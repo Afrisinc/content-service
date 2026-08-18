@@ -44,7 +44,10 @@ const verifySignature = (request: FastifyRequest): string | null => {
   const signatureBuffer = Buffer.from(signature);
   const expectedBuffer = Buffer.from(expected);
 
-  if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+  if (
+    signatureBuffer.length !== expectedBuffer.length ||
+    !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
+  ) {
     return 'Invalid gateway signature';
   }
 
@@ -60,7 +63,10 @@ export async function registerGatewayGuard(app: FastifyInstance) {
     const error = verifySignature(request);
 
     if (error) {
-      logger.warn({ ip: request.ip, path: request.url, reason: error }, 'Gateway signature verification failed');
+      logger.warn(
+        { ip: request.ip, path: request.url, reason: error },
+        'Gateway signature verification failed'
+      );
       return reply.status(401).send({
         success: false,
         resp_code: 401,

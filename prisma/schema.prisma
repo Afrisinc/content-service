@@ -154,6 +154,9 @@ model SocialMediaPost {
   postId      String?  // ID returned from platform after publishing
   postUrl     String?  // Live URL on the platform
 
+  // Security - encrypted access token for re-posting or retrieving metrics
+  accessTokenEnc String? // Encrypted platform access token
+
   // Content
   message     String?
   link        String?

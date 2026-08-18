@@ -50,7 +50,9 @@ export const socialMediaConfig: SocialMediaConfig = {
     provider: (process.env.AI_PROVIDER as 'openai' | 'anthropic' | 'huggingface') || 'openai',
     model: process.env.AI_MODEL || 'gpt-4',
     maxLength: parseInt(process.env.AI_CONTENT_MAX_LENGTH || '500'),
-    tone: (process.env.AI_TONE as 'professional' | 'casual' | 'humorous' | 'promotional') || 'professional',
+    tone:
+      (process.env.AI_TONE as 'professional' | 'casual' | 'humorous' | 'promotional') ||
+      'professional',
     includeEmojis: process.env.AI_INCLUDE_EMOJIS === 'true',
     includeHashtags: process.env.AI_INCLUDE_HASHTAGS === 'true',
     language: process.env.AI_LANGUAGE || 'en',

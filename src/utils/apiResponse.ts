@@ -146,7 +146,10 @@ export class ApiResponseHelper {
    * @param reply FastifyReply object
    * @param message Human-readable message
    */
-  static deleted(reply: FastifyReply, message: string = 'Resource deleted successfully'): FastifyReply {
+  static deleted(
+    reply: FastifyReply,
+    message: string = 'Resource deleted successfully'
+  ): FastifyReply {
     return this.success(reply, message, null, ResponseCode.DELETED, 200);
   }
 
@@ -174,21 +177,30 @@ export class ApiResponseHelper {
   /**
    * 400 Bad Request - Invalid request payload
    */
-  static badRequest(reply: FastifyReply, message: string = 'Invalid request payload'): FastifyReply {
+  static badRequest(
+    reply: FastifyReply,
+    message: string = 'Invalid request payload'
+  ): FastifyReply {
     return this.error(reply, message, ResponseCode.INVALID_REQUEST, 400);
   }
 
   /**
    * 400 Bad Request - Missing required fields
    */
-  static missingFields(reply: FastifyReply, message: string = 'Missing required fields'): FastifyReply {
+  static missingFields(
+    reply: FastifyReply,
+    message: string = 'Missing required fields'
+  ): FastifyReply {
     return this.error(reply, message, ResponseCode.MISSING_FIELDS, 400);
   }
 
   /**
    * 400 Bad Request - Invalid field format
    */
-  static invalidFormat(reply: FastifyReply, message: string = 'Invalid field format'): FastifyReply {
+  static invalidFormat(
+    reply: FastifyReply,
+    message: string = 'Invalid field format'
+  ): FastifyReply {
     return this.error(reply, message, ResponseCode.INVALID_FORMAT, 400);
   }
 
@@ -209,14 +221,20 @@ export class ApiResponseHelper {
   /**
    * 401 Unauthorized - Authentication required
    */
-  static unauthorized(reply: FastifyReply, message: string = 'Authentication required'): FastifyReply {
+  static unauthorized(
+    reply: FastifyReply,
+    message: string = 'Authentication required'
+  ): FastifyReply {
     return this.error(reply, message, ResponseCode.AUTH_REQUIRED, 401);
   }
 
   /**
    * 401 Unauthorized - Invalid credentials
    */
-  static invalidCredentials(reply: FastifyReply, message: string = 'Invalid credentials'): FastifyReply {
+  static invalidCredentials(
+    reply: FastifyReply,
+    message: string = 'Invalid credentials'
+  ): FastifyReply {
     return this.error(reply, message, ResponseCode.INVALID_CREDENTIALS, 401);
   }
 
@@ -251,14 +269,20 @@ export class ApiResponseHelper {
   /**
    * 429 Too Many Requests - Quota exceeded
    */
-  static quotaExceeded(reply: FastifyReply, message: string = 'Quota limit exceeded'): FastifyReply {
+  static quotaExceeded(
+    reply: FastifyReply,
+    message: string = 'Quota limit exceeded'
+  ): FastifyReply {
     return this.error(reply, message, ResponseCode.QUOTA_EXCEEDED, 429);
   }
 
   /**
    * 500 Internal Server Error
    */
-  static internalError(reply: FastifyReply, message: string = 'Internal server error'): FastifyReply {
+  static internalError(
+    reply: FastifyReply,
+    message: string = 'Internal server error'
+  ): FastifyReply {
     return this.error(reply, message, ResponseCode.INTERNAL_ERROR, 500);
   }
 
@@ -272,7 +296,10 @@ export class ApiResponseHelper {
   /**
    * 503 Service Unavailable
    */
-  static serviceUnavailable(reply: FastifyReply, message: string = 'Service unavailable'): FastifyReply {
+  static serviceUnavailable(
+    reply: FastifyReply,
+    message: string = 'Service unavailable'
+  ): FastifyReply {
     return this.error(reply, message, ResponseCode.SERVICE_UNAVAILABLE, 503);
   }
 

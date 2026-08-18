@@ -5,7 +5,7 @@
 
 export const FacebookPostPayloadSchema = {
   type: 'object',
-  required: ['platform', 'pageId', 'content', 'accessToken'],
+  required: ['platform', 'pageId', 'content'],
   properties: {
     platform: {
       type: 'string',
@@ -188,7 +188,8 @@ export const FacebookPostPayloadSchema = {
     },
     accessToken: {
       type: 'string',
-      description: 'Facebook Page Access Token',
+      description:
+        '[DEPRECATED] Not required - token is fetched from database using platform + pageId',
       minLength: 1,
     },
   },
@@ -200,14 +201,17 @@ export const PostToSocialMediaSchema = {
   tags: ['social-media'],
   body: FacebookPostPayloadSchema,
   response: {
-    200: {
+    201: {
       type: 'object',
       properties: {
         success: {
           type: 'boolean',
         },
-        message: {
+        resp_msg: {
           type: 'string',
+        },
+        resp_code: {
+          type: 'integer',
         },
         data: {
           type: 'object',
@@ -222,9 +226,80 @@ export const PostToSocialMediaSchema = {
               type: 'string',
               enum: ['success', 'pending', 'failed'],
             },
-            publishedAt: {
+            message: {
               type: 'string',
-              format: 'date-time',
+            },
+          },
+        },
+      },
+    },
+    400: {
+      type: 'object',
+      properties: {
+        success: {
+          type: 'boolean',
+        },
+        resp_msg: {
+          type: 'string',
+        },
+        resp_code: {
+          type: 'integer',
+        },
+        data: {
+          type: 'object',
+          properties: {
+            error: {
+              type: 'string',
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
+export const BatchPostToSocialMediaSchema = {
+  description: 'Batch post content to social media platforms',
+  tags: ['social-media'],
+  body: {
+    type: 'array',
+    items: FacebookPostPayloadSchema,
+    minItems: 1,
+  },
+  response: {
+    201: {
+      type: 'object',
+      properties: {
+        success: {
+          type: 'boolean',
+        },
+        resp_msg: {
+          type: 'string',
+        },
+        resp_code: {
+          type: 'integer',
+        },
+        data: {
+          type: 'object',
+          properties: {
+            results: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  platform: { type: 'string' },
+                  postId: { type: 'string' },
+                  status: { type: 'string', enum: ['success', 'pending', 'failed'] },
+                },
+              },
+            },
+            summary: {
+              type: 'object',
+              properties: {
+                total: { type: 'number' },
+                success: { type: 'number' },
+                failed: { type: 'number' },
+              },
             },
           },
         },
@@ -272,6 +347,208 @@ export const GetSocialMediaPostSchema = {
         },
         data: {
           type: 'object',
+        },
+      },
+    },
+  },
+};
+
+export const ListSocialMediaPostsSchema = {
+  description: 'List all social media posts with filtering',
+  tags: ['social-media'],
+  querystring: {
+    type: 'object',
+    properties: {
+      platform: {
+        type: 'string',
+        enum: ['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok'],
+        description: 'Filter by platform',
+      },
+      status: {
+        type: 'string',
+        enum: ['pending', 'published', 'failed', 'deleted'],
+        description: 'Filter by status',
+      },
+      limit: {
+        type: 'number',
+        minimum: 1,
+        maximum: 100,
+        default: 20,
+        description: 'Number of posts to return',
+      },
+      offset: {
+        type: 'number',
+        minimum: 0,
+        default: 0,
+        description: 'Number of posts to skip',
+      },
+    },
+  },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        success: {
+          type: 'boolean',
+        },
+        message: {
+          type: 'string',
+        },
+        data: {
+          type: 'object',
+          properties: {
+            posts: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  userId: { type: 'string' },
+                  mediaPostId: { type: ['string', 'null'] },
+                  platform: { type: 'string' },
+                  pageId: { type: 'string' },
+                  postId: { type: ['string', 'null'] },
+                  postUrl: { type: ['string', 'null'] },
+                  message: { type: ['string', 'null'] },
+                  link: { type: ['string', 'null'] },
+                  description: { type: ['string', 'null'] },
+                  picture: { type: ['string', 'null'] },
+                  name: { type: ['string', 'null'] },
+                  caption: { type: ['string', 'null'] },
+                  tags: { type: 'array', items: { type: 'string' } },
+                  mediaType: { type: ['string', 'null'] },
+                  mediaUrls: { type: 'array', items: { type: 'string' } },
+                  altText: { type: ['string', 'null'] },
+                  scheduledAt: { type: ['string', 'null'], format: 'date-time' },
+                  publishedAt: { type: ['string', 'null'], format: 'date-time' },
+                  ageMin: { type: ['number', 'null'] },
+                  ageMax: { type: ['number', 'null'] },
+                  genders: { type: 'array', items: { type: 'number' } },
+                  countries: { type: 'array', items: { type: 'string' } },
+                  regions: { type: 'array', items: { type: 'string' } },
+                  cities: { type: 'array', items: { type: 'string' } },
+                  interests: { type: 'array', items: { type: 'string' } },
+                  keywords: { type: 'array', items: { type: 'string' } },
+                  aiGenerated: { type: 'boolean' },
+                  aiProvider: { type: ['string', 'null'] },
+                  aiModel: { type: ['string', 'null'] },
+                  aiPrompt: { type: ['string', 'null'] },
+                  status: { type: 'string' },
+                  errorMessage: { type: ['string', 'null'] },
+                  retryCount: { type: 'number' },
+                  likes: { type: 'number' },
+                  comments: { type: 'number' },
+                  shares: { type: 'number' },
+                  views: { type: 'number' },
+                  reach: { type: 'number' },
+                  impressions: { type: 'number' },
+                  lastMetricsUpdate: { type: ['string', 'null'], format: 'date-time' },
+                  metadata: { type: ['string', 'null'] },
+                  createdAt: { type: 'string', format: 'date-time' },
+                  updatedAt: { type: 'string', format: 'date-time' },
+                  user: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'string' },
+                      email: { type: 'string' },
+                      name: { type: ['string', 'null'] },
+                    },
+                  },
+                },
+              },
+            },
+            total: {
+              type: 'number',
+            },
+            limit: {
+              type: 'number',
+            },
+            offset: {
+              type: 'number',
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
+export const PublishScheduledPostSchema = {
+  description: 'Publish a scheduled social media post immediately',
+  tags: ['social-media'],
+  params: {
+    type: 'object',
+    required: ['postId'],
+    properties: {
+      postId: {
+        type: 'string',
+        description: 'ID of the post to publish',
+      },
+    },
+  },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        success: {
+          type: 'boolean',
+        },
+        resp_msg: {
+          type: 'string',
+        },
+        resp_code: {
+          type: 'integer',
+        },
+        data: {
+          type: 'object',
+          properties: {
+            status: {
+              type: 'string',
+              enum: ['success', 'failed'],
+            },
+            postId: {
+              type: 'string',
+            },
+            platform: {
+              type: 'string',
+              enum: ['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok'],
+            },
+            message: {
+              type: 'string',
+              description: 'Status message (success or error details)',
+            },
+            metadata: {
+              type: 'object',
+              description: 'Response metadata from platform',
+            },
+          },
+        },
+      },
+    },
+    400: {
+      type: 'object',
+      properties: {
+        success: {
+          type: 'boolean',
+        },
+        resp_msg: {
+          type: 'string',
+        },
+        resp_code: {
+          type: 'integer',
+        },
+        data: {
+          type: 'object',
+          properties: {
+            status: {
+              type: 'string',
+              enum: ['failed'],
+            },
+            message: {
+              type: 'string',
+              description: 'Error message',
+            },
+          },
         },
       },
     },

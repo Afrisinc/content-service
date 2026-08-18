@@ -35,7 +35,12 @@ export class SocialMediaIntegrationRepository {
   ) {
     return this.prisma.socialMediaIntegration.upsert({
       where: { userId_platform: { userId, platform } },
-      update: { appId, appSecretEnc, ...(callbackUrl ? { callbackUrl } : {}), updatedAt: new Date() },
+      update: {
+        appId,
+        appSecretEnc,
+        ...(callbackUrl ? { callbackUrl } : {}),
+        updatedAt: new Date(),
+      },
       create: { userId, platform, appId, appSecretEnc, ...(callbackUrl ? { callbackUrl } : {}) },
     });
   }

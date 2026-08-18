@@ -18,7 +18,11 @@ import { logger } from '@/utils/logger';
 import { recordOAuthTokenExchange } from '@/middlewares/oauthRateLimit';
 import { socialMediaIntegrationRepository } from '@/repositories/socialMediaIntegration.repository';
 import { socialMediaAccountRepository } from '@/repositories/socialMediaAccount.repository';
-import { SOCIAL_PLATFORMS, SocialPlatformKey, SocialMediaIntegrationDTO } from '@/types/socialMediaIntegration.types';
+import {
+  SOCIAL_PLATFORMS,
+  SocialPlatformKey,
+  SocialMediaIntegrationDTO,
+} from '@/types/socialMediaIntegration.types';
 
 export class SocialMediaIntegrationService {
   async listIntegrations(userId: string): Promise<SocialMediaIntegrationDTO[]> {
@@ -97,15 +101,27 @@ export class SocialMediaIntegrationService {
   async addAccount(
     userId: string,
     platform: SocialPlatformKey,
-    data: { name: string; meta?: string; scopes: string[]; accessToken?: string; expiresIn?: number }
+    data: {
+      name: string;
+      meta?: string;
+      scopes: string[];
+      accessToken?: string;
+      expiresIn?: number;
+    }
   ) {
-    const integration = await socialMediaIntegrationRepository.findByUserAndPlatform(userId, platform);
+    const integration = await socialMediaIntegrationRepository.findByUserAndPlatform(
+      userId,
+      platform
+    );
     if (!integration) {
       logger.warn({ userId, platform }, 'Missing credentials for account creation');
       throw createError.badRequest(`Save ${platform} app credentials before adding an account`);
     }
 
-    logger.info({ userId, platform, name: data.name, scopes: data.scopes }, 'Creating account with credentials');
+    logger.info(
+      { userId, platform, name: data.name, scopes: data.scopes },
+      'Creating account with credentials'
+    );
 
     const oauthStateToken = randomUUID();
 
@@ -155,7 +171,10 @@ export class SocialMediaIntegrationService {
     available: FacebookPage[];
     connected: FacebookPage[];
   }> {
-    const integration = await socialMediaIntegrationRepository.findByUserAndPlatform(userId, platform);
+    const integration = await socialMediaIntegrationRepository.findByUserAndPlatform(
+      userId,
+      platform
+    );
     if (!integration) {
       throw createError.badRequest(`Save ${platform} app credentials first`);
     }
@@ -194,7 +213,9 @@ export class SocialMediaIntegrationService {
             { userId, platform, totalAccounts: platformAccounts.length },
             'No connected account with valid token found'
           );
-          throw createError.badRequest(`No connected account with valid token. Please reconnect your account.`);
+          throw createError.badRequest(
+            `No connected account with valid token. Please reconnect your account.`
+          );
         }
 
         const decryptedToken = decrypt(account.longLivedToken);
@@ -211,7 +232,10 @@ export class SocialMediaIntegrationService {
 
         availablePages = await fetchFacebookPages(decryptedToken);
 
-        logger.info({ userId, platform, pageCount: availablePages.length }, 'Successfully fetched pages from Facebook');
+        logger.info(
+          { userId, platform, pageCount: availablePages.length },
+          'Successfully fetched pages from Facebook'
+        );
       }
     } catch (error) {
       logger.error(
@@ -223,7 +247,9 @@ export class SocialMediaIntegrationService {
         },
         'Failed to fetch available pages from Facebook'
       );
-      throw createError.internal(`Failed to fetch pages: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw createError.internal(
+        `Failed to fetch pages: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
 
     const connected = availablePages.filter(page => connectedPageIds.has(page.id));
@@ -245,7 +271,10 @@ export class SocialMediaIntegrationService {
     scopes: string[],
     accessToken: string
   ) {
-    const integration = await socialMediaIntegrationRepository.findByUserAndPlatform(userId, platform);
+    const integration = await socialMediaIntegrationRepository.findByUserAndPlatform(
+      userId,
+      platform
+    );
     if (!integration) {
       throw createError.badRequest(`Save ${platform} app credentials before adding an account`);
     }
@@ -290,7 +319,12 @@ export class SocialMediaIntegrationService {
     logger.info({ userId, accountId, platform: account.platform }, 'Account deleted');
   }
 
-  async handleOAuthCallback(platform: SocialPlatformKey, code: string, state: string, redirectUri: string) {
+  async handleOAuthCallback(
+    platform: SocialPlatformKey,
+    code: string,
+    state: string,
+    redirectUri: string
+  ) {
     const account = await socialMediaAccountRepository.findByOAuthState(state);
     if (!account) {
       throw createError.badRequest('Invalid OAuth state token');
@@ -299,7 +333,10 @@ export class SocialMediaIntegrationService {
     // Rate limit token exchange per user
     await recordOAuthTokenExchange(account.userId);
 
-    const integration = await socialMediaIntegrationRepository.findByUserAndPlatform(account.userId, platform);
+    const integration = await socialMediaIntegrationRepository.findByUserAndPlatform(
+      account.userId,
+      platform
+    );
     if (!integration) {
       throw createError.badRequest(`No integration found for ${platform}`);
     }
@@ -308,7 +345,13 @@ export class SocialMediaIntegrationService {
     // Use stored callback URL if configured, otherwise fall back to derived URI from request
     const callbackUrl = integration.callbackUrl || redirectUri;
 
-    const tokenResponse = await exchangeAuthCodeForToken(platform, code, integration.appId, appSecret, callbackUrl);
+    const tokenResponse = await exchangeAuthCodeForToken(
+      platform,
+      code,
+      integration.appId,
+      appSecret,
+      callbackUrl
+    );
 
     const shortLivedToken = tokenResponse.access_token;
     const shortLivedExpiresAt = calculateExpiresAt(tokenResponse.expires_in);
@@ -316,7 +359,10 @@ export class SocialMediaIntegrationService {
     let longLivedToken = shortLivedToken;
     let longLivedExpiresAt = shortLivedExpiresAt;
 
-    if ((platform === 'facebook' || platform === 'instagram') && tokenResponse.expires_in < 5184000) {
+    if (
+      (platform === 'facebook' || platform === 'instagram') &&
+      tokenResponse.expires_in < 5184000
+    ) {
       try {
         const longLivedResponse = await exchangeShortForLongLived(
           platform,
@@ -341,7 +387,9 @@ export class SocialMediaIntegrationService {
       longLivedToken: encryptedLongToken,
       longLivedExpiresAt,
       tokenType: 'LONG_LIVED',
-      refreshToken: tokenResponse.refresh_token ? encryptToken(tokenResponse.refresh_token) : undefined,
+      refreshToken: tokenResponse.refresh_token
+        ? encryptToken(tokenResponse.refresh_token)
+        : undefined,
     });
 
     let pages: FacebookPage[] = [];

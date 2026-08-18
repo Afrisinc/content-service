@@ -411,7 +411,10 @@ export class MediaPostService {
 
     return {
       success: errors.length === 0,
-      message: errors.length === 0 ? 'Bulk action completed successfully' : 'Bulk action completed with errors',
+      message:
+        errors.length === 0
+          ? 'Bulk action completed successfully'
+          : 'Bulk action completed with errors',
       data: {
         total: ids.length,
         succeeded,

@@ -24,7 +24,8 @@ export interface PaginatedResponse<T> {
  */
 export function parsePagination(params: PaginationParams, defaultLimit = 10, maxLimit = 100) {
   let page = typeof params.page === 'string' ? parseInt(params.page, 10) : params.page || 1;
-  let limit = typeof params.limit === 'string' ? parseInt(params.limit, 10) : params.limit || defaultLimit;
+  let limit =
+    typeof params.limit === 'string' ? parseInt(params.limit, 10) : params.limit || defaultLimit;
 
   // Validate page
   page = Math.max(1, page);
@@ -45,7 +46,12 @@ export function calculateOffset(page: number, limit: number): number {
 /**
  * Build paginated response
  */
-export function buildPaginatedResponse<T>(data: T[], total: number, page: number, limit: number): PaginatedResponse<T> {
+export function buildPaginatedResponse<T>(
+  data: T[],
+  total: number,
+  page: number,
+  limit: number
+): PaginatedResponse<T> {
   const totalPages = Math.ceil(total / limit);
 
   return {

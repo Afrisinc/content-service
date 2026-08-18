@@ -19,7 +19,10 @@ function assertPlatform(platform: string): SocialPlatformKey {
   return platform as SocialPlatformKey;
 }
 
-export async function listIntegrations(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+export async function listIntegrations(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
   const userId = request.user!.userId;
 
   const platforms = await service.listIntegrations(userId);
@@ -33,7 +36,10 @@ export async function listIntegrations(request: FastifyRequest, reply: FastifyRe
   );
 }
 
-export async function saveIntegrationCredentials(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+export async function saveIntegrationCredentials(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
   const userId = request.user!.userId;
   const { platform } = request.params as { platform: string };
   const body = request.body as { appId: string; appSecret: string; callbackUrl?: string };
@@ -50,10 +56,19 @@ export async function saveIntegrationCredentials(request: FastifyRequest, reply:
     body.callbackUrl?.trim()
   );
 
-  return ApiResponseHelper.success(reply, `${platformKey} credentials saved`, integration, ResponseCode.UPDATED, 200);
+  return ApiResponseHelper.success(
+    reply,
+    `${platformKey} credentials saved`,
+    integration,
+    ResponseCode.UPDATED,
+    200
+  );
 }
 
-export async function updateIntegrationCredentials(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+export async function updateIntegrationCredentials(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
   const userId = request.user!.userId;
   const { platform } = request.params as { platform: string };
   const body = request.body as { appId: string; appSecret?: string; callbackUrl?: string };
@@ -70,10 +85,19 @@ export async function updateIntegrationCredentials(request: FastifyRequest, repl
     body.callbackUrl?.trim()
   );
 
-  return ApiResponseHelper.success(reply, `${platformKey} credentials updated`, integration, ResponseCode.UPDATED, 200);
+  return ApiResponseHelper.success(
+    reply,
+    `${platformKey} credentials updated`,
+    integration,
+    ResponseCode.UPDATED,
+    200
+  );
 }
 
-export async function addSocialMediaAccount(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+export async function addSocialMediaAccount(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
   const userId = request.user!.userId;
   const { platform } = request.params as { platform: string };
   const body = request.body as {
@@ -87,7 +111,10 @@ export async function addSocialMediaAccount(request: FastifyRequest, reply: Fast
   const platformKey = assertPlatform(platform);
   const name = body.name.trim();
 
-  logger.info({ userId, platform: platformKey, name, scopes: body.scopes }, 'Adding social media account');
+  logger.info(
+    { userId, platform: platformKey, name, scopes: body.scopes },
+    'Adding social media account'
+  );
 
   const account = await service.addAccount(userId, platformKey, {
     name,
@@ -100,7 +127,10 @@ export async function addSocialMediaAccount(request: FastifyRequest, reply: Fast
   return ApiResponseHelper.created(reply, `${name} connected to ${platformKey}`, account);
 }
 
-export async function handleOAuthCallback(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+export async function handleOAuthCallback(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
   const { platform } = request.params as { platform: string };
   const { code, state } = request.query as { code: string; state: string };
 
@@ -109,7 +139,9 @@ export async function handleOAuthCallback(request: FastifyRequest, reply: Fastif
   }
 
   const platformKey = assertPlatform(platform);
-  const redirectUri = new URL(request.url, `${request.protocol}://${request.hostname}`).toString().split('?')[0];
+  const redirectUri = new URL(request.url, `${request.protocol}://${request.hostname}`)
+    .toString()
+    .split('?')[0];
 
   logger.info({ platform: platformKey }, 'Processing OAuth callback');
 
@@ -124,7 +156,10 @@ export async function handleOAuthCallback(request: FastifyRequest, reply: Fastif
   );
 }
 
-export async function getAvailablePages(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+export async function getAvailablePages(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
   const userId = request.user!.userId;
   const { platform } = request.params as { platform: string };
 
@@ -134,10 +169,19 @@ export async function getAvailablePages(request: FastifyRequest, reply: FastifyR
 
   const pages = await service.getAvailablePages(userId, platformKey);
 
-  return ApiResponseHelper.success(reply, 'Available and connected pages retrieved', pages, ResponseCode.SUCCESS, 200);
+  return ApiResponseHelper.success(
+    reply,
+    'Available and connected pages retrieved',
+    pages,
+    ResponseCode.SUCCESS,
+    200
+  );
 }
 
-export async function addAccountFromFacebookPage(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+export async function addAccountFromFacebookPage(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
   const userId = request.user!.userId;
   const { platform, pageId } = request.params as { platform: string; pageId: string };
   const body = request.body as {
@@ -148,7 +192,10 @@ export async function addAccountFromFacebookPage(request: FastifyRequest, reply:
 
   const platformKey = assertPlatform(platform);
 
-  logger.info({ userId, platform: platformKey, pageId }, 'Adding social media account from Facebook page');
+  logger.info(
+    { userId, platform: platformKey, pageId },
+    'Adding social media account from Facebook page'
+  );
 
   const account = await service.addAccountFromFacebookPage(
     userId,
@@ -173,5 +220,11 @@ export async function deleteAccount(request: FastifyRequest, reply: FastifyReply
 
   await service.deleteAccount(userId, accountId);
 
-  return ApiResponseHelper.success(reply, 'Account deleted successfully', {}, ResponseCode.SUCCESS, 200);
+  return ApiResponseHelper.success(
+    reply,
+    'Account deleted successfully',
+    {},
+    ResponseCode.SUCCESS,
+    200
+  );
 }

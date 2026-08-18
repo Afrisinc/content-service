@@ -4,7 +4,10 @@
  */
 
 import { env } from '@/config/env';
-import { AIAgentGeneratePostRequest, AIAgentGeneratePostResponse } from '@/types/aiGeneration.types';
+import {
+  AIAgentGeneratePostRequest,
+  AIAgentGeneratePostResponse,
+} from '@/types/aiGeneration.types';
 import { logger } from '@/utils/logger';
 import axios, { AxiosInstance } from 'axios';
 

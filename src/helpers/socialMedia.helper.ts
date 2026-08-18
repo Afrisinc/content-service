@@ -71,8 +71,9 @@ class SocialMediaHelper {
       }
     }
 
-    // Handle scheduling - only add if scheduled_publish_time is provided
-    if (payload.scheduling?.scheduled_publish_time) {
+    // Handle scheduling - Facebook doesn't allow scheduling with external links (restriction #100)
+    // Only add scheduled_publish_time if NOT posting to external URL
+    if (payload.scheduling?.scheduled_publish_time && !isExternalUrlPost) {
       facebookPayload.scheduled_publish_time = payload.scheduling.scheduled_publish_time;
     }
 
@@ -81,9 +82,10 @@ class SocialMediaHelper {
 
   /**
    * Build Facebook Graph API URL for posting
+   * Requests permalink_url in response so we get the actual post URL
    */
   buildFacebookApiUrl(pageId: string): string {
-    return `${this.FACEBOOK_GRAPH_API_URL}/${this.FACEBOOK_API_VERSION}/${pageId}/feed`;
+    return `${this.FACEBOOK_GRAPH_API_URL}/${this.FACEBOOK_API_VERSION}/${pageId}/feed?fields=id,permalink_url`;
   }
 
   /**
@@ -127,12 +129,12 @@ class SocialMediaHelper {
   } {
     const errors: string[] = [];
 
-    if (!payload.pageId) {
-      errors.push('pageId is required');
+    if (!payload.platform) {
+      errors.push('platform is required');
     }
 
-    if (!payload.accessToken) {
-      errors.push('accessToken is required');
+    if (!payload.pageId) {
+      errors.push('pageId is required');
     }
 
     if (!payload.content) {
@@ -144,7 +146,7 @@ class SocialMediaHelper {
       }
     }
 
-    if (payload.platform !== SocialMediaPlatform.FACEBOOK) {
+    if (payload.platform && payload.platform !== SocialMediaPlatform.FACEBOOK) {
       // Currently only Facebook is fully implemented
       // Other platforms can be added later
       errors.push(`Platform ${payload.platform} is not yet supported`);
@@ -174,7 +176,8 @@ class SocialMediaHelper {
    * Build error result
    */
   buildErrorResult(platform: SocialMediaPlatform, error: any): SocialMediaPostResult {
-    const errorMessage = error.response?.data?.error?.message || error.message || 'Unknown error occurred';
+    const errorMessage =
+      error.response?.data?.error?.message || error.message || 'Unknown error occurred';
     const errorCode = error.response?.data?.error?.code || error.response?.status;
 
     return {
@@ -203,7 +206,12 @@ class SocialMediaHelper {
   /**
    * Build metadata for AI-generated content
    */
-  buildAIMetadata(aiConfig?: { enabled: boolean; provider?: string; model?: string; prompt?: string }): any {
+  buildAIMetadata(aiConfig?: {
+    enabled: boolean;
+    provider?: string;
+    model?: string;
+    prompt?: string;
+  }): any {
     if (!aiConfig?.enabled) {
       return null;
     }

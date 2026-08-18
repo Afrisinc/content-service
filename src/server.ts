@@ -4,6 +4,11 @@ import { connectToDatabase, gracefulShutdown } from '@/database/prisma.js';
 import { logger, startupLogger } from '@/utils/logger.js';
 import { createApp } from './app.js';
 import { env } from './config/env.js';
+import { initAssetsClient } from '@/utils/assets-client.js';
+import {
+  startPublishScheduledPostsJob,
+  stopPublishScheduledPostsJob,
+} from '@/jobs/publishScheduledPostsJob.js';
 
 // Global error handlers
 process.on('uncaughtException', (error: Error) => {
@@ -46,6 +51,9 @@ const gracefulShutdownHandler = async (signal: string) => {
       logger.error('Shutdown timeout reached, forcing exit');
       process.exit(1);
     }, 30000); // 30 seconds timeout
+
+    // Stop scheduled jobs
+    stopPublishScheduledPostsJob();
 
     // Close the Fastify server
     if (global.fastifyApp) {
@@ -99,6 +107,45 @@ const start = async () => {
     startupLogger.info({}, 'Connecting to database');
     await connectToDatabase();
 
+    // Initialize Assets Client
+    startupLogger.info({}, 'Initializing Assets Client');
+    const assetsClient = initAssetsClient(
+      env.ASSETS_API_URL || 'http://localhost:8081',
+      env.ASSETS_API_KEY || 'default-api-key'
+    );
+
+    // Create social-media folder if it doesn't exist
+    try {
+      const folders = await assetsClient.listFolders();
+      const socialMediaFolder = folders.find(f => f.name === 'social-media');
+      if (!socialMediaFolder) {
+        const folder = await assetsClient.createFolder(
+          'social-media',
+          'Assets for social media posts'
+        );
+        startupLogger.info({ folderId: folder.id }, 'Created social-media folder');
+        (global as any).SOCIAL_MEDIA_FOLDER_ID = folder.id;
+      } else {
+        (global as any).SOCIAL_MEDIA_FOLDER_ID = socialMediaFolder.id;
+        startupLogger.info(
+          { folderId: socialMediaFolder.id },
+          'Using existing social-media folder'
+        );
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      startupLogger.error(
+        {
+          error: errorMsg,
+          stack,
+          assetsUrl: env.ASSETS_API_URL,
+          hasApiKey: !!env.ASSETS_API_KEY,
+        },
+        'CRITICAL: Failed to initialize social-media folder - image uploads will fail'
+      );
+    }
+
     // Create and start the app
     startupLogger.info({}, 'Creating Fastify application');
     const app = await createApp();
@@ -123,6 +170,9 @@ const start = async () => {
       },
       'Server started successfully'
     );
+
+    // Start scheduled posts publishing job
+    startPublishScheduledPostsJob();
 
     // Log memory usage on startup
     const memoryUsage = process.memoryUsage();

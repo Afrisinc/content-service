@@ -43,7 +43,12 @@ export class N8nArticleRepository {
   /**
    * Find articles by category with pagination
    */
-  async findByCategory(category: string, page: number = 1, limit: number = 10, status: string = 'published') {
+  async findByCategory(
+    category: string,
+    page: number = 1,
+    limit: number = 10,
+    status: string = 'published'
+  ) {
     const offset = calculateOffset(page, limit);
 
     const where: Prisma.N8nArticleWhereInput = {

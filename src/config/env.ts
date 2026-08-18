@@ -12,4 +12,7 @@ export const env = {
   CORS_ORIGIN: process.env.CORS_ORIGIN || '*',
   SM_AI_AGENT_URL: process.env.SM_AI_AGENT_URL || '',
   API_BASE_URL: process.env.API_BASE_URL || `localhost:${process.env.PORT || 3000}`,
+  ASSETS_API_URL: process.env.ASSETS_API_URL || 'http://localhost:8081',
+  ASSETS_API_KEY: process.env.ASSETS_API_KEY || 'default-api-key',
+  CRON_SCHEDULE_POSTS: process.env.CRON_SCHEDULE_POSTS || '*/5 * * * *',
 } as const;

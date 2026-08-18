@@ -83,6 +83,16 @@ export class SocialMediaAccountRepository {
       where: { id: accountId },
     });
   }
+
+  async findByPlatformAndPageId(platform: SocialPlatformKey, pageId: string) {
+    return this.prisma.socialMediaAccount.findFirst({
+      where: {
+        platform,
+        pageId,
+        isActive: true,
+      },
+    });
+  }
 }
 
 export const socialMediaAccountRepository = new SocialMediaAccountRepository();

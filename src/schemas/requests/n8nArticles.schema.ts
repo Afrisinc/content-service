@@ -268,7 +268,8 @@ export const CreateArticleSchema = {
       },
       category: {
         type: 'string',
-        description: 'Content category (tech, business, startup, culture, news, crypto, finance, general)',
+        description:
+          'Content category (tech, business, startup, culture, news, crypto, finance, general)',
       },
       creator: {
         type: 'string',

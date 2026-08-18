@@ -9,6 +9,7 @@ import { openaiHelper } from '@/helpers/openai.helper';
 import { socialMediaPostRepository } from '@/repositories/socialMediaPost.repository';
 import { socialMediaService } from './socialMedia.service';
 import { logger } from '@/utils/logger';
+import { decryptToken } from '@/utils/oauthToken';
 
 class AIGenerationService {
   /**
@@ -247,6 +248,24 @@ class AIGenerationService {
 
       for (const post of postsToPublish) {
         try {
+          let accessToken = '';
+
+          // Priority 1: Use token stored directly in post (encrypted)
+          if (post.accessTokenEnc) {
+            accessToken = decryptToken(post.accessTokenEnc);
+          } else {
+            // Priority 2: Get from user's social media accounts
+            const accounts = await socialMediaPostRepository.getUserAccounts(post.userId);
+            const account = accounts?.find(acc => acc.platform === post.platform);
+
+            if (!account?.accessToken) {
+              const msg = `No access token for user ${post.userId} on ${post.platform}`;
+              throw new Error(msg);
+            }
+
+            accessToken = decryptToken(account.accessToken);
+          }
+
           // Create payload from post data
           const payload: SocialMediaPostPayload = {
             platform: post.platform as SocialMediaPlatform,
@@ -258,8 +277,17 @@ class AIGenerationService {
               picture: post.picture || undefined,
               name: post.name || undefined,
               caption: post.caption || undefined,
+              tags: post.tags,
             },
-            accessToken: process.env.FACEBOOK_PAGE_ACCESS_TOKEN || '',
+            media: post.mediaType
+              ? {
+                  type: post.mediaType as 'image' | 'video' | 'carousel',
+                  url: post.mediaUrls?.[0],
+                  urls: post.mediaUrls,
+                  alt_text: post.altText || undefined,
+                }
+              : undefined,
+            accessToken,
             metadata: post.metadata ? JSON.parse(post.metadata) : undefined,
           };
 
@@ -268,7 +296,10 @@ class AIGenerationService {
 
           if (result.status === 'success' || result.status === 'pending') {
             // Update post in database
-            const postUrl = result.metadata?.postUrl || `https://${post.platform}.com/${result.postId}`;
+            const postUrl =
+              result.metadata?.permalink_url ||
+              result.metadata?.postUrl ||
+              `https://${post.platform}.com/${result.postId}`;
             await socialMediaPostRepository.updatePostAfterPublish(post.id, {
               status: 'published',
               platformPostId: result.postId || '',

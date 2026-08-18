@@ -64,7 +64,10 @@ export async function generatePost(request: FastifyRequest, reply: FastifyReply)
 /**
  * Generate post for specific platform
  */
-export async function generatePostForPlatform(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+export async function generatePostForPlatform(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
   try {
     const body = request.body as Partial<GeneratePostRequest>;
 
@@ -127,7 +130,10 @@ export async function generatePostForPlatform(request: FastifyRequest, reply: Fa
 /**
  * Publish all scheduled posts due for publication
  */
-export async function publishScheduledPosts(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
+export async function publishScheduledPosts(
+  _request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
   try {
     logger.info({}, 'Publishing scheduled posts');
 
@@ -157,7 +163,10 @@ export async function publishScheduledPosts(_request: FastifyRequest, reply: Fas
 /**
  * Get user's AI generation history
  */
-export async function getGenerationHistory(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+export async function getGenerationHistory(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
   try {
     const userId = request.user?.userId;
     if (!userId) {

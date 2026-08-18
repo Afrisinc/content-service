@@ -234,7 +234,10 @@ export async function getDatabaseInfo(): Promise<{
 // Database transaction helper
 export async function withTransaction<T>(
   operation: (
-    prisma: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
+    prisma: Omit<
+      PrismaClient,
+      '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+    >
   ) => Promise<T>
 ): Promise<T> {
   const startTime = Date.now();

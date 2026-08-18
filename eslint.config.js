@@ -1,7 +1,7 @@
 import eslint from '@eslint/js';
-import tseslint from 'typescript-eslint';
-import prettier from 'eslint-plugin-prettier';
 import prettierConfig from 'eslint-config-prettier';
+import prettier from 'eslint-plugin-prettier';
+import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   eslint.configs.recommended,
@@ -41,6 +41,7 @@ export default tseslint.config(
       eqeqeq: ['error', 'always'],
       curly: ['error', 'all'],
       'no-throw-literal': 'error',
+      'max-len': ['error', { code: 100 }],
 
       // Prettier integration
       'prettier/prettier': 'error',
@@ -60,12 +61,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: [
-      'dist/**',
-      'node_modules/**',
-      '*.min.js',
-      'coverage/**',
-      '.git/**',
-    ],
+    ignores: ['dist/**', 'node_modules/**', '*.min.js', 'coverage/**', '.git/**'],
   }
 );

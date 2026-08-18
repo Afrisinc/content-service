@@ -9,7 +9,12 @@ export class AppError extends Error {
   public readonly isOperational: boolean;
   public readonly code?: string;
 
-  constructor(message: string, statusCode: number = 500, isOperational: boolean = true, code?: string) {
+  constructor(
+    message: string,
+    statusCode: number = 500,
+    isOperational: boolean = true,
+    code?: string
+  ) {
     super(message);
     this.statusCode = statusCode;
     this.isOperational = isOperational;
@@ -90,22 +95,19 @@ const shouldLogError = (statusCode: number): boolean => {
 const sanitizeError = (error: any, statusCode: number) => {
   const isDevelopment = process.env.NODE_ENV !== 'production';
 
-  // In production, don't expose internal error details for 5xx errors
-  if (!isDevelopment && statusCode >= 500) {
-    return {
-      message: 'Internal Server Error',
-      details: undefined,
-    };
-  }
-
-  // In development, always show the full error message
+  // Always show error message (helpful for debugging)
+  // Only hide sensitive details in production
   return {
     message: error.message || 'An error occurred',
-    details: error.details || undefined,
+    details: isDevelopment ? error.details : undefined,
   };
 };
 
-export const errorHandler = (error: FastifyError | AppError | Error, request: FastifyRequest, reply: FastifyReply) => {
+export const errorHandler = (
+  error: FastifyError | AppError | Error,
+  request: FastifyRequest,
+  reply: FastifyReply
+) => {
   let statusCode = 500;
   let errorCode: string | undefined;
   let message = 'Internal Server Error';
@@ -226,13 +228,24 @@ export const errorHandler = (error: FastifyError | AppError | Error, request: Fa
   }
 
   // Create error response using ApiResponseHelper format
-  const respCode = statusCode >= 400 && statusCode < 500 ? 2000 + (statusCode - 400) : statusCode >= 500 ? 5000 : 1000;
+  const respCode =
+    statusCode >= 400 && statusCode < 500
+      ? 2000 + (statusCode - 400)
+      : statusCode >= 500
+        ? 5000
+        : 1000;
 
-  const errorResponse = {
+  const errorResponse: any = {
     success: false,
     resp_msg: sanitized.message,
     resp_code: respCode,
+    error: sanitized.message,
   };
+
+  // Add details if available
+  if (sanitized.details) {
+    errorResponse.details = sanitized.details;
+  }
 
   // Send error response
   reply.code(statusCode).send(errorResponse);

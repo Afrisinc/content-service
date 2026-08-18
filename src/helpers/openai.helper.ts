@@ -177,12 +177,16 @@ class OpenAIHelper {
         } else {
           // If no JSON found, treat entire response as single platform content
           const platform = request.platform || 'facebook';
-          parsedContent = request.platform ? { [platform]: content } : { facebook: content, instagram: content };
+          parsedContent = request.platform
+            ? { [platform]: content }
+            : { facebook: content, instagram: content };
         }
       } catch {
         // If JSON parsing fails, treat as plain text
         const platform = request.platform || 'facebook';
-        parsedContent = request.platform ? { [platform]: content } : { facebook: content, instagram: content };
+        parsedContent = request.platform
+          ? { [platform]: content }
+          : { facebook: content, instagram: content };
       }
 
       const result: AIGeneratedContent = {
@@ -261,7 +265,9 @@ class OpenAIHelper {
   /**
    * Stream content generation for real-time display
    */
-  async *generateContentStream(request: AIGenerationRequest): AsyncGenerator<string, void, unknown> {
+  async *generateContentStream(
+    request: AIGenerationRequest
+  ): AsyncGenerator<string, void, unknown> {
     const config = this.validateConfiguration();
     if (!config.valid) {
       throw new Error(`OpenAI configuration invalid: ${config.errors.join(', ')}`);
@@ -372,7 +378,10 @@ class OpenAIHelper {
   /**
    * Generate image using DALL-E
    */
-  async generateImage(prompt: string, style?: 'realistic' | 'cartoon' | 'abstract' | 'minimalist'): Promise<string> {
+  async generateImage(
+    prompt: string,
+    style?: 'realistic' | 'cartoon' | 'abstract' | 'minimalist'
+  ): Promise<string> {
     const config = this.validateConfiguration();
     if (!config.valid) {
       throw new Error(`OpenAI configuration invalid: ${config.errors.join(', ')}`);

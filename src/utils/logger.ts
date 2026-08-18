@@ -131,7 +131,11 @@ export const logError = (error: Error | unknown, context?: Record<string, any>) 
 };
 
 // Performance monitoring helper
-export const logPerformance = (operation: string, duration: number, context?: Record<string, any>) => {
+export const logPerformance = (
+  operation: string,
+  duration: number,
+  context?: Record<string, any>
+) => {
   perfLogger.info(
     {
       operation,

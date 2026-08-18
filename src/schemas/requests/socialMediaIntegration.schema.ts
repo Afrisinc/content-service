@@ -145,7 +145,8 @@ export const UpdateIntegrationCredentialsSchema = {
 };
 
 export const AddSocialMediaAccountSchema = {
-  description: 'Add a connected account under a platform integration. Requires app credentials to already be saved.',
+  description:
+    'Add a connected account under a platform integration. Requires app credentials to already be saved.',
   tags: ['social-media-integrations'],
   security: [{ bearerAuth: [] }],
   params: PlatformParamsSchema,

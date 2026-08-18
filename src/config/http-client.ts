@@ -37,17 +37,29 @@ class HttpClient {
     return this.mapResponse(response);
   }
 
-  async post<T>(url: string, data?: Record<string, unknown>, config?: AxiosRequestConfig): Promise<HttpResponse<T>> {
+  async post<T>(
+    url: string,
+    data?: Record<string, unknown>,
+    config?: AxiosRequestConfig
+  ): Promise<HttpResponse<T>> {
     const response = await this.client.post<T>(url, data, config);
     return this.mapResponse(response);
   }
 
-  async put<T>(url: string, data?: Record<string, unknown>, config?: AxiosRequestConfig): Promise<HttpResponse<T>> {
+  async put<T>(
+    url: string,
+    data?: Record<string, unknown>,
+    config?: AxiosRequestConfig
+  ): Promise<HttpResponse<T>> {
     const response = await this.client.put<T>(url, data, config);
     return this.mapResponse(response);
   }
 
-  async patch<T>(url: string, data?: Record<string, unknown>, config?: AxiosRequestConfig): Promise<HttpResponse<T>> {
+  async patch<T>(
+    url: string,
+    data?: Record<string, unknown>,
+    config?: AxiosRequestConfig
+  ): Promise<HttpResponse<T>> {
     const response = await this.client.patch<T>(url, data, config);
     return this.mapResponse(response);
   }

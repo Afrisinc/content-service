@@ -44,6 +44,7 @@ export class SocialMediaPostRepository {
     aiModel?: string;
     aiPrompt?: string;
     status?: string;
+    accessTokenEnc?: string;
     metadata?: string;
   }) {
     return this.prisma.socialMediaPost.create({
@@ -111,9 +112,21 @@ export class SocialMediaPostRepository {
   }
 
   /**
+   * Find post by ID (alias for getPostById)
+   */
+  async findById(postId: string) {
+    return this.getPostById(postId);
+  }
+
+  /**
    * Get all posts with optional filters
    */
-  async getAllPosts(options?: { platform?: string; status?: string; limit?: number; offset?: number }) {
+  async getAllPosts(options?: {
+    platform?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }) {
     const where: any = {};
 
     if (options?.platform) {
@@ -142,6 +155,13 @@ export class SocialMediaPostRepository {
       }),
       this.prisma.socialMediaPost.count({ where }),
     ]);
+
+    // Log raw Prisma response
+    console.log('🔍 PRISMA RAW RESPONSE:', {
+      postsCount: posts.length,
+      firstPostRaw: posts[0],
+      firstPostKeys: posts[0] ? Object.keys(posts[0]) : [],
+    });
 
     return {
       posts,
@@ -334,15 +354,45 @@ export class SocialMediaPostRepository {
   }
 
   /**
-   * Delete post (soft delete by marking as deleted)
+   * Update post (for pending posts)
    */
-  async deletePost(postId: string) {
+  async updatePost(
+    postId: string,
+    data: {
+      message?: string;
+      link?: string;
+      description?: string;
+      caption?: string;
+      mediaUrls?: string[];
+      mediaType?: string;
+      altText?: string;
+      tags?: string[];
+    }
+  ) {
     return this.prisma.socialMediaPost.update({
       where: { id: postId },
       data: {
-        status: 'deleted',
+        ...data,
         updatedAt: new Date(),
       },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Delete post (hard delete - actually removes from database)
+   */
+  async deletePost(postId: string) {
+    return this.prisma.socialMediaPost.delete({
+      where: { id: postId },
     });
   }
 
@@ -511,7 +561,13 @@ export class SocialMediaPostRepository {
   /**
    * Get posts by date range
    */
-  async getPostsByDateRange(userId: string, startDate: Date, endDate: Date, limit = 100, offset = 0) {
+  async getPostsByDateRange(
+    userId: string,
+    startDate: Date,
+    endDate: Date,
+    limit = 100,
+    offset = 0
+  ) {
     return this.prisma.socialMediaPost.findMany({
       where: {
         userId,

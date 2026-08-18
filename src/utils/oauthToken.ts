@@ -34,8 +34,8 @@ export async function exchangeAuthCodeForToken(
   clientSecret: string,
   redirectUri: string
 ): Promise<OAuthTokenResponse> {
+  const endpoint = PLATFORM_ENDPOINTS[platform];
   try {
-    const endpoint = PLATFORM_ENDPOINTS[platform];
     if (!endpoint) {
       throw new Error(`OAuth endpoint not configured for platform: ${platform}`);
     }
@@ -51,7 +51,8 @@ export async function exchangeAuthCodeForToken(
     logger.info({ response: response.data, platform }, 'OAuth token response received');
 
     // Validate expires_in is a valid number, default to 5184000 (60 days) if missing
-    const expiresIn = typeof response.data.expires_in === 'number' ? response.data.expires_in : 5184000;
+    const expiresIn =
+      typeof response.data.expires_in === 'number' ? response.data.expires_in : 5184000;
 
     return {
       ...response.data,
@@ -65,7 +66,7 @@ export async function exchangeAuthCodeForToken(
         platform,
         clientId,
         redirectUri,
-        endpoint: endpoint.tokenUrl,
+        endpoint: endpoint?.tokenUrl,
       },
       `OAuth token exchange failed: ${errorMsg}`
     );
@@ -110,7 +111,8 @@ export function decryptToken(encryptedToken: string): string {
 }
 
 export function calculateExpiresAt(expiresInSeconds: number): Date {
-  const seconds = typeof expiresInSeconds === 'number' && expiresInSeconds > 0 ? expiresInSeconds : 5184000;
+  const seconds =
+    typeof expiresInSeconds === 'number' && expiresInSeconds > 0 ? expiresInSeconds : 5184000;
   return new Date(Date.now() + seconds * 1000);
 }
 
@@ -121,7 +123,10 @@ export function isTokenExpired(expiresAt: Date | null | undefined): boolean {
   return new Date() >= expiresAt;
 }
 
-export function isTokenExpiringSoon(expiresAt: Date | null | undefined, bufferSeconds = 3600): boolean {
+export function isTokenExpiringSoon(
+  expiresAt: Date | null | undefined,
+  bufferSeconds = 3600
+): boolean {
   if (!expiresAt) {
     return false;
   }
@@ -134,16 +139,27 @@ export interface FacebookPage {
   name: string;
   access_token?: string;
   category?: string;
+  picture?: {
+    data?: {
+      height: number;
+      is_silhouette: boolean;
+      url: string;
+      width: number;
+    };
+  };
 }
 
 export async function fetchFacebookPages(accessToken: string): Promise<FacebookPage[]> {
   try {
-    const response = await httpClient.get<{ data: FacebookPage[] }>('https://graph.facebook.com/v18.0/me/accounts', {
-      params: {
-        access_token: accessToken,
-        fields: 'id,name,access_token,category',
-      },
-    });
+    const response = await httpClient.get<{ data: FacebookPage[] }>(
+      'https://graph.facebook.com/v18.0/me/accounts',
+      {
+        params: {
+          access_token: accessToken,
+          fields: 'id,name,access_token,category,picture.width(200).height(200)',
+        },
+      }
+    );
 
     const pages = response.data.data || [];
     logger.info(
@@ -155,7 +171,10 @@ export async function fetchFacebookPages(accessToken: string): Promise<FacebookP
     );
     return pages;
   } catch (error) {
-    logger.error({ error, accessToken: accessToken?.substring(0, 20) + '...' }, 'Failed to fetch Facebook pages');
+    logger.error(
+      { error, accessToken: accessToken?.substring(0, 20) + '...' },
+      'Failed to fetch Facebook pages'
+    );
     throw error;
   }
 }
