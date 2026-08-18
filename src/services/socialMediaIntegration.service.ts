@@ -4,8 +4,11 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { SocialMediaAccount } from '@prisma/client';
 import { createError } from '@/middlewares/errorHandler';
+import { env } from '@/config/env';
 import { encrypt, decrypt } from '@/utils/crypto';
+import { cacheDelete, cacheGet, cacheSet } from '@/utils/cache';
 import {
   exchangeAuthCodeForToken,
   exchangeShortForLongLived,
@@ -21,6 +24,7 @@ import {
   isConnectionRecordPageId,
   platformUsesConnectionRecord,
 } from '@/utils/oauthConnectionRecord';
+import { buildConnectedPagesFromAccounts } from '@/helpers/socialMediaPage.helper';
 import { recordOAuthTokenExchange } from '@/middlewares/oauthRateLimit';
 import { socialMediaIntegrationRepository } from '@/repositories/socialMediaIntegration.repository';
 import { socialMediaAccountRepository } from '@/repositories/socialMediaAccount.repository';
@@ -209,63 +213,15 @@ export class SocialMediaIntegrationService {
 
     const connectedPageIds = new Set(platformAccounts.map(row => row.pageId));
 
-    let availablePages: FacebookPage[] = [];
-    try {
-      if (platform === 'facebook' || platform === 'instagram') {
-        // Page rows hold Page tokens, which cannot list a user's Pages. The user
-        // token lives on the connection record, so prefer it; the fallback covers
-        // rows created before connection records were namespaced.
-        const account =
-          platformAccounts.find(
-            acc => acc.longLivedToken && isConnectionRecordPageId(acc.pageId)
-          ) ?? platformAccounts.find(acc => acc.longLivedToken);
+    const availablePages = await this.resolvePlatformPages(userId, platform, platformAccounts);
 
-        if (!account?.longLivedToken) {
-          logger.error(
-            { userId, platform, totalAccounts: platformAccounts.length },
-            'No connected account with valid token found'
-          );
-          throw createError.badRequest(
-            `No connected account with valid token. Please reconnect your account.`
-          );
-        }
-
-        const decryptedToken = decrypt(account.longLivedToken);
-        logger.info(
-          {
-            userId,
-            platform,
-            accountId: account.id,
-            pageName: account.pageName,
-            tokenPreview: decryptedToken.substring(0, 20) + '...',
-          },
-          'Fetching pages from Facebook using account token'
-        );
-
-        availablePages = await fetchFacebookPages(decryptedToken);
-
-        if (platform === 'instagram') {
-          availablePages = await this.attachInstagramAccounts(availablePages, decryptedToken);
-        }
-
-        logger.info(
-          { userId, platform, pageCount: availablePages.length },
-          'Successfully fetched pages from Facebook'
-        );
-      }
-    } catch (error) {
-      logger.error(
-        {
-          error,
-          userId,
-          platform,
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
-        'Failed to fetch available pages from Facebook'
+    if (!availablePages) {
+      const stored = buildConnectedPagesFromAccounts(platformAccounts, platform);
+      logger.warn(
+        { userId, platform, connectedCount: stored.length },
+        'Serving stored accounts, platform pages could not be resolved'
       );
-      throw createError.internal(
-        `Failed to fetch pages: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      return { available: [], connected: stored };
     }
 
     // An Instagram account is stored under its IG User ID, so "already
@@ -291,6 +247,106 @@ export class SocialMediaIntegrationService {
     );
 
     return { available, connected };
+  }
+
+  private pagesCacheKey(userId: string, platform: SocialPlatformKey): string {
+    return `social:pages:${platform}:${userId}`;
+  }
+
+  private async readCachedPages(
+    userId: string,
+    platform: SocialPlatformKey
+  ): Promise<FacebookPage[] | null> {
+    const payload = await cacheGet<string>(this.pagesCacheKey(userId, platform));
+    if (!payload) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(decrypt(payload)) as FacebookPage[];
+    } catch (error) {
+      logger.warn(
+        { userId, platform, error: error instanceof Error ? error.message : 'Unknown error' },
+        'Discarding unreadable cached pages'
+      );
+      await cacheDelete(this.pagesCacheKey(userId, platform));
+      return null;
+    }
+  }
+
+  private async writeCachedPages(
+    userId: string,
+    platform: SocialPlatformKey,
+    pages: FacebookPage[]
+  ): Promise<void> {
+    await cacheSet(
+      this.pagesCacheKey(userId, platform),
+      encrypt(JSON.stringify(pages)),
+      env.SOCIAL_PAGES_CACHE_TTL_SECONDS
+    );
+  }
+
+  async invalidatePagesCache(userId: string, platform: SocialPlatformKey): Promise<void> {
+    await cacheDelete(this.pagesCacheKey(userId, platform));
+  }
+
+  private async resolvePlatformPages(
+    userId: string,
+    platform: SocialPlatformKey,
+    platformAccounts: SocialMediaAccount[]
+  ): Promise<FacebookPage[] | null> {
+    if (platform !== 'facebook' && platform !== 'instagram') {
+      return [];
+    }
+
+    const cached = await this.readCachedPages(userId, platform);
+    if (cached) {
+      logger.info({ userId, platform, pageCount: cached.length }, 'Serving pages from cache');
+      return cached;
+    }
+
+    // Page rows hold Page tokens, which cannot list a user's Pages. The user
+    // token lives on the connection record, so prefer it; the fallback covers
+    // rows created before connection records were namespaced.
+    const account =
+      platformAccounts.find(acc => acc.longLivedToken && isConnectionRecordPageId(acc.pageId)) ??
+      platformAccounts.find(acc => acc.longLivedToken);
+
+    if (!account?.longLivedToken) {
+      logger.error(
+        { userId, platform, totalAccounts: platformAccounts.length },
+        'No connected account with a usable token'
+      );
+      return null;
+    }
+
+    try {
+      const decryptedToken = decrypt(account.longLivedToken);
+
+      let pages = await fetchFacebookPages(decryptedToken);
+      if (platform === 'instagram') {
+        pages = await this.attachInstagramAccounts(pages, decryptedToken);
+      }
+
+      await this.writeCachedPages(userId, platform, pages);
+
+      logger.info(
+        { userId, platform, accountId: account.id, pageCount: pages.length },
+        'Fetched pages from Facebook'
+      );
+      return pages;
+    } catch (error) {
+      logger.error(
+        {
+          userId,
+          platform,
+          accountId: account.id,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        },
+        'Failed to fetch pages from Facebook'
+      );
+      return null;
+    }
   }
 
   /**
@@ -485,6 +541,8 @@ export class SocialMediaIntegrationService {
         ? encryptToken(tokenResponse.refresh_token)
         : undefined,
     });
+
+    await this.invalidatePagesCache(account.userId, platform);
 
     let pages: FacebookPage[] = [];
     if (platform === 'facebook' || platform === 'instagram') {

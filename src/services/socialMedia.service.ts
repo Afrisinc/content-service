@@ -487,7 +487,11 @@ export class SocialMediaService {
       const post = await metaPayloadTransformer.transformForInstagram(payload);
       const containerId = await this.createInstagramContainer(payload.pageId, post);
 
-      await metaClient.waitForInstagramContainer(containerId, payload.accessToken);
+      await metaClient.waitForInstagramContainer(
+        containerId,
+        payload.accessToken,
+        !!post.container.video_url
+      );
 
       const response = await metaClient.publishInstagramContainer(
         payload.pageId,
@@ -794,14 +798,26 @@ export class SocialMediaService {
       link: payload.content?.link,
       description: payload.content?.description,
       caption: payload.content?.caption,
+      postFormat: payload.format,
       mediaUrls: processedMediaUrls,
       mediaType: payload.media?.type,
       altText: payload.media?.alt_text,
       tags: payload.content?.tags,
+      scheduledAt: this.resolveScheduledAt(payload),
     });
 
     logger.info({ postId, userId }, 'Post updated successfully');
     return updatedPost;
+  }
+
+  private resolveScheduledAt(payload: Partial<SocialMediaPostPayload>): Date | null | undefined {
+    if (payload.scheduling?.publish_immediately) {
+      return null;
+    }
+    if (payload.scheduling?.scheduled_publish_time) {
+      return new Date(payload.scheduling.scheduled_publish_time * 1000);
+    }
+    return undefined;
   }
 
   /**

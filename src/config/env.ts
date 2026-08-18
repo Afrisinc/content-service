@@ -15,4 +15,6 @@ export const env = {
   ASSETS_API_URL: process.env.ASSETS_API_URL || 'http://localhost:8081',
   ASSETS_API_KEY: process.env.ASSETS_API_KEY || 'default-api-key',
   CRON_SCHEDULE_POSTS: process.env.CRON_SCHEDULE_POSTS || '*/5 * * * *',
+  REDIS_URL: process.env.REDIS_URL || '',
+  SOCIAL_PAGES_CACHE_TTL_SECONDS: Number(process.env.SOCIAL_PAGES_CACHE_TTL_SECONDS) || 3600,
 } as const;

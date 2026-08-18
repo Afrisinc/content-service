@@ -28,9 +28,11 @@ export class MetaClient {
   /** Video uploads stream a whole file; they need far longer than a form post. */
   private readonly UPLOAD_TIMEOUT = 300000;
   private readonly MAX_RETRIES = 3;
-  /** Instagram container processing: poll up to ~60s before giving up. */
+  /** Instagram container processing: images settle in seconds. */
   private readonly CONTAINER_POLL_INTERVAL = 3000;
   private readonly CONTAINER_MAX_POLLS = 20;
+  /** Reels and video stories transcode well past the image ceiling. */
+  private readonly VIDEO_CONTAINER_MAX_POLLS = 100;
 
   constructor() {
     this.client = axios.create({
@@ -313,10 +315,15 @@ export class MetaClient {
    * Poll a container until Instagram finishes processing its media.
    * Videos in particular are not publishable the instant the container exists.
    */
-  async waitForInstagramContainer(containerId: string, accessToken: string): Promise<void> {
+  async waitForInstagramContainer(
+    containerId: string,
+    accessToken: string,
+    isVideo = false
+  ): Promise<void> {
     const url = `${this.GRAPH_API_BASE}/${this.API_VERSION}/${containerId}`;
+    const maxPolls = isVideo ? this.VIDEO_CONTAINER_MAX_POLLS : this.CONTAINER_MAX_POLLS;
 
-    for (let poll = 1; poll <= this.CONTAINER_MAX_POLLS; poll++) {
+    for (let poll = 1; poll <= maxPolls; poll++) {
       const response = await this.client.get<InstagramContainerStatus>(url, {
         params: { access_token: accessToken, fields: 'status_code,status' },
       });
@@ -335,9 +342,8 @@ export class MetaClient {
       await new Promise(resolve => setTimeout(resolve, this.CONTAINER_POLL_INTERVAL));
     }
 
-    throw new Error(
-      `Instagram container did not finish processing after ${this.CONTAINER_MAX_POLLS} polls`
-    );
+    const waitedSeconds = Math.round((maxPolls * this.CONTAINER_POLL_INTERVAL) / 1000);
+    throw new Error(`Instagram container did not finish processing after ${waitedSeconds}s`);
   }
 
   /**

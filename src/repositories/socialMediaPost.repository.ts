@@ -363,10 +363,12 @@ export class SocialMediaPostRepository {
       link?: string;
       description?: string;
       caption?: string;
+      postFormat?: PostFormat;
       mediaUrls?: string[];
       mediaType?: string;
       altText?: string;
       tags?: string[];
+      scheduledAt?: Date | null;
     }
   ) {
     return this.prisma.socialMediaPost.update({

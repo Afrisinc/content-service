@@ -258,15 +258,22 @@ describe('SocialMediaIntegrationService', () => {
       expect(result.connected[0].name).toBe('@afrisinc_inc');
     });
 
-    it('rejects when no account carries a usable token', async () => {
+    it('serves the stored accounts when no account carries a usable token', async () => {
       vi.mocked(socialMediaAccountRepository.findAllByUser).mockResolvedValue([
-        accountRow({ longLivedToken: null }),
+        accountRow({ pageId: '17841400000000000', pageName: '@afrisinc_inc', longLivedToken: null }),
       ] as never);
 
-      await expect(service.getAvailablePages(userId, 'instagram')).rejects.toThrow(
-        'No connected account with valid token'
-      );
+      const result = await service.getAvailablePages(userId, 'instagram');
+
       expect(fetchFacebookPages).not.toHaveBeenCalled();
+      expect(result.available).toEqual([]);
+      expect(result.connected).toEqual([
+        {
+          id: '17841400000000000',
+          name: '@afrisinc_inc',
+          instagramBusinessAccount: { id: '17841400000000000', username: 'afrisinc_inc' },
+        },
+      ]);
     });
 
     it('returns empty lists when nothing is connected yet', async () => {

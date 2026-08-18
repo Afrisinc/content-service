@@ -5,6 +5,7 @@ import { logger, startupLogger } from '@/utils/logger.js';
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { initAssetsClient } from '@/utils/assets-client.js';
+import { initCache, closeCache } from '@/utils/cache.js';
 import {
   startPublishScheduledPostsJob,
   stopPublishScheduledPostsJob,
@@ -62,6 +63,9 @@ const gracefulShutdownHandler = async (signal: string) => {
       logger.info('Fastify server closed');
     }
 
+    logger.info('Closing Redis cache');
+    await closeCache();
+
     // Close database connections
     logger.info('Closing database connections');
     await gracefulShutdown();
@@ -106,6 +110,9 @@ const start = async () => {
     // Connect to database first
     startupLogger.info({}, 'Connecting to database');
     await connectToDatabase();
+
+    startupLogger.info({}, 'Initializing Redis cache');
+    await initCache();
 
     // Initialize Assets Client
     startupLogger.info({}, 'Initializing Assets Client');
