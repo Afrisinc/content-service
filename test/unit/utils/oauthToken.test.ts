@@ -46,7 +46,7 @@ describe('OAuth Token Utility', () => {
       });
 
       expect(httpClient.post).toHaveBeenCalledWith(
-        'https://graph.instagram.com/v18.0/oauth/access_token',
+        'https://graph.facebook.com/v18.0/oauth/access_token',
         expect.objectContaining({
           client_id: 'app-id',
           client_secret: 'app-secret',
@@ -57,18 +57,37 @@ describe('OAuth Token Utility', () => {
       );
     });
 
-    it('should throw error for unsupported platform', async () => {
-      await expect(exchangeAuthCodeForToken('unsupported' as any, 'code', 'id', 'secret', 'uri')).rejects.toThrow(
-        'OAuth endpoint not configured for platform'
+    it('should exchange instagram codes against graph.facebook.com', async () => {
+      vi.spyOn(httpClient, 'post').mockResolvedValue({
+        data: { access_token: 'test-token', token_type: 'bearer', expires_in: 3600 },
+      });
+
+      await exchangeAuthCodeForToken(
+        'instagram',
+        'auth-code',
+        'app-id',
+        'app-secret',
+        'http://localhost/callback'
       );
+
+      expect(httpClient.post).toHaveBeenCalledWith(
+        'https://graph.facebook.com/v18.0/oauth/access_token',
+        expect.objectContaining({ code: 'auth-code' })
+      );
+    });
+
+    it('should throw error for unsupported platform', async () => {
+      await expect(
+        exchangeAuthCodeForToken('unsupported' as any, 'code', 'id', 'secret', 'uri')
+      ).rejects.toThrow('OAuth endpoint not configured for platform');
     });
 
     it('should throw error if token exchange fails', async () => {
       vi.spyOn(httpClient, 'post').mockRejectedValue(new Error('Network error'));
 
-      await expect(exchangeAuthCodeForToken('facebook', 'code', 'id', 'secret', 'uri')).rejects.toThrow(
-        'Failed to exchange authorization code'
-      );
+      await expect(
+        exchangeAuthCodeForToken('facebook', 'code', 'id', 'secret', 'uri')
+      ).rejects.toThrow('Failed to exchange authorization code');
     });
   });
 
@@ -84,7 +103,12 @@ describe('OAuth Token Utility', () => {
 
       vi.spyOn(httpClient, 'post').mockResolvedValue(mockResponse);
 
-      const result = await exchangeShortForLongLived('facebook', 'short-lived-token', 'app-id', 'app-secret');
+      const result = await exchangeShortForLongLived(
+        'facebook',
+        'short-lived-token',
+        'app-id',
+        'app-secret'
+      );
 
       expect(result).toEqual({
         access_token: 'long-lived-token',
@@ -93,7 +117,7 @@ describe('OAuth Token Utility', () => {
       });
 
       expect(httpClient.post).toHaveBeenCalledWith(
-        'https://graph.instagram.com/v18.0/oauth/access_token',
+        'https://graph.facebook.com/v18.0/oauth/access_token',
         expect.objectContaining({
           client_id: 'app-id',
           client_secret: 'app-secret',
@@ -104,9 +128,9 @@ describe('OAuth Token Utility', () => {
     });
 
     it('should throw error for unsupported platform', async () => {
-      await expect(exchangeShortForLongLived('twitter' as any, 'token', 'id', 'secret')).rejects.toThrow(
-        'Long-lived token exchange not supported'
-      );
+      await expect(
+        exchangeShortForLongLived('twitter' as any, 'token', 'id', 'secret')
+      ).rejects.toThrow('Long-lived token exchange not supported');
     });
 
     it('should throw error if exchange fails', async () => {

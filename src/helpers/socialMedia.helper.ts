@@ -8,6 +8,7 @@ import {
   FacebookPostPayload,
   SocialMediaPostPayload,
   SocialMediaPostResult,
+  SocialPostFormat,
 } from '@/types/socialMedia.types';
 import { logger } from '@/utils/logger';
 
@@ -143,13 +144,31 @@ class SocialMediaHelper {
       errors.push('pageId is required');
     }
 
+    const hasMedia = !!(payload.media?.url || payload.media?.urls?.length);
+
     if (!payload.content) {
       errors.push('content object is required');
     } else {
       const { message, link, picture } = payload.content;
-      if (!message && !link && !picture) {
-        errors.push('At least one of message, link, or picture must be provided');
+      if (!message && !link && !picture && !hasMedia) {
+        errors.push('At least one of message, link, picture, or media must be provided');
       }
+    }
+
+    if (payload.format === SocialPostFormat.STORY && !hasMedia) {
+      errors.push('A story requires an image or a video');
+    }
+
+    if (payload.format === SocialPostFormat.REEL && !hasMedia) {
+      errors.push('A reel requires a video');
+    }
+
+    if (payload.format === SocialPostFormat.STORY && payload.media?.type === 'carousel') {
+      errors.push('Stories take a single image or video, not a carousel');
+    }
+
+    if (payload.format === SocialPostFormat.REEL && payload.media?.type === 'carousel') {
+      errors.push('Reels take a single video, not a carousel');
     }
 
     if (payload.platform && !PUBLISHABLE_PLATFORMS.has(payload.platform)) {
@@ -158,11 +177,8 @@ class SocialMediaHelper {
 
     // Instagram has no text-only post type; the Graph API rejects a container
     // with no image_url or video_url.
-    if (payload.platform === SocialMediaPlatform.INSTAGRAM) {
-      const hasMedia = !!(payload.media?.url || payload.media?.urls?.length);
-      if (!hasMedia) {
-        errors.push('Instagram posts require an image or video');
-      }
+    if (payload.platform === SocialMediaPlatform.INSTAGRAM && !hasMedia) {
+      errors.push('Instagram posts require an image or video');
     }
 
     return {

@@ -11,6 +11,14 @@ export enum SocialMediaPlatform {
   TIKTOK = 'tiktok',
 }
 
+export enum SocialPostFormat {
+  FEED = 'feed',
+  STORY = 'story',
+  REEL = 'reel',
+}
+
+export const SOCIAL_POST_FORMATS = Object.values(SocialPostFormat);
+
 export interface FacebookPostPayload {
   message?: string;
   link?: string;
@@ -61,6 +69,7 @@ export interface FacebookTargeting {
 export interface SocialMediaPostPayload {
   platform: SocialMediaPlatform;
   pageId: string;
+  format?: SocialPostFormat;
   content: {
     message?: string;
     link?: string;

@@ -16,6 +16,11 @@ import {
   type FacebookPage,
 } from '@/utils/oauthToken';
 import { logger } from '@/utils/logger';
+import {
+  buildConnectionRecordPageId,
+  isConnectionRecordPageId,
+  platformUsesConnectionRecord,
+} from '@/utils/oauthConnectionRecord';
 import { recordOAuthTokenExchange } from '@/middlewares/oauthRateLimit';
 import { socialMediaIntegrationRepository } from '@/repositories/socialMediaIntegration.repository';
 import { socialMediaAccountRepository } from '@/repositories/socialMediaAccount.repository';
@@ -34,8 +39,9 @@ export class SocialMediaIntegrationService {
 
     return SOCIAL_PLATFORMS.map(platform => {
       const integration = integrations.find(row => row.platform === platform);
-      const platformAccounts = accounts
-        .filter(row => row.platform === platform)
+      const platformRows = accounts.filter(row => row.platform === platform);
+      const platformAccounts = platformRows
+        .filter(row => !isConnectionRecordPageId(row.pageId))
         .map(row => ({
           id: row.id,
           name: row.pageName ?? row.pageId,
@@ -47,7 +53,7 @@ export class SocialMediaIntegrationService {
       return {
         platform,
         appId: integration?.appId ?? null,
-        connected: platformAccounts.length > 0,
+        connected: platformAccounts.length > 0 || platformRows.some(row => !!row.longLivedToken),
         syncedAt: integration?.syncedAt?.toISOString() ?? null,
         accounts: platformAccounts,
       };
@@ -129,7 +135,7 @@ export class SocialMediaIntegrationService {
     const baseData = {
       userId,
       platform,
-      pageId: randomUUID(),
+      pageId: platformUsesConnectionRecord(platform) ? buildConnectionRecordPageId() : randomUUID(),
       pageName: data.name,
       meta: data.meta ?? null,
       scopes: data.scopes,
@@ -206,7 +212,13 @@ export class SocialMediaIntegrationService {
     let availablePages: FacebookPage[] = [];
     try {
       if (platform === 'facebook' || platform === 'instagram') {
-        const account = platformAccounts.find(acc => acc.longLivedToken);
+        // Page rows hold Page tokens, which cannot list a user's Pages. The user
+        // token lives on the connection record, so prefer it; the fallback covers
+        // rows created before connection records were namespaced.
+        const account =
+          platformAccounts.find(
+            acc => acc.longLivedToken && isConnectionRecordPageId(acc.pageId)
+          ) ?? platformAccounts.find(acc => acc.longLivedToken);
 
         if (!account?.longLivedToken) {
           logger.error(

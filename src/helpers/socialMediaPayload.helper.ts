@@ -1,7 +1,11 @@
 /** Every publish path builds its payload here, so no caller can drop a column. */
 
 import { SocialMediaPost } from '@prisma/client';
-import { SocialMediaPlatform, SocialMediaPostPayload } from '@/types/socialMedia.types';
+import {
+  SocialMediaPlatform,
+  SocialMediaPostPayload,
+  SocialPostFormat,
+} from '@/types/socialMedia.types';
 import { logger } from '@/utils/logger';
 
 /**
@@ -16,6 +20,7 @@ export function buildSocialMediaPayloadFromPost(
   return {
     platform: post.platform as SocialMediaPlatform,
     pageId: post.pageId,
+    format: (post.postFormat as SocialPostFormat) || SocialPostFormat.FEED,
     content: {
       message: post.message || '',
       link: post.link || undefined,

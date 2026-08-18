@@ -15,6 +15,17 @@ export enum MetaPostKind {
   MULTI_PHOTO = 'multi_photo',
   /** One video -> POST /{page-id}/videos */
   VIDEO = 'video',
+  /** One image -> unpublished /photos upload, then POST /{page-id}/photo_stories */
+  PHOTO_STORY = 'photo_story',
+  /** One video -> resumable upload session, then POST /{page-id}/video_stories */
+  VIDEO_STORY = 'video_story',
+  /** One video -> resumable upload session, then POST /{page-id}/video_reels */
+  REEL = 'reel',
+}
+
+export enum MetaVideoEdge {
+  STORY = 'video_stories',
+  REEL = 'video_reels',
 }
 
 /** Binary media, used when a URL is not publicly reachable by Meta. */
@@ -84,6 +95,39 @@ export interface MetaVideoRequest {
   scheduled_publish_time?: number;
 }
 
+/** POST /{page-id}/photo_stories, after an unpublished /photos upload. */
+export interface MetaPhotoStoryRequest {
+  access_token: string;
+  photo_id: string;
+}
+
+/** POST /{page-id}/video_stories or /video_reels, upload_phase=start. */
+export interface MetaVideoUploadSession {
+  video_id: string;
+  upload_url: string;
+}
+
+/** The bytes for a resumable video upload, by URL or as a buffer. */
+export interface MetaVideoUpload {
+  access_token: string;
+  fileUrl?: string;
+  binary?: MetaBinaryMedia;
+  description?: string;
+  title?: string;
+  scheduledPublishTime?: number;
+}
+
+/** POST /{page-id}/video_reels, upload_phase=finish. */
+export interface MetaReelRequest {
+  access_token: string;
+  video_id: string;
+  upload_phase: 'finish';
+  video_state: 'DRAFT' | 'SCHEDULED' | 'PUBLISHED';
+  description?: string;
+  title?: string;
+  scheduled_publish_time?: number;
+}
+
 /** A fully transformed Facebook request, tagged with the call it needs. */
 export interface MetaFacebookPost {
   kind: MetaPostKind;
@@ -94,6 +138,8 @@ export interface MetaFacebookPost {
   photos?: MetaMediaSource[];
   /** For PHOTO/VIDEO: binary fallback when the URL is not public. */
   binary?: MetaBinaryMedia;
+  /** For VIDEO_STORY and REEL: the resumable upload and its publish fields. */
+  videoUpload?: MetaVideoUpload;
 }
 
 /**
@@ -138,6 +184,8 @@ export interface InstagramPost {
 
 export interface MetaPostResponse {
   id: string;
+  /** photo_stories, video_stories and video_reels answer with this instead of an id. */
+  success?: boolean;
   /** Present on /photos and /videos responses — the id of the resulting feed post. */
   post_id?: string;
   /** Facebook's public link to the post. */
@@ -171,3 +219,6 @@ export const INSTAGRAM_CAPTION_MAX_LENGTH = 2200;
 
 /** Facebook truncates the visible post body around this length. */
 export const FACEBOOK_MESSAGE_MAX_LENGTH = 63206;
+
+/** Reel descriptions are capped well below a feed post. */
+export const FACEBOOK_REEL_DESCRIPTION_MAX_LENGTH = 2200;

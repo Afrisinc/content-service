@@ -4,6 +4,7 @@ import { aiGenerationService } from '@/services/aiGeneration.service';
 import { env } from '@/config/env';
 
 let cronJob: ScheduledTask | null = null;
+let running = false;
 
 export function startPublishScheduledPostsJob() {
   if (cronJob) {
@@ -15,6 +16,13 @@ export function startPublishScheduledPostsJob() {
   logger.info(`Starting publish scheduled posts cron job (schedule: ${schedule})`);
 
   cronJob = cron.schedule(schedule, async () => {
+    if (running) {
+      logger.warn('Previous publishing run still in progress, skipping this tick');
+      return;
+    }
+
+    running = true;
+
     try {
       logger.debug('Running scheduled posts publishing job');
 
@@ -40,6 +48,8 @@ export function startPublishScheduledPostsJob() {
         },
         'Error running scheduled posts publishing job'
       );
+    } finally {
+      running = false;
     }
   });
 
@@ -50,6 +60,7 @@ export function stopPublishScheduledPostsJob() {
   if (cronJob) {
     cronJob.stop();
     cronJob = null;
+    running = false;
     logger.info('Publish scheduled posts cron job stopped');
   }
 }

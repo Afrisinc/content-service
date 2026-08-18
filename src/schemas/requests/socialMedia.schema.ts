@@ -17,6 +17,12 @@ export const FacebookPostPayloadSchema = {
       description: 'Facebook Page ID or account ID',
       minLength: 1,
     },
+    format: {
+      type: 'string',
+      enum: ['feed', 'story', 'reel'],
+      default: 'feed',
+      description: 'Where the post is published: the feed, a 24-hour story, or a reel',
+    },
     content: {
       type: 'object',
       description: 'Post content',
@@ -416,6 +422,7 @@ export const ListSocialMediaPostsSchema = {
                   name: { type: ['string', 'null'] },
                   caption: { type: ['string', 'null'] },
                   tags: { type: 'array', items: { type: 'string' } },
+                  postFormat: { type: ['string', 'null'] },
                   mediaType: { type: ['string', 'null'] },
                   mediaUrls: { type: 'array', items: { type: 'string' } },
                   altText: { type: ['string', 'null'] },

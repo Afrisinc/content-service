@@ -41,6 +41,12 @@ enum PostStatus {
   deleted
 }
 
+enum PostFormat {
+  feed
+  story
+  reel
+}
+
 enum TokenType {
   SHORT_LIVED
   LONG_LIVED
@@ -167,6 +173,7 @@ model SocialMediaPost {
   tags        String[] @default([])
 
   // Media
+  postFormat  PostFormat? @default(feed)
   mediaType   String?  // image, video, carousel
   mediaUrls   String[] @default([])
   altText     String?

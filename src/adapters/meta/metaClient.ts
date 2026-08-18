@@ -9,6 +9,11 @@ import {
   MetaPhotoRequest,
   MetaVideoRequest,
   MetaBinaryMedia,
+  MetaPhotoStoryRequest,
+  MetaReelRequest,
+  MetaVideoEdge,
+  MetaVideoUpload,
+  MetaVideoUploadSession,
   InstagramContainerRequest,
   InstagramContainerStatus,
 } from './meta.types';
@@ -18,6 +23,7 @@ export class MetaClient {
   /** Pinned deliberately. Meta supports a version for ~2 years; v26.0 is current. */
   private readonly API_VERSION = 'v24.0';
   private readonly GRAPH_API_BASE = 'https://graph.facebook.com';
+  private readonly RUPLOAD_BASE = 'https://rupload.facebook.com';
   private readonly DEFAULT_TIMEOUT = 30000;
   /** Video uploads stream a whole file; they need far longer than a form post. */
   private readonly UPLOAD_TIMEOUT = 300000;
@@ -132,6 +138,142 @@ export class MetaClient {
       return response.data;
     } catch (error) {
       this.handleError(error, 'Facebook video upload');
+    }
+  }
+
+  /**
+   * Publish a Page photo story from an already-uploaded unpublished photo.
+   * The photo must have been created with published=false on /photos.
+   */
+  async publishPhotoStory(
+    pageId: string,
+    payload: MetaPhotoStoryRequest
+  ): Promise<MetaPostResponse> {
+    const url = this.edge(pageId, 'photo_stories');
+
+    logger.debug({ pageId, photoId: payload.photo_id }, '[MetaClient] Photo story publish');
+
+    try {
+      const response = await this.executeWithRetry(() =>
+        this.client.post<MetaPostResponse>(url, this.toFormBody(payload), {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        })
+      );
+
+      logger.info({ postId: response.data.post_id, pageId }, '[MetaClient] Photo story published');
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'Facebook photo story');
+    }
+  }
+
+  /**
+   * Open a resumable upload session on the video_stories or video_reels edge.
+   * Both edges share the start/upload/finish protocol.
+   */
+  async startVideoUpload(
+    pageId: string,
+    edge: MetaVideoEdge,
+    accessToken: string
+  ): Promise<MetaVideoUploadSession> {
+    const url = this.edge(pageId, edge);
+
+    try {
+      const response = await this.executeWithRetry(() =>
+        this.client.post<MetaVideoUploadSession>(
+          url,
+          this.toFormBody({ upload_phase: 'start', access_token: accessToken }),
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        )
+      );
+
+      logger.debug(
+        { pageId, edge, videoId: response.data.video_id },
+        '[MetaClient] Upload started'
+      );
+      return response.data;
+    } catch (error) {
+      this.handleError(error, `Facebook ${edge} upload session`);
+    }
+  }
+
+  /**
+   * Send the bytes to the session's rupload host. A hosted file is handed over
+   * as a file_url header; anything else streams the buffer with an offset.
+   */
+  async uploadVideoToSession(
+    session: MetaVideoUploadSession,
+    accessToken: string,
+    upload: MetaVideoUpload
+  ): Promise<void> {
+    const headers: Record<string, string> = { Authorization: `OAuth ${accessToken}` };
+    let body: Buffer | undefined;
+
+    if (upload.binary) {
+      headers.offset = '0';
+      headers.file_size = String(upload.binary.buffer.length);
+      body = upload.binary.buffer;
+    } else if (upload.fileUrl) {
+      headers.file_url = upload.fileUrl;
+    } else {
+      throw new Error('A video upload needs either a public file URL or binary content');
+    }
+
+    try {
+      await this.executeWithRetry(() =>
+        this.client.post(session.upload_url, body, {
+          headers,
+          timeout: this.UPLOAD_TIMEOUT,
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+        })
+      );
+
+      logger.debug({ videoId: session.video_id }, '[MetaClient] Video bytes uploaded');
+    } catch (error) {
+      this.handleError(error, 'Facebook video upload');
+    }
+  }
+
+  /** Close a video_stories session, which publishes the story. */
+  async finishVideoStory(
+    pageId: string,
+    videoId: string,
+    accessToken: string
+  ): Promise<MetaPostResponse> {
+    const url = this.edge(pageId, MetaVideoEdge.STORY);
+
+    try {
+      const response = await this.executeWithRetry(() =>
+        this.client.post<MetaPostResponse>(
+          url,
+          this.toFormBody({ upload_phase: 'finish', video_id: videoId, access_token: accessToken }),
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        )
+      );
+
+      logger.info({ postId: response.data.post_id, pageId }, '[MetaClient] Video story published');
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'Facebook video story');
+    }
+  }
+
+  /** Close a video_reels session, which publishes or schedules the reel. */
+  async finishReel(pageId: string, payload: MetaReelRequest): Promise<MetaPostResponse> {
+    const url = this.edge(pageId, MetaVideoEdge.REEL);
+
+    try {
+      const response = await this.executeWithRetry(() =>
+        this.client.post<MetaPostResponse>(url, this.toFormBody(payload), {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        })
+      );
+
+      logger.info({ postId: response.data.post_id, pageId }, '[MetaClient] Reel published');
+      return response.data;
+    } catch (error) {
+      this.handleError(error, 'Facebook reel');
     }
   }
 

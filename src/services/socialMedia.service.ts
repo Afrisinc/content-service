@@ -7,9 +7,11 @@ import {
   SocialMediaPlatform,
   SocialMediaPostPayload,
   SocialMediaPostResult,
+  SocialPostFormat,
 } from '@/types/socialMedia.types';
 import { socialMediaHelper } from '@/helpers/socialMedia.helper';
 import { buildSocialMediaPayloadFromPost } from '@/helpers/socialMediaPayload.helper';
+import { selectPublishingAccount } from '@/helpers/socialMediaAccount.helper';
 import { socialMediaPostRepository } from '@/repositories/socialMediaPost.repository';
 import { socialMediaAccountRepository } from '@/repositories/socialMediaAccount.repository';
 import { decryptToken, encryptToken } from '@/utils/oauthToken';
@@ -27,6 +29,8 @@ import {
   MetaPhotoRequest,
   MetaPostResponse,
   MetaVideoRequest,
+  MetaVideoEdge,
+  MetaVideoUpload,
   InstagramPost,
 } from '@/adapters/meta/meta.types';
 
@@ -186,6 +190,7 @@ export class SocialMediaService {
           name: sanitizedPayload.content.name,
           caption: sanitizedPayload.content.caption,
           tags: sanitizedPayload.content.tags,
+          postFormat: sanitizedPayload.format ?? SocialPostFormat.FEED,
           mediaType: sanitizedPayload.media?.type,
           mediaUrls: processedMediaUrls || [],
           altText: sanitizedPayload.media?.alt_text,
@@ -291,11 +296,68 @@ export class SocialMediaService {
       return this.publishFacebookAlbum(pageId, post.feed, post.photos || []);
     }
 
+    if (post.kind === MetaPostKind.PHOTO_STORY && post.photo) {
+      return this.publishFacebookPhotoStory(pageId, post.photo, post.binary);
+    }
+
+    if (post.kind === MetaPostKind.VIDEO_STORY && post.videoUpload) {
+      return this.publishFacebookVideoStory(pageId, post.videoUpload);
+    }
+
+    if (post.kind === MetaPostKind.REEL && post.videoUpload) {
+      return this.publishFacebookReel(pageId, post.videoUpload);
+    }
+
     if (!post.feed) {
       throw new Error(`Transformed Facebook post of kind "${post.kind}" is missing its request`);
     }
 
     return metaClient.postToFeed(pageId, post.feed);
+  }
+
+  private async publishFacebookPhotoStory(
+    pageId: string,
+    request: MetaPhotoRequest,
+    binary?: MetaBinaryMedia
+  ): Promise<MetaPostResponse> {
+    const photo = await this.uploadPhotoResiliently(pageId, request, binary);
+
+    return metaClient.publishPhotoStory(pageId, {
+      access_token: request.access_token,
+      photo_id: photo.id,
+    });
+  }
+
+  private async publishFacebookVideoStory(
+    pageId: string,
+    upload: MetaVideoUpload
+  ): Promise<MetaPostResponse> {
+    const accessToken = upload.access_token;
+    const session = await metaClient.startVideoUpload(pageId, MetaVideoEdge.STORY, accessToken);
+
+    await metaClient.uploadVideoToSession(session, accessToken, upload);
+
+    return metaClient.finishVideoStory(pageId, session.video_id, accessToken);
+  }
+
+  private async publishFacebookReel(
+    pageId: string,
+    upload: MetaVideoUpload
+  ): Promise<MetaPostResponse> {
+    const accessToken = upload.access_token;
+    const session = await metaClient.startVideoUpload(pageId, MetaVideoEdge.REEL, accessToken);
+
+    await metaClient.uploadVideoToSession(session, accessToken, upload);
+
+    return metaClient.finishReel(pageId, {
+      access_token: accessToken,
+      video_id: session.video_id,
+      upload_phase: 'finish',
+      video_state: upload.scheduledPublishTime ? 'SCHEDULED' : 'PUBLISHED',
+      description: upload.description,
+      title: upload.title,
+      scheduled_publish_time: upload.scheduledPublishTime,
+    });
   }
 
   /**
@@ -813,7 +875,7 @@ export class SocialMediaService {
         } catch {
           logger.warn({ postId }, 'Failed to decrypt stored token, trying account lookup');
           const accounts = await socialMediaPostRepository.getUserAccounts(userId);
-          const account = accounts?.find(acc => acc.platform === post.platform);
+          const account = selectPublishingAccount(accounts ?? [], post.platform, post.pageId);
           if (!account?.accessToken) {
             return {
               platform: post.platform as SocialMediaPlatform,
@@ -826,7 +888,7 @@ export class SocialMediaService {
         }
       } else {
         const accounts = await socialMediaPostRepository.getUserAccounts(userId);
-        const account = accounts?.find(acc => acc.platform === post.platform);
+        const account = selectPublishingAccount(accounts ?? [], post.platform, post.pageId);
         if (!account?.accessToken) {
           return {
             platform: post.platform as SocialMediaPlatform,

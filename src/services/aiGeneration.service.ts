@@ -6,11 +6,9 @@
 import { SocialMediaPlatform } from '@/types/socialMedia.types';
 import { GeneratePostRequest, GeneratePostResponse } from '@/types/aiGeneration.types';
 import { openaiHelper } from '@/helpers/openai.helper';
-import { buildSocialMediaPayloadFromPost } from '@/helpers/socialMediaPayload.helper';
 import { socialMediaPostRepository } from '@/repositories/socialMediaPost.repository';
 import { socialMediaService } from './socialMedia.service';
 import { logger } from '@/utils/logger';
-import { decryptToken } from '@/utils/oauthToken';
 
 class AIGenerationService {
   /**
@@ -249,44 +247,15 @@ class AIGenerationService {
 
       for (const post of postsToPublish) {
         try {
-          let accessToken = '';
+          const result = await socialMediaService.publishScheduledPostNow(post.id, post.userId);
 
-          if (post.accessTokenEnc) {
-            accessToken = decryptToken(post.accessTokenEnc);
-          } else {
-            const accounts = await socialMediaPostRepository.getUserAccounts(post.userId);
-            const account = accounts?.find(acc => acc.platform === post.platform);
-
-            if (!account?.accessToken) {
-              const msg = `No access token for user ${post.userId} on ${post.platform}`;
-              throw new Error(msg);
-            }
-
-            accessToken = decryptToken(account.accessToken);
-          }
-
-          const payload = buildSocialMediaPayloadFromPost(post, accessToken);
-
-          const result = await socialMediaService.postToSocialMedia(payload, post.userId);
-
-          if (result.status === 'success' || result.status === 'pending') {
-            // Update post in database
-            const postUrl =
-              result.metadata?.permalink_url ||
-              result.metadata?.postUrl ||
-              `https://${post.platform}.com/${result.postId}`;
-            await socialMediaPostRepository.updatePostAfterPublish(post.id, {
-              status: 'published',
-              platformPostId: result.postId || '',
-              postUrl,
-              publishedAt: new Date(),
-            });
-
+          if (result.status === 'success') {
             published++;
             logger.info(
               {
                 postId: post.id,
                 platform: post.platform,
+                format: post.postFormat,
               },
               'Scheduled post published'
             );

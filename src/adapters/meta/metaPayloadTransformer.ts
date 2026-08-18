@@ -1,10 +1,11 @@
 /** Media cannot ride on /feed: photos go to /photos, videos to /videos. */
 
-import { SocialMediaPostPayload } from '@/types/socialMedia.types';
+import { SocialMediaPostPayload, SocialPostFormat } from '@/types/socialMedia.types';
 import { logger } from '@/utils/logger';
 import { DownloadedMedia, mediaDownloader } from './mediaDownloader';
 import {
   FACEBOOK_MESSAGE_MAX_LENGTH,
+  FACEBOOK_REEL_DESCRIPTION_MAX_LENGTH,
   INSTAGRAM_CAPTION_MAX_LENGTH,
   InstagramContainerRequest,
   InstagramPost,
@@ -32,8 +33,21 @@ const FACEBOOK_MIN_SCHEDULE_LEAD_SECONDS = 600;
  */
 const FACEBOOK_MAX_SCHEDULE_LEAD_SECONDS = 75 * 24 * 60 * 60;
 
+/** video_reels caps scheduling far tighter than /feed does. */
+const FACEBOOK_REEL_MAX_SCHEDULE_LEAD_SECONDS = 29 * 24 * 60 * 60;
+
 export class MetaPayloadTransformer {
   async transformForFacebook(payload: SocialMediaPostPayload): Promise<MetaFacebookPost> {
+    const format = payload.format ?? SocialPostFormat.FEED;
+
+    if (format === SocialPostFormat.REEL) {
+      return this.transformFacebookReel(payload);
+    }
+
+    if (format === SocialPostFormat.STORY) {
+      return this.transformFacebookStory(payload);
+    }
+
     const message = this.buildBody(payload, FACEBOOK_MESSAGE_MAX_LENGTH, {
       disclose: !!payload.metadata?.aiGenerated,
     });
@@ -89,6 +103,65 @@ export class MetaPayloadTransformer {
     };
   }
 
+  private async transformFacebookReel(payload: SocialMediaPostPayload): Promise<MetaFacebookPost> {
+    const videoUrl = this.storyOrReelVideoUrl(payload);
+    if (!videoUrl) {
+      throw new Error('A Facebook reel requires a video');
+    }
+
+    const description = this.buildBody(payload, FACEBOOK_REEL_DESCRIPTION_MAX_LENGTH, {
+      disclose: !!payload.metadata?.aiGenerated,
+    });
+    const scheduledAt = this.scheduleTime(payload, FACEBOOK_REEL_MAX_SCHEDULE_LEAD_SECONDS);
+    const source = await this.resolveMedia(videoUrl, 'video');
+
+    return {
+      kind: MetaPostKind.REEL,
+      videoUpload: {
+        access_token: payload.accessToken,
+        fileUrl: source.url,
+        binary: source.binary,
+        description: description || undefined,
+        title: payload.content.name || undefined,
+        scheduledPublishTime: scheduledAt,
+      },
+    };
+  }
+
+  private async transformFacebookStory(payload: SocialMediaPostPayload): Promise<MetaFacebookPost> {
+    const videoUrl = this.storyOrReelVideoUrl(payload);
+
+    if (videoUrl) {
+      const source = await this.resolveMedia(videoUrl, 'video');
+      return {
+        kind: MetaPostKind.VIDEO_STORY,
+        videoUpload: {
+          access_token: payload.accessToken,
+          fileUrl: source.url,
+          binary: source.binary,
+        },
+      };
+    }
+
+    const imageUrls = this.imageUrls(payload);
+    if (imageUrls.length === 0) {
+      throw new Error('A Facebook story requires an image or a video');
+    }
+
+    const source = await this.resolveMedia(imageUrls[0], 'image');
+
+    return {
+      kind: MetaPostKind.PHOTO_STORY,
+      photo: {
+        access_token: payload.accessToken,
+        url: source.url,
+        alt_text_custom: payload.media?.alt_text || undefined,
+        published: false,
+      },
+      binary: source.binary,
+    };
+  }
+
   /**
    * Instagram only ever fetches media from a public URL — there is no binary
    * upload path — so unreachable media fails here rather than publishing as
@@ -97,8 +170,19 @@ export class MetaPayloadTransformer {
   async transformForInstagram(payload: SocialMediaPostPayload): Promise<InstagramPost> {
     const caption = this.buildBody(payload, INSTAGRAM_CAPTION_MAX_LENGTH, { disclose: false });
     const isAiGenerated = payload.metadata?.aiGenerated || undefined;
-    const videoUrl = this.videoUrl(payload);
+    const format = payload.format ?? SocialPostFormat.FEED;
     const imageUrls = this.imageUrls(payload);
+
+    if (format === SocialPostFormat.STORY) {
+      return this.transformInstagramStory(payload, imageUrls, isAiGenerated);
+    }
+
+    const videoUrl =
+      format === SocialPostFormat.REEL ? this.storyOrReelVideoUrl(payload) : this.videoUrl(payload);
+
+    if (format === SocialPostFormat.REEL && !videoUrl) {
+      throw new Error('An Instagram reel requires a video');
+    }
 
     if (videoUrl) {
       return {
@@ -145,6 +229,38 @@ export class MetaPayloadTransformer {
         image_url: this.requirePublicUrl(url),
         is_carousel_item: true,
       })),
+    };
+  }
+
+  private transformInstagramStory(
+    payload: SocialMediaPostPayload,
+    imageUrls: string[],
+    isAiGenerated?: boolean
+  ): InstagramPost {
+    const videoUrl = this.storyOrReelVideoUrl(payload);
+
+    if (videoUrl) {
+      return {
+        container: {
+          access_token: payload.accessToken,
+          media_type: 'STORIES',
+          video_url: this.requirePublicUrl(videoUrl),
+          is_ai_generated: isAiGenerated,
+        },
+      };
+    }
+
+    if (imageUrls.length === 0) {
+      throw new Error('An Instagram story requires an image or a video');
+    }
+
+    return {
+      container: {
+        access_token: payload.accessToken,
+        media_type: 'STORIES',
+        image_url: this.requirePublicUrl(imageUrls[0]),
+        is_ai_generated: isAiGenerated,
+      },
     };
   }
 
@@ -263,6 +379,22 @@ export class MetaPayloadTransformer {
     return media.url || media.urls?.[0];
   }
 
+  private storyOrReelVideoUrl(payload: SocialMediaPostPayload): string | undefined {
+    const media = payload.media;
+    if (!media) {
+      return undefined;
+    }
+    if (media.type === 'video') {
+      return media.url || media.urls?.[0];
+    }
+    const candidate = media.url || media.urls?.[0];
+    return candidate && this.looksLikeVideo(candidate) ? candidate : undefined;
+  }
+
+  private looksLikeVideo(url: string): boolean {
+    return /\.(mp4|mov|m4v|webm)(\?|#|$)/i.test(url);
+  }
+
   private capToCarouselLimit(urls: string[], platform: MetaPlatform): string[] {
     const { maxItems } = META_CAROUSEL_LIMITS[platform];
     if (urls.length <= maxItems) {
@@ -350,16 +482,20 @@ export class MetaPayloadTransformer {
    * then the timestamp is in the past.
    */
   private facebookScheduleTime(payload: SocialMediaPostPayload): number | undefined {
+    return this.scheduleTime(payload, FACEBOOK_MAX_SCHEDULE_LEAD_SECONDS);
+  }
+
+  private scheduleTime(
+    payload: SocialMediaPostPayload,
+    maxLeadSeconds: number
+  ): number | undefined {
     const scheduledAt = payload.scheduling?.scheduled_publish_time;
     if (!scheduledAt || payload.scheduling?.publish_immediately) {
       return undefined;
     }
 
     const leadSeconds = scheduledAt - Math.floor(Date.now() / 1000);
-    if (
-      leadSeconds < FACEBOOK_MIN_SCHEDULE_LEAD_SECONDS ||
-      leadSeconds > FACEBOOK_MAX_SCHEDULE_LEAD_SECONDS
-    ) {
+    if (leadSeconds < FACEBOOK_MIN_SCHEDULE_LEAD_SECONDS || leadSeconds > maxLeadSeconds) {
       return undefined;
     }
 

@@ -3,7 +3,7 @@
  * Database operations for social media posts
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PostFormat, PrismaClient } from '@prisma/client';
 import { prisma } from '@/database/prismaClient';
 
 export class SocialMediaPostRepository {
@@ -27,6 +27,7 @@ export class SocialMediaPostRepository {
     name?: string;
     caption?: string;
     tags?: string[];
+    postFormat?: PostFormat;
     mediaType?: string;
     mediaUrls?: string[];
     altText?: string;
@@ -288,10 +289,9 @@ export class SocialMediaPostRepository {
     return this.prisma.socialMediaPost.findMany({
       where: {
         status: 'pending',
-        scheduledAt: {
-          lte: new Date(),
-        },
+        OR: [{ scheduledAt: null }, { scheduledAt: { lte: new Date() } }],
       },
+      orderBy: { createdAt: 'asc' },
       include: {
         user: true,
       },
