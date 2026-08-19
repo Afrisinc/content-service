@@ -61,14 +61,18 @@ export function buildMessageBody(
   const options = context.getNodeParameter<ClaudeOptions>('options', {});
   const thinking = thinkingConfig(options);
   const withFallback = context.getNodeParameter<boolean>('refusalFallback', true);
+  const model = context.getNodeParameter<string>('model');
   const betas = [...(parts.betas ?? []), ...(withFallback ? [REFUSAL_FALLBACK_BETA] : [])];
   const outputConfig: Anthropic.Beta.BetaOutputConfig = {
     ...(options.effort ? { effort: options.effort } : {}),
     ...(parts.format ? { format: parts.format } : {}),
   };
 
+  // Fallbacks are only supported on opus and fable models, not on sonnet or haiku.
+  const supportsFallbacks = model.includes('opus') || model.includes('fable');
+
   return {
-    model: context.getNodeParameter<string>('model'),
+    model,
     max_tokens: parts.maxTokens ?? context.getNodeParameter<number>('maxTokens'),
     messages: parts.messages,
     ...(parts.system ? { system: parts.system } : {}),
@@ -82,7 +86,7 @@ export function buildMessageBody(
     ...(parts.tools ? { tools: parts.tools } : {}),
     ...(parts.container ? { container: parts.container } : {}),
     ...(betas.length > 0 ? { betas } : {}),
-    ...(withFallback ? { fallbacks: 'default' as const } : {}),
+    ...(withFallback && supportsFallbacks ? { fallbacks: 'default' as const } : {}),
   };
 }
 

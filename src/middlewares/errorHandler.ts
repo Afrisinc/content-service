@@ -2,6 +2,7 @@ import { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
 import { logger } from '@/utils/logger.js';
+import { NodeApiError } from '@/nodes/core';
 
 // Custom error types
 export class AppError extends Error {
@@ -118,6 +119,10 @@ export const errorHandler = (
     statusCode = error.statusCode;
     message = error.message;
     errorCode = error.code;
+  } else if (error instanceof NodeApiError) {
+    statusCode = error.status ?? 500;
+    message = error.message;
+    errorCode = error.code || 'NODE_API_ERROR';
   } else if (error instanceof ZodError) {
     // Zod validation errors
     statusCode = 400;
@@ -195,7 +200,14 @@ export const errorHandler = (
         request: {
           method: request.method,
           url: request.url,
-          headers: request.headers,
+          // Named explicitly: spreading every header writes the caller's bearer token,
+          // cookies and gateway signature into the log.
+          headers: {
+            'content-type': request.headers['content-type'],
+            'content-length': request.headers['content-length'],
+            origin: request.headers.origin,
+            referer: request.headers.referer,
+          },
           params: request.params,
           query: request.query,
           ip: request.ip,

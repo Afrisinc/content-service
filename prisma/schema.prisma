@@ -652,3 +652,90 @@ model AiUsageLog {
   @@index([node, created_at])
   @@map("ai_usage_logs")
 }
+
+// ─────────────────────────────────────────────
+// CAROUSEL AGENT
+// ─────────────────────────────────────────────
+
+enum PostDraftStatus {
+  drafting
+  rendered
+  awaiting_approval
+  approved
+  scheduled
+  rejected
+  failed
+}
+
+model PostDraft {
+  id     String @id @default(uuid())
+  userId String
+
+  topic       String
+  format      String  @default("post") // post | story
+  serviceLine String?
+  offer       String?
+  audience    String?
+
+  status PostDraftStatus @default(drafting)
+
+  // The PostSpec handed to the render service, stored verbatim so a re-render
+  // reproduces the approved artwork rather than a fresh generation.
+  spec Json
+
+  caption  String?
+  hashtags String[] @default([])
+
+  // Policy statements the copy agent made. Nothing publishes until these are signed off.
+  claims         String[] @default([])
+  claimsApproved Boolean  @default(false)
+
+  auditReport Json?
+  auditPassed Boolean @default(false)
+
+  slideUrls String[] @default([])
+
+  approvedBy String?
+  approvedAt DateTime? @db.Timestamptz()
+
+  scheduledAt   DateTime? @db.Timestamptz()
+  socialPostIds String[]  @default([])
+
+  aiProvider     String?
+  aiModel        String?
+  costMicroUsd   BigInt  @default(0)
+  generationTries Int    @default(0)
+
+  errorMessage String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("post_drafts")
+}
+
+model BrandAsset {
+  id   String @id @default(uuid())
+  url  String
+  // Filename the render service resolves inside its photo directory.
+  reference String @unique
+
+  kind        String   @default("photo")
+  subjects    String[] @default([])
+  hasPerson   Boolean  @default(false)
+  subjectSide String?
+  brightness  String?
+
+  approved   Boolean   @default(false)
+  usageCount Int       @default(0)
+  lastUsedAt DateTime? @db.Timestamptz()
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@index([kind, approved])
+  @@index([lastUsedAt])
+  @@map("brand_assets")
+}

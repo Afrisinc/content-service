@@ -161,12 +161,8 @@ export async function getArticlesByCategory(
     'Fetching articles by category'
   );
 
-  const { articles, total } = await n8nArticleRepository.findByCategory(
-    params.category,
-    page,
-    limit
-  );
-  const response = buildPaginatedResponse(articles, total, page, limit);
+  const data = await n8nArticleRepository.findByCategory(params.category, page, limit);
+  const response = buildPaginatedResponse(data.articles, data.total, page, limit);
 
   return ApiResponseHelper.success(
     reply,
@@ -267,14 +263,30 @@ export async function updateArticle(request: FastifyRequest, reply: FastifyReply
 
   const data: Prisma.N8nArticleUpdateInput = {};
 
-  if (body.status !== undefined) data.status = body.status;
-  if (body.image_url !== undefined) data.image_url = body.image_url;
-  if (body.processing_error !== undefined) data.processing_error = body.processing_error;
-  if (body.is_featured !== undefined) data.is_featured = body.is_featured;
-  if (body.slug !== undefined) data.slug = body.slug;
-  if (body.ai_generated !== undefined) data.ai_generated = body.ai_generated;
-  if (body.tags !== undefined) data.tags = body.tags;
-  if (body.read_time !== undefined) data.read_time = body.read_time;
+  if (body.status !== undefined) {
+    data.status = body.status;
+  }
+  if (body.image_url !== undefined) {
+    data.image_url = body.image_url;
+  }
+  if (body.processing_error !== undefined) {
+    data.processing_error = body.processing_error;
+  }
+  if (body.is_featured !== undefined) {
+    data.is_featured = body.is_featured;
+  }
+  if (body.slug !== undefined) {
+    data.slug = body.slug;
+  }
+  if (body.ai_generated !== undefined) {
+    data.ai_generated = body.ai_generated;
+  }
+  if (body.tags !== undefined) {
+    data.tags = body.tags;
+  }
+  if (body.read_time !== undefined) {
+    data.read_time = body.read_time;
+  }
 
   logger.info(
     {

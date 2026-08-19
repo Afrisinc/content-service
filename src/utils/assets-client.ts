@@ -220,7 +220,7 @@ export function initAssetsClient(baseURL: string, apiKey: string): AssetsClient 
 export function getAssetsClient(): AssetsClient {
   if (!singletonInstance) {
     throw new Error(
-      'AssetsClient not initialized. Call initAssetsClient(baseURL, apiKey) during application bootstrap.'
+      'AssetsClient not initialized. Call initAssetsClient() during ' + 'application bootstrap.'
     );
   }
   return singletonInstance;

@@ -102,9 +102,8 @@ export async function exchangeShortForLongLived(
     return response.data;
   } catch (error) {
     logger.error({ error }, `Long-lived token exchange failed for ${platform}`);
-    throw new Error(
-      `Failed to exchange for long-lived token: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`Failed to exchange for long-lived token: ${msg}`);
   }
 }
 

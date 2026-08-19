@@ -42,9 +42,13 @@ class AIGenerationService {
 
           // Generate caption for the generated image
           try {
+            const captionPrompt =
+              `Create a brief, engaging caption for this generated image ` +
+              `that fits the following prompt: ${request.prompt}. ` +
+              `Keep it concise and suitable for social media.`;
             imageCaption = await openaiHelper.generateContentWithVision(
               generatedImageUrl,
-              `Create a brief, engaging caption for this generated image that fits the following prompt: ${request.prompt}. Keep it concise and suitable for social media.`
+              captionPrompt
             );
           } catch (captionError) {
             logger.warn(
@@ -65,9 +69,13 @@ class AIGenerationService {
         }
       } else if (request.imageUrl) {
         try {
+          const imageCaptionPrompt =
+            `Create a brief, engaging caption for this image ` +
+            `that fits the following prompt: ${request.prompt}. ` +
+            `Keep it concise and suitable for social media.`;
           imageCaption = await openaiHelper.generateContentWithVision(
             request.imageUrl,
-            `Create a brief, engaging caption for this image that fits the following prompt: ${request.prompt}. Keep it concise and suitable for social media.`
+            imageCaptionPrompt
           );
         } catch (error) {
           logger.warn(

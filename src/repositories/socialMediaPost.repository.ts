@@ -390,6 +390,30 @@ export class SocialMediaPostRepository {
   }
 
   /**
+   * Bulk status change for posts held in review. `getPostsReadyToPublish` only ever
+   * looks at `pending`, so anything in another status is invisible to the cron.
+   */
+  async setStatusForPosts(postIds: string[], status: string) {
+    if (!postIds.length) {
+      return { count: 0 };
+    }
+    return this.prisma.socialMediaPost.updateMany({
+      where: { id: { in: postIds } },
+      data: { status, updatedAt: new Date() },
+    });
+  }
+
+  async reschedulePosts(postIds: string[], scheduledAt: Date) {
+    if (!postIds.length) {
+      return { count: 0 };
+    }
+    return this.prisma.socialMediaPost.updateMany({
+      where: { id: { in: postIds } },
+      data: { scheduledAt, updatedAt: new Date() },
+    });
+  }
+
+  /**
    * Delete post (hard delete - actually removes from database)
    */
   async deletePost(postId: string) {

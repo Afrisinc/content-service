@@ -26,6 +26,24 @@ export const env = {
   AI_MEMORY_KEEP_RECENT_TURNS: Number(process.env.AI_MEMORY_KEEP_RECENT_TURNS) || 8,
   AI_MEMORY_SUMMARISE_AFTER_TURNS: Number(process.env.AI_MEMORY_SUMMARISE_AFTER_TURNS) || 24,
 
+  // Post agent + render service
+  RENDER_SERVICE_URL: process.env.RENDER_SERVICE_URL || 'http://localhost:8090',
+  RENDER_SERVICE_API_KEY: process.env.RENDER_SERVICE_API_KEY || '',
+  RENDER_SERVICE_TIMEOUT_MS: Number(process.env.RENDER_SERVICE_TIMEOUT_MS) || 60000,
+  POST_AGENT_MODEL: process.env.POST_AGENT_MODEL || 'claude-sonnet-5',
+  POST_AGENT_MAX_TOKENS: Number(process.env.POST_AGENT_MAX_TOKENS) || 2048,
+  // A copy attempt that fails schema or brand validation is retried with the
+  // validator's complaint appended. Beyond this the draft is marked failed.
+  POST_AGENT_MAX_ATTEMPTS: Number(process.env.POST_AGENT_MAX_ATTEMPTS) || 3,
+  // A rendered draft is queued into its posting slot immediately, held in review.
+  // Nothing publishes until a human approves, which releases it to the cron.
+  POST_AUTO_SCHEDULE: process.env.POST_AUTO_SCHEDULE !== 'false',
+  POST_DEFAULT_PLATFORM: process.env.POST_DEFAULT_PLATFORM || 'instagram',
+  POST_DEFAULT_PAGE_ID: process.env.POST_DEFAULT_PAGE_ID || '',
+  // Weekdays as 0=Sunday..6=Saturday. Tuesday and Friday by default.
+  POST_SLOT_WEEKDAYS: process.env.POST_SLOT_WEEKDAYS || '2,5',
+  POST_SLOT_HOUR: Number(process.env.POST_SLOT_HOUR ?? 9),
+
   // Notify (campaign delivery)
   NOTIFY_API_URL: process.env.NOTIFY_API_URL || '',
   NOTIFY_APP_ID: process.env.NOTIFY_APP_ID || '',

@@ -195,8 +195,12 @@ export async function getDatabaseInfo(): Promise<{
     >`
       SELECT
         'max_connections' as setting,
-        COALESCE((SELECT setting::int FROM pg_settings WHERE name = 'max_connections'), 0) as max_connections,
-        (SELECT count(*) FROM pg_stat_activity WHERE state = 'active') as active_connections
+        COALESCE(
+          (SELECT setting::int FROM pg_settings WHERE name = 'max_connections'),
+          0
+        ) as max_connections,
+        (SELECT count(*) FROM pg_stat_activity WHERE state = 'active') as
+          active_connections
     `;
 
     const stats = connectionStats[0];

@@ -142,7 +142,8 @@ export class SocialMediaService {
       const storedAccount = await this.getStoredAccountToken(payload.platform, payload.pageId);
       if (!storedAccount || !storedAccount.accessToken) {
         throw new Error(
-          `No connected account found for ${payload.platform} page ${payload.pageId}. Please connect the account first.`
+          `No connected account found for ${payload.platform} page ` +
+            `${payload.pageId}. Please connect the account first.`
         );
       }
 
@@ -622,7 +623,15 @@ export class SocialMediaService {
    */
   async getPostDetails(postId: string, accessToken: string): Promise<any> {
     try {
-      const url = `https://graph.facebook.com/v24.0/${postId}?access_token=${accessToken}&fields=id,message,story,picture,link,name,description,type,status_type,permalink_url,shares,likes.summary(true).limit(0),comments.summary(true).limit(0),created_time,updated_time`;
+      const fields =
+        'id,message,story,picture,link,name,description,type,' +
+        'status_type,permalink_url,shares,' +
+        'likes.summary(true).limit(0),' +
+        'comments.summary(true).limit(0),' +
+        'created_time,updated_time';
+      const url =
+        `https://graph.facebook.com/v24.0/${postId}?` +
+        `access_token=${accessToken}&fields=${fields}`;
 
       const response = await fetch(url, {
         method: 'GET',
