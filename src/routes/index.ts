@@ -8,6 +8,7 @@ import { socialMediaIntegrationRoutes } from './socialMediaIntegration.routes';
 import { userRoutes } from './user.routes';
 import { mediaPostRoutes } from './mediaPost.routes';
 import { aiUsageRoutes } from './aiUsage.routes';
+import { newsletterDigestRoutes } from './newsletterDigest.routes';
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get(
@@ -28,4 +29,5 @@ export async function registerRoutes(app: FastifyInstance) {
   app.register(ArticlesRoutes);
   app.register(GeneratedPostsRoutes);
   app.register(aiUsageRoutes);
+  app.register(newsletterDigestRoutes);
 }

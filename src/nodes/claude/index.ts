@@ -1,6 +1,6 @@
 import { executeNode, streamNode, type ExecuteNodeOptions, type INodeItem } from '../core';
 import { CLAUDE_CREDENTIALS_NAME } from './claude.constants';
-import { ClaudeNode } from './claude.node';
+import { ClaudeNode } from './claude.impl';
 import type { ClaudeCredentials } from './claude.types';
 
 export const claudeNode = new ClaudeNode();
@@ -29,7 +29,7 @@ export * from './claude.constants';
 export { claudeCredentialDescription, claudeCredentialsFromEnv } from './claude.credentials';
 export { claudeDescription, claudeProperties } from './claude.description';
 export { CLAUDE_PRICING } from './claude.pricing';
-export { ClaudeNode, type ClaudeNodeOptions } from './claude.node';
+export { ClaudeNode, type ClaudeNodeOptions } from './claude.impl';
 export type {
   ClaudeClientFactory,
   ClaudeCredentials,

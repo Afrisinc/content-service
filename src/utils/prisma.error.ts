@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { logger } from '../../../auth-service/src/utils/logger';
+import { logger } from './logger';
 
 export type CleanApiError = {
   status: number;

@@ -25,4 +25,22 @@ export const env = {
   AI_MEMORY_SUMMARY_MODEL: process.env.AI_MEMORY_SUMMARY_MODEL || 'claude-haiku-4-5',
   AI_MEMORY_KEEP_RECENT_TURNS: Number(process.env.AI_MEMORY_KEEP_RECENT_TURNS) || 8,
   AI_MEMORY_SUMMARISE_AFTER_TURNS: Number(process.env.AI_MEMORY_SUMMARISE_AFTER_TURNS) || 24,
+
+  // Notify (campaign delivery)
+  NOTIFY_API_URL: process.env.NOTIFY_API_URL || '',
+  NOTIFY_APP_ID: process.env.NOTIFY_APP_ID || '',
+  NOTIFY_ACCOUNT_ID: process.env.NOTIFY_ACCOUNT_ID || '',
+
+  // Daily newsletter digest
+  NEWSLETTER_DIGEST_ENABLED: process.env.NEWSLETTER_DIGEST_ENABLED === 'true',
+  CRON_SCHEDULE_NEWSLETTER_DIGEST: process.env.CRON_SCHEDULE_NEWSLETTER_DIGEST || '30 6 * * *',
+  NEWSLETTER_DIGEST_MODEL: process.env.NEWSLETTER_DIGEST_MODEL || 'gpt-4o',
+  NEWSLETTER_ARTICLE_LIMIT: Number(process.env.NEWSLETTER_ARTICLE_LIMIT) || 5,
+  NEWSLETTER_MIN_ARTICLES: Number(process.env.NEWSLETTER_MIN_ARTICLES) || 3,
+  NEWSLETTER_RECIPIENT_TAGS: (process.env.NEWSLETTER_RECIPIENT_TAGS || 'newsletter')
+    .split(',')
+    .map(tag => tag.trim())
+    .filter(Boolean),
+  NEWSLETTER_SEND_DELAY_MINUTES: Number(process.env.NEWSLETTER_SEND_DELAY_MINUTES) || 60,
+  NEWSLETTER_SITE_URL: process.env.NEWSLETTER_SITE_URL || 'https://afrisinc.com',
 } as const;

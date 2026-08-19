@@ -1,6 +1,6 @@
 import { executeNode, streamNode, type ExecuteNodeOptions, type INodeItem } from '../core';
 import { CHATGPT_CREDENTIALS_NAME } from './chatgpt.constants';
-import { ChatGptNode } from './chatgpt.node';
+import { ChatGptNode } from './chatgpt.impl';
 import type { ChatGptCredentials } from './chatgpt.types';
 
 export const chatGptNode = new ChatGptNode();
@@ -29,5 +29,5 @@ export * from './chatgpt.constants';
 export { chatGptCredentialDescription, chatGptCredentialsFromEnv } from './chatgpt.credentials';
 export { chatGptDescription, chatGptProperties } from './chatgpt.description';
 export { CHATGPT_PRICING } from './chatgpt.pricing';
-export { ChatGptNode, type ChatGptNodeOptions } from './chatgpt.node';
+export { ChatGptNode, type ChatGptNodeOptions } from './chatgpt.impl';
 export type { ChatGptClientFactory, ChatGptCredentials, IChatGptClient } from './chatgpt.types';

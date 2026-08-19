@@ -53,6 +53,7 @@ export async function registerSwagger(app: FastifyInstance) {
         { name: 'ai-generation', description: 'AI-powered content generation endpoints' },
         { name: 'articles', description: 'N8N articles endpoints' },
         { name: 'ai-usage', description: 'AI spend, quota and usage reporting' },
+        { name: 'newsletter', description: 'Newsletter digest generation and delivery' },
       ],
     },
   });
