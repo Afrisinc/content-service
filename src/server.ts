@@ -6,6 +6,7 @@ import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { initAssetsClient } from '@/utils/assets-client.js';
 import { initCache, closeCache } from '@/utils/cache.js';
+import { flushNodeUsage } from '@/adapters/nodes/nodeServices.js';
 import {
   startPublishScheduledPostsJob,
   stopPublishScheduledPostsJob,
@@ -62,6 +63,9 @@ const gracefulShutdownHandler = async (signal: string) => {
       await global.fastifyApp.close();
       logger.info('Fastify server closed');
     }
+
+    logger.info('Flushing queued AI usage');
+    await flushNodeUsage();
 
     logger.info('Closing Redis cache');
     await closeCache();

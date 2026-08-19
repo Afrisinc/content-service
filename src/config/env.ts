@@ -17,4 +17,12 @@ export const env = {
   CRON_SCHEDULE_POSTS: process.env.CRON_SCHEDULE_POSTS || '*/5 * * * *',
   REDIS_URL: process.env.REDIS_URL || '',
   SOCIAL_PAGES_CACHE_TTL_SECONDS: Number(process.env.SOCIAL_PAGES_CACHE_TTL_SECONDS) || 3600,
+  AI_MEMORY_TTL_SECONDS: Number(process.env.AI_MEMORY_TTL_SECONDS) || 86400,
+  AI_MEMORY_MAX_TURNS: Number(process.env.AI_MEMORY_MAX_TURNS) || 20,
+  // 0 disables the per-user daily spend guard.
+  AI_DAILY_BUDGET_MICRO_USD: Number(process.env.AI_DAILY_BUDGET_MICRO_USD) || 0,
+  AI_MEMORY_SUMMARISE: process.env.AI_MEMORY_SUMMARISE === 'true',
+  AI_MEMORY_SUMMARY_MODEL: process.env.AI_MEMORY_SUMMARY_MODEL || 'claude-haiku-4-5',
+  AI_MEMORY_KEEP_RECENT_TURNS: Number(process.env.AI_MEMORY_KEEP_RECENT_TURNS) || 8,
+  AI_MEMORY_SUMMARISE_AFTER_TURNS: Number(process.env.AI_MEMORY_SUMMARISE_AFTER_TURNS) || 24,
 } as const;

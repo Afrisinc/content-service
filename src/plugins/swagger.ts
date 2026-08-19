@@ -52,6 +52,7 @@ export async function registerSwagger(app: FastifyInstance) {
         { name: 'social-media', description: 'Social media posting endpoints' },
         { name: 'ai-generation', description: 'AI-powered content generation endpoints' },
         { name: 'articles', description: 'N8N articles endpoints' },
+        { name: 'ai-usage', description: 'AI spend, quota and usage reporting' },
       ],
     },
   });

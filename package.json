@@ -41,6 +41,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
     "@fastify/cors": "^8.5.0",
     "@fastify/multipart": "^10.1.1",
     "@fastify/swagger": "^8.15.0",

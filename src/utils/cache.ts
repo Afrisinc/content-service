@@ -120,6 +120,48 @@ export async function cacheSet(key: string, value: unknown, ttlSeconds: number):
   }
 }
 
+/**
+ * Atomic increment used for spend counters. Returns null when Redis is unavailable, which the
+ * caller must read as "unknown", never as "zero spent".
+ */
+export async function cacheIncrementBy(
+  key: string,
+  amount: number,
+  ttlSeconds: number
+): Promise<number | null> {
+  const redis = readyClient();
+  if (!redis) {
+    return null;
+  }
+
+  try {
+    const total = await withTimeout(redis.incrby(key, amount));
+    if (total !== null) {
+      await withTimeout(redis.expire(key, ttlSeconds));
+    }
+    return total;
+  } catch (error) {
+    logger.warn(
+      { key, error: error instanceof Error ? error.message : 'Unknown error' },
+      'Cache increment failed'
+    );
+    return null;
+  }
+}
+
+export async function cacheRead(key: string): Promise<string | null> {
+  const redis = readyClient();
+  if (!redis) {
+    return null;
+  }
+
+  try {
+    return await withTimeout(redis.get(key));
+  } catch {
+    return null;
+  }
+}
+
 export async function cacheDelete(key: string): Promise<void> {
   const redis = readyClient();
   if (!redis) {
