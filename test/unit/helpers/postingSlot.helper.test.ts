@@ -65,9 +65,9 @@ describe('nextFreeSlot', () => {
       taken.push(nextFreeSlot(taken, { weekdays: TUESDAY_AND_FRIDAY, hour: 9, from: MONDAY }));
     }
 
-    expect(() => nextFreeSlot(taken, { weekdays: TUESDAY_AND_FRIDAY, hour: 9, from: MONDAY })).toThrow(
-      'no free posting slot'
-    );
+    expect(() =>
+      nextFreeSlot(taken, { weekdays: TUESDAY_AND_FRIDAY, hour: 9, from: MONDAY })
+    ).toThrow('no free posting slot');
   });
 });
 

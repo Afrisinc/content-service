@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 interface FakeAsset {
   id: string;
   reference: string;
+  url?: string;
 }
 
 function fakeRepository(assets: FakeAsset[]) {
@@ -71,23 +72,122 @@ describe('ArtDirectionService', () => {
     expect(result.photosByIndex[1]).not.toBe(result.photosByIndex[3]);
   });
 
-  it('fails loudly when the library cannot cover the carousel', async () => {
+  it('shares the one photograph it has rather than failing the whole post', async () => {
+    // A young workspace with a single approved image is the normal state, not an
+    // error. A repeated photograph beats no post at all.
     const repo = fakeRepository([{ id: '1', reference: 'bench.png' }]);
     const service = new ArtDirectionService(repo as never);
 
+    const result = await service.assignPhotos(copyWithPhotoSlides());
+
+    expect(result.photosByIndex[1]).toBe('bench.png');
+    expect(result.photosByIndex[3]).toBe('bench.png');
+    expect(result.assetIds).toEqual(['1']);
+    expect(result.reused).toBe(1);
+  });
+
+  it('fails only when the library holds no approved photograph at all', async () => {
+    const repo = fakeRepository([]);
+    const service = new ArtDirectionService(repo as never);
+
     await expect(service.assignPhotos(copyWithPhotoSlides())).rejects.toThrow(BadRequestError);
+    await expect(service.assignPhotos(copyWithPhotoSlides())).rejects.toThrow(
+      /no approved photograph in the brand asset library/
+    );
+  });
+
+  it('falls back to an off-subject photograph rather than failing', async () => {
+    // findCandidates(subjects) misses, findCandidates([]) hits — which is what
+    // happens whenever the copy agent invents a subject nothing is tagged with.
+    const offSubject = { id: '9', reference: 'office.png' };
+    const repo = {
+      findCandidates: vi.fn(async (subjects: string[]) => (subjects.length ? [] : [offSubject])),
+      recordUse: vi.fn(async () => undefined),
+      create: vi.fn(),
+      findByReference: vi.fn(),
+    };
+    const service = new ArtDirectionService(repo as never);
+
+    const result = await service.assignPhotos(copyWithPhotoSlides());
+
+    expect(result.photosByIndex[1]).toBe('office.png');
+    expect(result.assetIds).toEqual(['9']);
+  });
+
+  it('prefers an on-subject photograph when one exists', async () => {
+    const repo = {
+      findCandidates: vi.fn(async (subjects: string[]) =>
+        subjects.includes('bench')
+          ? [{ id: '1', reference: 'bench.png' }]
+          : [
+              { id: '2', reference: 'generic-a.png' },
+              { id: '3', reference: 'generic-b.png' },
+            ]
+      ),
+      recordUse: vi.fn(async () => undefined),
+      create: vi.fn(),
+      findByReference: vi.fn(),
+    };
+    const service = new ArtDirectionService(repo as never);
+
+    const result = await service.assignPhotos(copyWithPhotoSlides());
+
+    expect(result.photosByIndex[1]).toBe('bench.png');
+    // The differentiator slide asked for "network", which nothing carries, so it
+    // takes an unused approved photograph instead of repeating the bench.
+    expect(result.photosByIndex[3]).not.toBe('bench.png');
+    expect(result.reused).toBe(0);
+  });
+
+  it('still leaves a one-frame post on azure when the library is empty', async () => {
+    const repo = fakeRepository([]);
+    const service = new ArtDirectionService(repo as never);
+    const copy = copyWithPhotoSlides();
+    copy.slides = [copy.slides[1]];
+
+    const result = await service.assignPhotos(copy);
+
+    expect(result).toEqual({ photosByIndex: {}, assetIds: [], reused: 0 });
   });
 
   it('does not touch the library when no slide needs a photograph', async () => {
     const repo = fakeRepository([]);
     const service = new ArtDirectionService(repo as never);
     const copy = copyWithPhotoSlides();
-    copy.slides = copy.slides.filter(slide => slide.role !== 'proof' && slide.role !== 'differentiator');
+    copy.slides = copy.slides.filter(
+      slide => slide.role !== 'proof' && slide.role !== 'differentiator'
+    );
 
     const result = await service.assignPhotos(copy);
 
-    expect(result).toEqual({ photosByIndex: {}, assetIds: [] });
+    expect(result).toEqual({ photosByIndex: {}, assetIds: [], reused: 0 });
     expect(repo.findCandidates).not.toHaveBeenCalled();
+  });
+
+  it('sends the stored url, because the renderer cannot see this service’s uploads', async () => {
+    const repo = fakeRepository([
+      { id: '1', reference: 'business-image-01', url: 'https://cdn.example/photo-a.jpg' },
+      { id: '2', reference: 'business-image-02', url: 'https://cdn.example/photo-b.jpg' },
+    ]);
+    const service = new ArtDirectionService(repo as never);
+
+    const result = await service.assignPhotos(copyWithPhotoSlides());
+
+    expect(result.photosByIndex[1]).toBe('https://cdn.example/photo-a.jpg');
+    expect(result.photosByIndex[3]).toBe('https://cdn.example/photo-b.jpg');
+  });
+
+  it('falls back to the bare reference for a photograph shipped with the renderer', async () => {
+    const repo = fakeRepository([
+      { id: '1', reference: 'bench.png', url: '' },
+      { id: '2', reference: 'network.png' },
+    ]);
+    const service = new ArtDirectionService(repo as never);
+
+    const result = await service.assignPhotos(copyWithPhotoSlides());
+
+    expect(result.photosByIndex[1]).toBe('bench.png');
+    expect(result.photosByIndex[3]).toBe('network.png');
   });
 
   it('records use so the same image rotates out', async () => {

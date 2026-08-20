@@ -109,6 +109,9 @@ model SocialMediaAccount {
   isActive   Boolean  @default(true)
   scopes     String[] @default([]) // granted OAuth scopes
 
+  // Back-relation only — adds no column to this table.
+  groupMemberships AccountGroupMember[]
+
   createdAt DateTime @default(now()) @db.Timestamptz()
   updatedAt DateTime @updatedAt @db.Timestamptz()
 
@@ -701,10 +704,10 @@ model PostDraft {
   scheduledAt   DateTime? @db.Timestamptz()
   socialPostIds String[]  @default([])
 
-  aiProvider     String?
-  aiModel        String?
-  costMicroUsd   BigInt  @default(0)
-  generationTries Int    @default(0)
+  aiProvider      String?
+  aiModel         String?
+  costMicroUsd    BigInt  @default(0)
+  generationTries Int     @default(0)
 
   errorMessage String?
 
@@ -717,8 +720,8 @@ model PostDraft {
 }
 
 model BrandAsset {
-  id   String @id @default(uuid())
-  url  String
+  id        String @id @default(uuid())
+  url       String
   // Filename the render service resolves inside its photo directory.
   reference String @unique
 
@@ -738,4 +741,166 @@ model BrandAsset {
   @@index([kind, approved])
   @@index([lastUsedAt])
   @@map("brand_assets")
+}
+
+// ─────────────────────────────────────────────
+// ACCOUNT GROUPS (brand / business workspaces)
+// ─────────────────────────────────────────────
+
+enum AutomationMode {
+  manual
+  autopilot
+}
+
+enum AgentRunStatus {
+  running
+  succeeded
+  failed
+  skipped
+}
+
+enum AgentStepStatus {
+  pending
+  running
+  succeeded
+  failed
+  skipped
+}
+
+/// A brand or business a user runs. Holds the installed pages and accounts
+/// across every platform, plus the cadence its agents post on.
+model AccountGroup {
+  id     String @id @default(uuid())
+  userId String
+
+  name        String
+  slug        String
+  description String?
+  color       String?
+
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  autopilotEnabled Boolean @default(false)
+  // Weekdays as 0=Sunday..6=Saturday, matching POST_SLOT_WEEKDAYS.
+  slotWeekdays     String  @default("2,5")
+  slotHour         Int     @default(9)
+  timezone         String  @default("UTC")
+  postsPerRun      Int     @default(1)
+
+  // The brief the agents work from when nobody hands them one.
+  topics        String[] @default([])
+  serviceLine   String?
+  audience      String?
+  defaultFormat String   @default("post")
+
+  members   AccountGroupMember[]
+  agentRuns AgentRun[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([userId, slug])
+  @@index([userId, isActive])
+  @@index([autopilotEnabled])
+  @@map("account_groups")
+}
+
+/// One installed page or account placed in a group. `isActive` mutes a page for
+/// a season without dropping it out of the group.
+model AccountGroupMember {
+  id      String       @id @default(uuid())
+  groupId String
+  group   AccountGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  accountId String
+  account   SocialMediaAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([groupId, accountId])
+  @@index([accountId])
+  @@index([groupId, isActive])
+  @@map("account_group_members")
+}
+
+/// How the whole workspace runs: by hand, or with the agents driving.
+model AutomationPolicy {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  mode AutomationMode @default(manual)
+
+  // Autopilot releases a rendered draft straight to the publish cron. Manual
+  // mode holds every draft in review until someone signs it off.
+  autoPublish    Boolean   @default(true)
+  defaultGroupId String?
+  maxPostsPerDay Int       @default(3)
+  pausedUntil    DateTime? @db.Timestamptz()
+  lastRunAt      DateTime? @db.Timestamptz()
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@map("automation_policies")
+}
+
+/// One pass of one agent, so the automation view reports what actually ran.
+model AgentRun {
+  id     String @id @default(uuid())
+  userId String
+
+  groupId String?
+  group   AccountGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  agent   String
+  trigger String
+  status  AgentRunStatus @default(running)
+
+  topic            String?
+  draftId          String?
+  postIds          String[] @default([])
+  accountsTargeted Int      @default(0)
+
+  errorMessage String?
+
+  steps AgentRunStep[]
+
+  startedAt  DateTime  @default(now()) @db.Timestamptz()
+  finishedAt DateTime? @db.Timestamptz()
+
+  @@index([userId, startedAt])
+  @@index([groupId, startedAt])
+  @@index([status])
+  @@map("agent_runs")
+}
+
+/// One stage of one run. Seeded up front so the UI can draw the whole pipeline
+/// before any of it has happened, then filled in as each stage completes.
+model AgentRunStep {
+  id    String   @id @default(uuid())
+  runId String
+  run   AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  key      String
+  label    String
+  sequence Int
+
+  status AgentStepStatus @default(pending)
+
+  detail       String?
+  errorMessage String?
+
+  startedAt  DateTime? @db.Timestamptz()
+  finishedAt DateTime? @db.Timestamptz()
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([runId, key])
+  @@index([runId, sequence])
+  @@map("agent_run_steps")
 }

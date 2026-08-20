@@ -30,6 +30,9 @@ export const CreatePostDraftSchema = {
       audience: { type: 'string', maxLength: 120 },
       // Omit for the house length of five; ask explicitly for anything up to ten.
       slideCount: { type: 'integer', minimum: 1, maximum: 10 },
+      // Publish to every switched-on account in this brand group. Omit for the
+      // workspace default group.
+      groupId: { type: 'string', format: 'uuid' },
     },
   },
 };
@@ -94,6 +97,7 @@ export const SchedulePostDraftSchema = {
         enum: ['facebook', 'instagram', 'linkedin', 'twitter', 'tiktok'],
       },
       pageId: { type: 'string', minLength: 1, maxLength: 120 },
+      groupId: { type: 'string', format: 'uuid' },
       scheduledAt: { type: 'string', format: 'date-time' },
     },
   },

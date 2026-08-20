@@ -78,6 +78,14 @@ export interface PostBriefPayload {
   audience?: string;
   slideCount?: number;
   userId?: string;
+  /** Publish to every switched-on account in this group instead of one page. */
+  groupId?: string;
+  /** Autopilot: queue the render straight to the publish cron, no review hold. */
+  autoPublish?: boolean;
+  /** What set this off — `manual`, `autopilot`. Recorded on the run trace. */
+  trigger?: string;
+  /** Trace into a run someone else already opened rather than starting a second. */
+  runId?: string;
 }
 
 export interface RenderedSlide {
@@ -108,5 +116,6 @@ export interface RenderResult {
 export interface SchedulePostPayload {
   platform?: string;
   pageId?: string;
+  groupId?: string;
   scheduledAt?: string;
 }

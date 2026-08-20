@@ -88,7 +88,12 @@ describe('OAuth Integration Flow', () => {
       vi.mocked(socialMediaAccountRepository.updateTokens as any).mockResolvedValue({} as any);
 
       // Execute OAuth callback
-      const result = await service.handleOAuthCallback(platform as any, authCode, state, redirectUri);
+      const result = await service.handleOAuthCallback(
+        platform as any,
+        authCode,
+        state,
+        redirectUri
+      );
 
       // Assertions
       expect(result).toEqual({
@@ -119,8 +124,9 @@ describe('OAuth Integration Flow', () => {
       vi.mocked(socialMediaAccountRepository.findByOAuthState as any).mockResolvedValue(null);
 
       // Should throw error
-      await expect(service.handleOAuthCallback(platform as any, authCode, 'invalid-state', redirectUri))
-        .rejects.toThrow('Invalid OAuth state token');
+      await expect(
+        service.handleOAuthCallback(platform as any, authCode, 'invalid-state', redirectUri)
+      ).rejects.toThrow('Invalid OAuth state token');
 
       // Verify no further calls were made
       expect(socialMediaIntegrationRepository.findByUserAndPlatform).not.toHaveBeenCalled();
@@ -135,11 +141,16 @@ describe('OAuth Integration Flow', () => {
         oauthState: state,
       };
 
-      vi.mocked(socialMediaAccountRepository.findByOAuthState as any).mockResolvedValue(mockAccount as any);
-      vi.mocked(socialMediaIntegrationRepository.findByUserAndPlatform as any).mockResolvedValue(null);
+      vi.mocked(socialMediaAccountRepository.findByOAuthState as any).mockResolvedValue(
+        mockAccount as any
+      );
+      vi.mocked(socialMediaIntegrationRepository.findByUserAndPlatform as any).mockResolvedValue(
+        null
+      );
 
-      await expect(service.handleOAuthCallback(platform as any, authCode, state, redirectUri))
-        .rejects.toThrow(`No integration found for ${platform}`);
+      await expect(
+        service.handleOAuthCallback(platform as any, authCode, state, redirectUri)
+      ).rejects.toThrow(`No integration found for ${platform}`);
 
       expect(httpClient.post).not.toHaveBeenCalled();
     });
@@ -169,7 +180,9 @@ describe('OAuth Integration Flow', () => {
         headers: {},
       };
 
-      vi.mocked(socialMediaAccountRepository.findByOAuthState as any).mockResolvedValue(mockAccount as any);
+      vi.mocked(socialMediaAccountRepository.findByOAuthState as any).mockResolvedValue(
+        mockAccount as any
+      );
       vi.mocked(socialMediaIntegrationRepository.findByUserAndPlatform as any).mockResolvedValue(
         mockIntegration as any
       );
@@ -180,7 +193,12 @@ describe('OAuth Integration Flow', () => {
       vi.mocked(socialMediaAccountRepository.updateTokens as any).mockResolvedValue({} as any);
 
       // Should still succeed, using short-lived token as fallback
-      const result = await service.handleOAuthCallback(platform as any, authCode, state, redirectUri);
+      const result = await service.handleOAuthCallback(
+        platform as any,
+        authCode,
+        state,
+        redirectUri
+      );
 
       expect(result).toEqual({
         accountId: 'account-id',
@@ -209,18 +227,19 @@ describe('OAuth Integration Flow', () => {
         oauthState: state,
       };
 
-      vi.mocked(socialMediaAccountRepository.findByOAuthState as any).mockResolvedValue(mockAccount as any);
+      vi.mocked(socialMediaAccountRepository.findByOAuthState as any).mockResolvedValue(
+        mockAccount as any
+      );
       vi.mocked(socialMediaIntegrationRepository.findByUserAndPlatform as any).mockResolvedValue(
         mockIntegration as any
       );
 
       // Mock Facebook returning an error
-      vi.mocked(httpClient.post).mockRejectedValueOnce(
-        new Error('Invalid authorization code')
-      );
+      vi.mocked(httpClient.post).mockRejectedValueOnce(new Error('Invalid authorization code'));
 
-      await expect(service.handleOAuthCallback(platform as any, authCode, state, redirectUri))
-        .rejects.toThrow('Failed to exchange authorization code');
+      await expect(
+        service.handleOAuthCallback(platform as any, authCode, state, redirectUri)
+      ).rejects.toThrow('Failed to exchange authorization code');
 
       // Verify tokens were not stored
       expect(socialMediaAccountRepository.updateTokens).not.toHaveBeenCalled();
@@ -247,7 +266,9 @@ describe('OAuth Integration Flow', () => {
         oauthState: state,
       };
 
-      vi.mocked(socialMediaAccountRepository.findByOAuthState as any).mockResolvedValue(mockAccount as any);
+      vi.mocked(socialMediaAccountRepository.findByOAuthState as any).mockResolvedValue(
+        mockAccount as any
+      );
       vi.mocked(socialMediaIntegrationRepository.findByUserAndPlatform as any).mockResolvedValue(
         mockIntegration as any
       );
@@ -288,7 +309,9 @@ describe('OAuth Integration Flow', () => {
         oauthState: state,
       };
 
-      vi.mocked(socialMediaAccountRepository.findByOAuthState as any).mockResolvedValue(mockAccount as any);
+      vi.mocked(socialMediaAccountRepository.findByOAuthState as any).mockResolvedValue(
+        mockAccount as any
+      );
       vi.mocked(socialMediaIntegrationRepository.findByUserAndPlatform as any).mockResolvedValue(
         mockIntegration as any
       );

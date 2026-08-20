@@ -12,6 +12,7 @@ import {
   stopPublishScheduledPostsJob,
 } from '@/jobs/publishScheduledPostsJob.js';
 import { startNewsletterDigestJob, stopNewsletterDigestJob } from '@/jobs/newsletterDigestJob.js';
+import { startAutopilotJob, stopAutopilotJob } from '@/jobs/autopilotJob.js';
 
 // Global error handlers
 process.on('uncaughtException', (error: Error) => {
@@ -58,6 +59,7 @@ const gracefulShutdownHandler = async (signal: string) => {
     // Stop scheduled jobs
     stopPublishScheduledPostsJob();
     stopNewsletterDigestJob();
+    stopAutopilotJob();
 
     // Close the Fastify server
     if (global.fastifyApp) {
@@ -187,6 +189,7 @@ const start = async () => {
     // Start scheduled posts publishing job
     startPublishScheduledPostsJob();
     startNewsletterDigestJob();
+    startAutopilotJob();
 
     // Log memory usage on startup
     const memoryUsage = process.memoryUsage();

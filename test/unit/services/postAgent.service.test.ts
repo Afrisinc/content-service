@@ -1,7 +1,14 @@
+import { isRunCancellable, resetRunCancellations } from '@/helpers/runCancellation.helper';
 import { PostAgentService } from '@/services/postAgent.service';
 import { PostCopy, RenderResult } from '@/types/post.types';
-import { BadRequestError, ConflictError, NotFoundError } from '@/utils/http-error';
+import { BadRequestError, ConflictError, NotFoundError, ServerError } from '@/utils/http-error';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('@/utils/cache', () => ({
+  cacheGet: vi.fn(async () => null),
+  cacheSet: vi.fn(async () => undefined),
+  cacheDelete: vi.fn(async () => undefined),
+}));
 
 vi.mock('@/repositories/socialMediaPost.repository', () => ({
   socialMediaPostRepository: {
@@ -12,6 +19,7 @@ vi.mock('@/repositories/socialMediaPost.repository', () => ({
 }));
 
 const { socialMediaPostRepository } = await import('@/repositories/socialMediaPost.repository');
+const { cacheDelete } = await import('@/utils/cache');
 
 const COPY: PostCopy = {
   concept: 'The design performs the sentence.',
@@ -22,7 +30,13 @@ const COPY: PostCopy = {
     { role: 'hook', eyebrow: 'A', eyebrowKind: 'label', headline: ['Your process.'] },
     { role: 'proof', eyebrow: 'B', eyebrowKind: 'claim', headline: ['Web apps.'] },
     { role: 'method', eyebrow: 'C', eyebrowKind: 'label', headline: ['Ship in weeks,'] },
-    { role: 'cta', eyebrow: 'D', eyebrowKind: 'claim', headline: ['Tell us.'], cta: 'afrisinc.com' },
+    {
+      role: 'cta',
+      eyebrow: 'D',
+      eyebrowKind: 'claim',
+      headline: ['Tell us.'],
+      cta: 'afrisinc.com',
+    },
   ],
 };
 
@@ -68,6 +82,7 @@ function build(overrides: Record<string, unknown> = {}) {
     reject: vi.fn(async () => ({ ...draft, status: 'rejected' })),
     markScheduled: vi.fn(async () => ({ ...draft, status: 'scheduled' })),
     markFailed: vi.fn(async () => ({ ...draft, status: 'failed' })),
+    refreshSpec: vi.fn(async () => draft),
   };
 
   const copyService = { generate: vi.fn(async () => ({ copy: COPY, attempts: 1 })) };
@@ -87,19 +102,84 @@ function build(overrides: Record<string, unknown> = {}) {
     ),
   };
 
+  const accounts = {
+    findAllByUser: vi.fn(async () => [
+      {
+        id: 'acc-1',
+        platform: 'instagram',
+        pageId: 'page-1',
+        pageName: 'AFRISINC',
+        isActive: true,
+      },
+    ]),
+  };
+  const groups = {
+    findDefaultForUser: vi.fn(async () => null),
+    findActiveTargets: vi.fn(async () => [
+      { accountId: 'acc-1', platform: 'instagram', pageId: 'page-1', pageName: 'AFRISINC' },
+      { accountId: 'acc-2', platform: 'facebook', pageId: 'page-2', pageName: 'AFRISINC FB' },
+    ]),
+    findCadence: vi.fn(async () => null),
+  };
+  const policies = { findByUser: vi.fn(async () => null) };
+
+  const tracker = {
+    begin: vi.fn(async () => 'run-1'),
+    // The real tracker runs the operation it is tracing; the mock must too.
+    track: vi.fn(async (_runId: unknown, _key: unknown, operation: () => Promise<unknown>) =>
+      operation()
+    ),
+    succeed: vi.fn(async () => undefined),
+    fail: vi.fn(async () => undefined),
+    skip: vi.fn(async () => undefined),
+    waitingOn: vi.fn(async () => undefined),
+    finish: vi.fn(async () => undefined),
+  };
+
+  const runs = {
+    findLatestByDraftId: vi.fn(async () => ({ id: 'run-1' })),
+    // No draft on the run by default, so a build() is a fresh draft, not a resume.
+    findById: vi.fn(async () => ({
+      id: 'run-1',
+      userId: 'user-1',
+      draftId: null,
+      status: 'running',
+      groupId: null,
+    })),
+  };
+
   const service = new PostAgentService(
     drafts as never,
     copyService as never,
     artDirection as never,
     render as never,
-    slideAssets as never
+    slideAssets as never,
+    accounts as never,
+    groups as never,
+    policies as never,
+    tracker as never,
+    runs as never
   );
 
-  return { service, drafts, copyService, artDirection, render, slideAssets, draft };
+  return {
+    service,
+    drafts,
+    copyService,
+    artDirection,
+    render,
+    slideAssets,
+    accounts,
+    groups,
+    policies,
+    tracker,
+    runs,
+    draft,
+  };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetRunCancellations();
 });
 
 describe('createFromBrief', () => {
@@ -238,7 +318,11 @@ describe('schedule', () => {
   const future = new Date(Date.now() + 86_400_000).toISOString();
 
   it('creates one social post carrying the rendered slides', async () => {
-    const { service, drafts } = build({ status: 'approved', socialPostIds: [] });
+    const { service, drafts } = build({
+      status: 'approved',
+      socialPostIds: [],
+      slideUrls: ['https://render/slide-01.png', 'https://render/slide-02.png'],
+    });
 
     await service.schedule('draft-1', {
       platform: 'instagram',
@@ -250,7 +334,7 @@ describe('schedule', () => {
       expect.objectContaining({
         platform: 'instagram',
         mediaType: 'carousel',
-        mediaUrls: ['https://render/slide-01.png'],
+        mediaUrls: ['https://render/slide-01.png', 'https://render/slide-02.png'],
         aiGenerated: true,
       })
     );
@@ -324,10 +408,7 @@ describe('queueing for review', () => {
 
     await service.approve('draft-1', 'user-1');
 
-    expect(socialMediaPostRepository.setStatusForPosts).toHaveBeenCalledWith(
-      ['post-1'],
-      'pending'
-    );
+    expect(socialMediaPostRepository.setStatusForPosts).toHaveBeenCalledWith(['post-1'], 'pending');
     expect(socialMediaPostRepository.createPost).not.toHaveBeenCalled();
     expect(drafts.markScheduled).toHaveBeenCalled();
   });
@@ -379,10 +460,15 @@ describe('single post', () => {
   it('asks the copy agent for a one-frame brief', async () => {
     const { service, copyService } = build();
 
-    await service.createFromBrief({ topic: 'We fix what we sell', userId: 'user-1', format: 'single' });
+    await service.createFromBrief({
+      topic: 'We fix what we sell',
+      userId: 'user-1',
+      format: 'single',
+    });
 
     expect(copyService.generate).toHaveBeenCalledWith(
-      expect.objectContaining({ format: 'single' })
+      expect.objectContaining({ format: 'single' }),
+      expect.any(AbortSignal)
     );
   });
 
@@ -415,7 +501,10 @@ describe('story format', () => {
       format: 'story',
     });
 
-    expect(copyService.generate).toHaveBeenCalledWith(expect.objectContaining({ format: 'story' }));
+    expect(copyService.generate).toHaveBeenCalledWith(
+      expect.objectContaining({ format: 'story' }),
+      expect.any(AbortSignal)
+    );
   });
 
   it('publishes one post per frame, because a story is not swipeable', async () => {
@@ -452,7 +541,10 @@ describe('story format', () => {
       scheduledAt: future,
     });
 
-    const payload = socialMediaPostRepository.createPost.mock.calls[0][0] as Record<string, unknown>;
+    const payload = socialMediaPostRepository.createPost.mock.calls[0][0] as Record<
+      string,
+      unknown
+    >;
     expect(payload.tags).toBeUndefined();
     expect(payload.message).toBeUndefined();
   });
@@ -501,5 +593,456 @@ describe('rerender', () => {
 
     await expect(service.rerender('draft-1')).rejects.toThrow(ConflictError);
     expect(render.render).not.toHaveBeenCalled();
+  });
+});
+
+describe('publishing to a brand group', () => {
+  it('creates one post per switched-on account in the group', async () => {
+    const { service, groups } = build();
+
+    await service.createFromBrief({
+      topic: 'Software development',
+      userId: 'user-1',
+      groupId: 'group-1',
+    });
+
+    expect(groups.findActiveTargets).toHaveBeenCalledWith('group-1');
+    expect(socialMediaPostRepository.createPost).toHaveBeenCalledTimes(2);
+    expect(socialMediaPostRepository.createPost).toHaveBeenCalledWith(
+      expect.objectContaining({ platform: 'instagram', pageId: 'page-1' })
+    );
+    expect(socialMediaPostRepository.createPost).toHaveBeenCalledWith(
+      expect.objectContaining({ platform: 'facebook', pageId: 'page-2' })
+    );
+  });
+
+  it('publishes nowhere rather than falling back when every account is muted', async () => {
+    const { service, groups, drafts } = build();
+    groups.findActiveTargets.mockResolvedValueOnce([] as never);
+
+    await service.createFromBrief({
+      topic: 'Software development',
+      userId: 'user-1',
+      groupId: 'group-1',
+    });
+
+    expect(socialMediaPostRepository.createPost).not.toHaveBeenCalled();
+    expect(drafts.markQueued).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the workspace default group when the brief names none', async () => {
+    const { service, groups } = build();
+    groups.findDefaultForUser.mockResolvedValueOnce({ id: 'default-group' } as never);
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(groups.findActiveTargets).toHaveBeenCalledWith('default-group');
+    expect(socialMediaPostRepository.createPost).toHaveBeenCalledTimes(2);
+  });
+
+  it('books the slot on the group cadence rather than the service default', async () => {
+    const { service, groups, drafts } = build();
+    // Sunday at 06:00, which the env default (Tue/Fri at 09:00) never produces.
+    groups.findCadence.mockResolvedValueOnce({
+      slotWeekdays: '0',
+      slotHour: 6,
+      postsPerRun: 1,
+      timezone: 'UTC',
+    } as never);
+
+    await service.createFromBrief({
+      topic: 'Software development',
+      userId: 'user-1',
+      groupId: 'group-1',
+    });
+
+    const [, , scheduledAt] = drafts.markQueued.mock.calls[0] as [string, string[], Date];
+    expect(scheduledAt.getDay()).toBe(0);
+    expect(scheduledAt.getHours()).toBe(6);
+  });
+
+  it('ignores a group cadence with no usable weekdays', async () => {
+    const { service, groups, drafts } = build();
+    groups.findCadence.mockResolvedValueOnce({
+      slotWeekdays: 'none',
+      slotHour: 6,
+      postsPerRun: 1,
+      timezone: 'UTC',
+    } as never);
+
+    await service.createFromBrief({
+      topic: 'Software development',
+      userId: 'user-1',
+      groupId: 'group-1',
+    });
+
+    const [, , scheduledAt] = drafts.markQueued.mock.calls[0] as [string, string[], Date];
+    expect([2, 5]).toContain(scheduledAt.getDay());
+    expect(scheduledAt.getHours()).toBe(9);
+  });
+
+  it('releases straight to the publish queue when the workspace is on autopilot', async () => {
+    const { service, policies } = build();
+    policies.findByUser.mockResolvedValueOnce({
+      mode: 'autopilot',
+      autoPublish: true,
+    } as never);
+
+    await service.createFromBrief({
+      topic: 'Software development',
+      userId: 'user-1',
+      groupId: 'group-1',
+    });
+
+    expect(socialMediaPostRepository.createPost).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'pending' })
+    );
+  });
+
+  it('still holds for review when autopilot is on but auto-publish is off', async () => {
+    const { service, policies } = build();
+    policies.findByUser.mockResolvedValueOnce({
+      mode: 'autopilot',
+      autoPublish: false,
+    } as never);
+
+    await service.createFromBrief({
+      topic: 'Software development',
+      userId: 'user-1',
+      groupId: 'group-1',
+    });
+
+    expect(socialMediaPostRepository.createPost).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'in_review' })
+    );
+  });
+
+  it('refuses to schedule onto a group with nothing switched on', async () => {
+    const { service, groups } = build({ status: 'approved', socialPostIds: [] });
+    groups.findActiveTargets.mockResolvedValueOnce([] as never);
+
+    await expect(
+      service.schedule('draft-1', {
+        groupId: 'group-1',
+        scheduledAt: new Date(Date.now() + 86_400_000).toISOString(),
+      })
+    ).rejects.toThrow(BadRequestError);
+
+    expect(socialMediaPostRepository.createPost).not.toHaveBeenCalled();
+  });
+
+  it('fans a story out to every frame on every account in the group', async () => {
+    const { service } = build({
+      format: 'story',
+      slideUrls: ['https://render/a.png', 'https://render/b.png'],
+    });
+
+    await service.createFromBrief({
+      topic: 'Software development',
+      format: 'story',
+      userId: 'user-1',
+      groupId: 'group-1',
+    });
+
+    expect(socialMediaPostRepository.createPost).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('run tracing', () => {
+  it('opens a run and traces every stage of a successful draft', async () => {
+    const { service, tracker } = build();
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(tracker.begin).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1', agent: 'post-agent', trigger: 'manual' })
+    );
+
+    const traced = tracker.track.mock.calls.map(call => call[1]);
+    expect(traced).toEqual(['copy', 'art', 'render', 'assets']);
+
+    expect(tracker.succeed).toHaveBeenCalledWith('run-1', 'brief', 'Software development');
+    expect(tracker.succeed).toHaveBeenCalledWith('run-1', 'audit', 'passed');
+    expect(tracker.finish).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ status: 'succeeded', draftId: 'draft-1' })
+    );
+  });
+
+  it('adopts the run the automation service opened instead of starting a second', async () => {
+    const { service, tracker } = build();
+
+    await service.createFromBrief({
+      topic: 'Software development',
+      userId: 'user-1',
+      trigger: 'autopilot',
+      runId: 'existing-run',
+    });
+
+    expect(tracker.begin).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: 'existing-run', trigger: 'autopilot' })
+    );
+  });
+
+  it('closes the run as failed when a stage throws', async () => {
+    const { service, tracker, render } = build();
+    render.render.mockRejectedValueOnce(new Error('render down'));
+
+    await expect(
+      service.createFromBrief({ topic: 'Software development', userId: 'user-1' })
+    ).rejects.toThrow('render down');
+
+    expect(tracker.finish).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ status: 'failed', errorMessage: 'render down' })
+    );
+  });
+
+  it('marks the audit failed rather than passed when the render did not pass', async () => {
+    const { service, tracker, render } = build();
+    render.render.mockResolvedValueOnce({
+      ...RENDER_OK,
+      passed: false,
+      findings: [
+        { slide: 1, rule: 'headline', detail: 'too long', severity: 'error' },
+        { slide: 2, rule: 'contrast', detail: 'thin', severity: 'warning' },
+      ],
+    });
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(tracker.fail).toHaveBeenCalledWith('run-1', 'audit', '1 blocking finding');
+  });
+
+  it('reports the audit as not passed when nothing was flagged as blocking', async () => {
+    const { service, tracker, render } = build();
+    render.render.mockResolvedValueOnce({ ...RENDER_OK, passed: false, findings: [] });
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(tracker.fail).toHaveBeenCalledWith('run-1', 'audit', 'did not pass');
+  });
+
+  it('records where and when the post was queued', async () => {
+    const { service, tracker } = build();
+
+    await service.createFromBrief({
+      topic: 'Software development',
+      userId: 'user-1',
+      groupId: 'group-1',
+    });
+
+    expect(tracker.succeed).toHaveBeenCalledWith(
+      'run-1',
+      'queue',
+      expect.stringContaining('2 pages')
+    );
+  });
+
+  it('leaves approval waiting on a human in manual mode', async () => {
+    const { service, tracker } = build();
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(tracker.waitingOn).toHaveBeenCalledWith('run-1', 'approval');
+    expect(tracker.skip).not.toHaveBeenCalledWith('run-1', 'approval', 'autopilot');
+  });
+
+  it('skips approval outright on autopilot', async () => {
+    const { service, tracker, policies } = build();
+    policies.findByUser.mockResolvedValueOnce({ mode: 'autopilot', autoPublish: true } as never);
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(tracker.skip).toHaveBeenCalledWith('run-1', 'approval', 'autopilot');
+  });
+
+  it('records the queue stage as failed when there is nowhere to publish', async () => {
+    const { service, tracker, groups } = build();
+    groups.findActiveTargets.mockResolvedValueOnce([] as never);
+
+    await service.createFromBrief({
+      topic: 'Software development',
+      userId: 'user-1',
+      groupId: 'group-1',
+    });
+
+    expect(tracker.fail).toHaveBeenCalledWith('run-1', 'queue', 'no live page to publish to');
+  });
+
+  it('closes approval and release on the same run when a human approves', async () => {
+    const { service, tracker } = build({ socialPostIds: ['post-1'], scheduledAt: new Date() });
+
+    await service.approve('draft-1', 'user-1');
+
+    expect(tracker.succeed).toHaveBeenCalledWith('run-1', 'approval', 'user-1');
+    expect(tracker.succeed).toHaveBeenCalledWith('run-1', 'release', '1 post');
+  });
+
+  it('records a rejection against approval and abandons the release', async () => {
+    const { service, tracker } = build({ socialPostIds: ['post-1'] });
+
+    await service.reject('draft-1', 'off brand');
+
+    expect(tracker.fail).toHaveBeenCalledWith('run-1', 'approval', 'off brand');
+    expect(tracker.skip).toHaveBeenCalledWith('run-1', 'release', 'rejected');
+  });
+
+  it('drafts normally when the trace could not be opened at all', async () => {
+    const { service, tracker, drafts } = build();
+    tracker.begin.mockResolvedValueOnce(null as never);
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(drafts.create).toHaveBeenCalledOnce();
+    expect(drafts.markRendered).toHaveBeenCalledOnce();
+  });
+});
+
+describe('resuming a failed run', () => {
+  it('refuses when the working state has expired rather than silently redoing it', async () => {
+    const { service, copyService } = build();
+
+    // Redis is not configured in tests, so the cached brief is genuinely absent.
+    await expect(service.resume('run-1')).rejects.toThrow(/working state/);
+    expect(copyService.generate).not.toHaveBeenCalled();
+  });
+
+  it('reports a run as not resumable when nothing was cached for it', async () => {
+    const { service } = build();
+
+    await expect(service.isResumable('run-1')).resolves.toBe(false);
+  });
+
+  it('still drafts when the cache is unavailable, paying for the copy again', async () => {
+    const { service, copyService, drafts } = build();
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    // No cache means no reuse — correctness never depends on Redis being up.
+    expect(copyService.generate).toHaveBeenCalledOnce();
+    expect(drafts.create).toHaveBeenCalledOnce();
+  });
+
+  it('reuses the draft the failed attempt created instead of orphaning it', async () => {
+    const { service, drafts, runs } = build();
+    runs.findById.mockResolvedValue({
+      id: 'run-1',
+      userId: 'user-1',
+      draftId: 'draft-1',
+      status: 'failed',
+      groupId: null,
+    } as never);
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(drafts.refreshSpec).toHaveBeenCalledWith('draft-1', expect.anything());
+    expect(drafts.create).not.toHaveBeenCalled();
+  });
+
+  it('carries the regenerated caption onto the reused draft', async () => {
+    const { service, drafts, runs } = build();
+    runs.findById.mockResolvedValue({
+      id: 'run-1',
+      userId: 'user-1',
+      draftId: 'draft-1',
+      status: 'failed',
+      groupId: null,
+    } as never);
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(drafts.refreshSpec).toHaveBeenCalledWith(
+      'draft-1',
+      expect.objectContaining({ hashtags: ['#AFRISINC'], claims: ['Free scoping session'] })
+    );
+  });
+
+  it('creates a fresh draft when the run never got as far as one', async () => {
+    const { service, drafts } = build();
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(drafts.create).toHaveBeenCalledOnce();
+    expect(drafts.refreshSpec).not.toHaveBeenCalled();
+  });
+});
+
+describe('stopping a run', () => {
+  it('gives the copy agent a signal so a stalled call can be abandoned', async () => {
+    const { service, copyService } = build();
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    const signal = copyService.generate.mock.calls[0][1] as AbortSignal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('releases the run so a finished pass leaves nothing cancellable behind', async () => {
+    const { service } = build();
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(isRunCancellable('run-1')).toBe(false);
+  });
+
+  it('releases the run even when the pass blew up', async () => {
+    const { service, render } = build();
+    render.render.mockRejectedValueOnce(new Error('render down'));
+
+    await expect(
+      service.createFromBrief({ topic: 'Software development', userId: 'user-1' })
+    ).rejects.toThrow('render down');
+
+    expect(isRunCancellable('run-1')).toBe(false);
+  });
+});
+
+describe('copy the renderer will not lay out', () => {
+  /**
+   * The dead end this prevents: the renderer rejects the spec because the copy
+   * is too long, resume reuses that same cached copy, and every attempt fails
+   * identically for ever.
+   */
+  it('discards the cached copy when the renderer rejects the spec', async () => {
+    const { service, render } = build();
+    render.render.mockRejectedValueOnce(
+      new BadRequestError('render rejected the spec: content does not fit the post band')
+    );
+
+    await expect(
+      service.createFromBrief({ topic: 'Software development', userId: 'user-1' })
+    ).rejects.toThrow(BadRequestError);
+
+    expect(cacheDelete).toHaveBeenCalledWith('agent:run:run-1:copy');
+    expect(cacheDelete).toHaveBeenCalledWith('agent:run:run-1:art.v2');
+  });
+
+  it('keeps the cached copy when the renderer itself was the problem', async () => {
+    // An outage is not the copy's fault, so paying for it again would be waste.
+    const { service, render } = build();
+    render.render.mockRejectedValueOnce(new ServerError('render service unreachable'));
+
+    await expect(
+      service.createFromBrief({ topic: 'Software development', userId: 'user-1' })
+    ).rejects.toThrow(ServerError);
+
+    expect(cacheDelete).not.toHaveBeenCalled();
+  });
+
+  it('still marks the draft failed with the renderer’s reason', async () => {
+    const { service, drafts, render } = build();
+    render.render.mockRejectedValueOnce(
+      new BadRequestError('render rejected the spec: content does not fit the post band')
+    );
+
+    await expect(
+      service.createFromBrief({ topic: 'Software development', userId: 'user-1' })
+    ).rejects.toThrow();
+
+    expect(drafts.markFailed).toHaveBeenCalledWith(
+      'draft-1',
+      'render rejected the spec: content does not fit the post band'
+    );
   });
 });

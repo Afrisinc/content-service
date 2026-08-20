@@ -14,6 +14,7 @@ from ..brand import tokens as T
 from ..brand.geometry import Geometry
 from ..config import settings
 from ..errors import PhotoUnavailableError
+from . import photo_source
 
 
 @lru_cache(maxsize=8)
@@ -98,6 +99,11 @@ def cover_crop(image: Image.Image, target: tuple[int, int], focus: float = 0.5) 
 
 
 def _resolve_photo(reference: str) -> Path:
+    # The photograph library lives in another service and holds urls, not files
+    # this service can see, so a reference may be either.
+    if photo_source.is_remote(reference):
+        return photo_source.fetch(reference)
+
     candidate = (settings.photo_dir / reference).resolve()
     root = settings.photo_dir.resolve()
     if root not in candidate.parents and candidate != root:

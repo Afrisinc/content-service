@@ -80,6 +80,25 @@ export class PostDraftRepository {
       .filter((slot: Date | null): slot is Date => slot !== null);
   }
 
+  /**
+   * Re-point an existing draft at a freshly built spec. A resumed run reuses the
+   * draft its failed attempt created rather than leaving an orphan behind.
+   */
+  async refreshSpec(
+    id: string,
+    data: {
+      spec: Prisma.InputJsonValue;
+      caption?: string;
+      hashtags?: string[];
+      claims?: string[];
+    }
+  ) {
+    return this.prisma.postDraft.update({
+      where: { id },
+      data: { ...data, errorMessage: null },
+    });
+  }
+
   async markQueued(id: string, socialPostIds: string[], scheduledAt: Date) {
     return this.prisma.postDraft.update({
       where: { id },

@@ -31,10 +31,21 @@ export const env = {
   RENDER_SERVICE_API_KEY: process.env.RENDER_SERVICE_API_KEY || '',
   RENDER_SERVICE_TIMEOUT_MS: Number(process.env.RENDER_SERVICE_TIMEOUT_MS) || 60000,
   POST_AGENT_MODEL: process.env.POST_AGENT_MODEL || 'claude-sonnet-5',
-  POST_AGENT_MAX_TOKENS: Number(process.env.POST_AGENT_MAX_TOKENS) || 2048,
+  // The schema asks for a concept, a caption, fifteen hashtags, the claims and
+  // up to ten slides. 2048 truncated that mid-object, which surfaced as
+  // "malformed JSON" rather than as the length problem it was.
+  POST_AGENT_MAX_TOKENS: Number(process.env.POST_AGENT_MAX_TOKENS) || 8192,
   // A copy attempt that fails schema or brand validation is retried with the
   // validator's complaint appended. Beyond this the draft is marked failed.
   POST_AGENT_MAX_ATTEMPTS: Number(process.env.POST_AGENT_MAX_ATTEMPTS) || 3,
+  // The SDK default is ten minutes, which is a sensible ceiling for a long
+  // generation and far too long for a few hundred words of post copy — a stalled
+  // request should be abandoned and retried, not waited out.
+  POST_AGENT_TIMEOUT_MS: Number(process.env.POST_AGENT_TIMEOUT_MS) || 90000,
+  POST_AGENT_RETRIES: Number(process.env.POST_AGENT_RETRIES ?? 1),
+  // A hard ceiling on the whole copy stage. Attempts stop once it is spent,
+  // whatever the retry maths would otherwise allow.
+  POST_AGENT_BUDGET_MS: Number(process.env.POST_AGENT_BUDGET_MS) || 240000,
   // A rendered draft is queued into its posting slot immediately, held in review.
   // Nothing publishes until a human approves, which releases it to the cron.
   POST_AUTO_SCHEDULE: process.env.POST_AUTO_SCHEDULE !== 'false',
@@ -43,6 +54,18 @@ export const env = {
   // Weekdays as 0=Sunday..6=Saturday. Tuesday and Friday by default.
   POST_SLOT_WEEKDAYS: process.env.POST_SLOT_WEEKDAYS || '2,5',
   POST_SLOT_HOUR: Number(process.env.POST_SLOT_HOUR ?? 9),
+
+  // Autopilot: the agents draft and queue for workspaces whose switch is set to
+  // autopilot. Each group produces its batch once per posting day, so the tick
+  // only has to be frequent enough to catch the slot.
+  AUTOPILOT_ENABLED: process.env.AUTOPILOT_ENABLED !== 'false',
+  CRON_SCHEDULE_AUTOPILOT: process.env.CRON_SCHEDULE_AUTOPILOT || '0 * * * *',
+  // A run outliving this is treated as abandoned — the process that owned it
+  // almost certainly died. Generous: a slide render can genuinely take minutes.
+  AUTOPILOT_MAX_RUN_MINUTES: Number(process.env.AUTOPILOT_MAX_RUN_MINUTES) || 30,
+  // How long a failed run keeps the working state that lets it resume instead of
+  // starting over. Past this the copy is gone and the run has to be redone.
+  AGENT_RUN_STATE_TTL_SECONDS: Number(process.env.AGENT_RUN_STATE_TTL_SECONDS) || 86400,
 
   // Notify (campaign delivery)
   NOTIFY_API_URL: process.env.NOTIFY_API_URL || '',

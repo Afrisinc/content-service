@@ -10,7 +10,7 @@ import {
   VOICE_PROMPT,
 } from '@/brand/afrisinc.brand';
 import { env } from '@/config/env';
-import { claudeCredentialsFromEnv, runClaude } from '@/nodes';
+import { ClaudeNode, claudeCredentialsFromEnv, runClaude } from '@/nodes';
 import { PostBriefPayload, PostCopy, PostFormatName } from '@/types/post.types';
 import { BadRequestError, ServerError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
@@ -47,6 +47,27 @@ function copySchemaFor(format: PostFormatName, requested?: number) {
 }
 
 export class VoiceViolationError extends BadRequestError {}
+
+export class CopyBudgetExceededError extends ServerError {}
+
+/**
+ * The model produced something unusable — cut off, wrapped in prose, or not JSON
+ * at all. Worth another attempt with the complaint fed back, which is what
+ * separates it from an outage.
+ */
+export class CopyUnusableError extends ServerError {}
+
+/**
+ * A node of its own so the copy agent gets its own timeout and retry budget
+ * rather than the SDK's ten-minute default, which a post this small should never
+ * come close to.
+ */
+const copyNode = new ClaudeNode({
+  clientOptions: {
+    timeoutMs: env.POST_AGENT_TIMEOUT_MS,
+    retry: { retries: env.POST_AGENT_RETRIES },
+  },
+});
 
 export function findVoiceViolations(copy: PostCopy, format: PostFormatName = 'post'): string[] {
   const problems: string[] = [];
@@ -102,12 +123,12 @@ function extractJson(raw: string): unknown {
   const start = candidate.indexOf('{');
   const end = candidate.lastIndexOf('}');
   if (start < 0 || end <= start) {
-    throw new ServerError('the copy agent did not return JSON');
+    throw new CopyUnusableError('the copy agent did not return JSON');
   }
   try {
     return JSON.parse(candidate.slice(start, end + 1));
   } catch {
-    throw new ServerError('the copy agent returned malformed JSON');
+    throw new CopyUnusableError('the copy agent returned malformed JSON');
   }
 }
 
@@ -133,16 +154,42 @@ function briefPrompt(brief: PostBriefPayload, complaint?: string): string {
 }
 
 export class PostCopyService {
-  async generate(brief: PostBriefPayload): Promise<{ copy: PostCopy; attempts: number }> {
+  async generate(
+    brief: PostBriefPayload,
+    signal?: AbortSignal
+  ): Promise<{ copy: PostCopy; attempts: number }> {
     let complaint: string | undefined;
 
     const format = brief.format ?? 'post';
     const schema = copySchemaFor(format, brief.slideCount);
+    const deadline = Date.now() + env.POST_AGENT_BUDGET_MS;
 
     for (let attempt = 1; attempt <= env.POST_AGENT_MAX_ATTEMPTS; attempt += 1) {
-      const raw = await this.callModel(brief, complaint);
+      // Checked before each attempt rather than only at the end: a run that has
+      // already spent its budget must stop, not start another minute of work.
+      if (Date.now() >= deadline) {
+        throw new CopyBudgetExceededError(
+          `the copy agent ran out of time after ${attempt - 1} attempts` +
+            (complaint ? `: ${complaint}` : '')
+        );
+      }
 
-      const parsed = schema.safeParse(extractJson(raw));
+      let candidate: unknown;
+      try {
+        const raw = await this.callModel(brief, complaint, signal);
+        candidate = extractJson(raw);
+      } catch (error) {
+        // A response that came back unusable is a bad attempt, not a dead run —
+        // the loop already exists to complain and try again.
+        if (!(error instanceof CopyUnusableError)) {
+          throw error;
+        }
+        complaint = `${error.message}. Reply with one JSON object and nothing else.`;
+        logger.warn({ attempt, complaint }, 'Copy agent returned an unusable response');
+        continue;
+      }
+
+      const parsed = schema.safeParse(candidate);
       if (!parsed.success) {
         complaint = parsed.error.issues
           .map(issue => `${issue.path.join('.')}: ${issue.message}`)
@@ -161,15 +208,24 @@ export class PostCopyService {
       return { copy: parsed.data, attempts: attempt };
     }
 
-    const msg =
-      `the copy agent could not satisfy the brand rules in ` +
-      `${env.POST_AGENT_MAX_ATTEMPTS} attempts: ${complaint}`;
-    throw new VoiceViolationError(msg);
+    // The last complaint says what actually went wrong — a voice breach, a shape
+    // the schema rejected, or a response that never parsed. Reporting all three
+    // as a brand-rules failure sends the reader looking in the wrong place.
+    throw new VoiceViolationError(
+      `the copy agent could not produce usable copy in ${env.POST_AGENT_MAX_ATTEMPTS} attempts: ` +
+        `${complaint}`
+    );
   }
 
-  private async callModel(brief: PostBriefPayload, complaint?: string): Promise<string> {
+  private async callModel(
+    brief: PostBriefPayload,
+    complaint?: string,
+    signal?: AbortSignal
+  ): Promise<string> {
     try {
       const items = await runClaude({
+        node: copyNode,
+        signal,
         credentials: claudeCredentialsFromEnv(),
         logger,
         parameters: {
@@ -204,6 +260,16 @@ export class PostCopyService {
         logger.error({ json: item.json }, 'Claude response missing content');
         throw new ServerError('the copy agent returned nothing');
       }
+
+      // Hitting the token ceiling cuts the object off mid-write, so the JSON is
+      // invalid for a reason worth naming rather than reporting as malformed.
+      if (item.json?.stopReason === 'max_tokens') {
+        throw new CopyUnusableError(
+          `the copy agent ran past its ${env.POST_AGENT_MAX_TOKENS}-token limit and was ` +
+            'cut off — ask for fewer frames, or raise POST_AGENT_MAX_TOKENS'
+        );
+      }
+
       return content;
     } catch (err) {
       if (err instanceof ServerError) {

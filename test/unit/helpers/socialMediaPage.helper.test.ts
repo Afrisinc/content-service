@@ -18,9 +18,7 @@ describe('buildConnectedPagesFromAccounts', () => {
   it('maps a stored facebook page onto the shape the picker renders', () => {
     const pages = buildConnectedPagesFromAccounts([account({})], 'facebook');
 
-    expect(pages).toEqual([
-      { id: '1234567890', name: 'Afrisinc', category: 'Media/News Company' },
-    ]);
+    expect(pages).toEqual([{ id: '1234567890', name: 'Afrisinc', category: 'Media/News Company' }]);
   });
 
   it('never exposes a token from the stored row', () => {
@@ -68,7 +66,10 @@ describe('buildConnectedPagesFromAccounts', () => {
   });
 
   it('falls back to the page id when no name was stored', () => {
-    const pages = buildConnectedPagesFromAccounts([account({ pageName: null, meta: null })], 'facebook');
+    const pages = buildConnectedPagesFromAccounts(
+      [account({ pageName: null, meta: null })],
+      'facebook'
+    );
 
     expect(pages[0]).toEqual({ id: '1234567890', name: '1234567890', category: undefined });
   });

@@ -260,7 +260,11 @@ describe('SocialMediaIntegrationService', () => {
 
     it('serves the stored accounts when no account carries a usable token', async () => {
       vi.mocked(socialMediaAccountRepository.findAllByUser).mockResolvedValue([
-        accountRow({ pageId: '17841400000000000', pageName: '@afrisinc_inc', longLivedToken: null }),
+        accountRow({
+          pageId: '17841400000000000',
+          pageName: '@afrisinc_inc',
+          longLivedToken: null,
+        }),
       ] as never);
 
       const result = await service.getAvailablePages(userId, 'instagram');
