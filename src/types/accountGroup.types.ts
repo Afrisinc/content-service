@@ -15,10 +15,14 @@ export interface CreateAccountGroupPayload {
   color?: string;
   isDefault?: boolean;
   accountIds?: string[];
+  /** Photographs this brand publishes with. Empty means the shared library. */
+  assetIds?: string[];
   topics?: string[];
   serviceLine?: string;
   audience?: string;
   defaultFormat?: string;
+  /** Frames per post. Omit for the house length of the format. */
+  slideCount?: number | null;
   autopilotEnabled?: boolean;
   slotWeekdays?: string;
   slotHour?: number;
@@ -59,6 +63,7 @@ export interface AccountGroupDTO {
   serviceLine: string | null;
   audience: string | null;
   defaultFormat: string;
+  slideCount: number | null;
   members: AccountGroupMemberDTO[];
   activeMemberCount: number;
   platforms: SocialPlatformKey[];

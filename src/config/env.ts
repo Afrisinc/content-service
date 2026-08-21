@@ -26,6 +26,11 @@ export const env = {
   AI_MEMORY_KEEP_RECENT_TURNS: Number(process.env.AI_MEMORY_KEEP_RECENT_TURNS) || 8,
   AI_MEMORY_SUMMARISE_AFTER_TURNS: Number(process.env.AI_MEMORY_SUMMARISE_AFTER_TURNS) || 24,
 
+  // Brand asset uploads. The render service refuses anything past its own
+  // ceiling, so there is no point accepting more here than it will take.
+  BRAND_ASSET_MAX_BYTES: Number(process.env.BRAND_ASSET_MAX_BYTES) || 12 * 1024 * 1024,
+  BRAND_ASSET_MAX_FILES: Number(process.env.BRAND_ASSET_MAX_FILES) || 40,
+
   // Post agent + render service
   RENDER_SERVICE_URL: process.env.RENDER_SERVICE_URL || 'http://localhost:8090',
   RENDER_SERVICE_API_KEY: process.env.RENDER_SERVICE_API_KEY || '',

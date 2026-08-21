@@ -32,17 +32,27 @@ const PHOTO_ROLES = new Set(['proof', 'differentiator']);
 export class ArtDirectionService {
   constructor(private readonly assets: BrandAssetRepository = brandAssetRepository) {}
 
-  async assignPhotos(copy: PostCopy): Promise<PhotoAssignment> {
-    // A one-frame post has no proof slide, so the single frame is the photo slide.
-    const wantsPhoto = (role: string, total: number) => total === 1 || PHOTO_ROLES.has(role);
+  /**
+   * @param groupId the brand being published for. Its own library wins; a brand
+   * with none falls back to the shared pool.
+   */
+  async assignPhotos(copy: PostCopy, groupId?: string): Promise<PhotoAssignment> {
+    // A one-frame post has no proof slide, so the single frame is the photo
+    // slide. A pair opens on azure and closes on a photograph, so only its
+    // second frame wants one.
+    const wantsPhoto = (role: string, total: number, index: number) =>
+      total === 1 || (total === 2 ? index === 1 : PHOTO_ROLES.has(role));
 
     const photoSlides = copy.slides
       .map((slide, index) => ({ slide, index }))
-      .filter(entry => wantsPhoto(entry.slide.role, copy.slides.length));
+      .filter(entry => wantsPhoto(entry.slide.role, copy.slides.length, entry.index));
 
     if (!photoSlides.length) {
       return { photosByIndex: {}, assetIds: [], reused: 0 };
     }
+
+    // Resolved once: asking per slide would hit the database for every frame.
+    const library = groupId && (await this.assets.countForGroup(groupId)) > 0 ? groupId : undefined;
 
     const photosByIndex: Record<number, string> = {};
     const assetIds: string[] = [];
@@ -50,11 +60,11 @@ export class ArtDirectionService {
     let reused = 0;
 
     for (const { slide, index } of photoSlides) {
-      const chosen = await this.pickPhoto(slide.photoSubjects ?? [], taken);
+      const chosen = await this.pickPhoto(slide.photoSubjects ?? [], taken, library);
 
       if (!chosen) {
         // A single post reads perfectly well on azure, so a bare library is not fatal.
-        if (copy.slides.length === 1) {
+        if (copy.slides.length <= 2) {
           break;
         }
         throw new BadRequestError(
@@ -91,15 +101,19 @@ export class ArtDirectionService {
    * over — a library with two photo slides and one approved image is the normal
    * state of a young workspace, not an error. Only a genuinely empty library is.
    */
-  private async pickPhoto(subjects: string[], taken: Set<string>): Promise<CandidatePhoto | null> {
-    const onSubject = subjects.length ? await this.assets.findCandidates(subjects) : [];
+  private async pickPhoto(
+    subjects: string[],
+    taken: Set<string>,
+    groupId?: string
+  ): Promise<CandidatePhoto | null> {
+    const onSubject = subjects.length ? await this.assets.findCandidates(subjects, groupId) : [];
 
     const freshOnSubject = onSubject.find(asset => !taken.has(asset.id));
     if (freshOnSubject) {
       return freshOnSubject;
     }
 
-    const anyApproved = await this.assets.findCandidates([]);
+    const anyApproved = await this.assets.findCandidates([], groupId);
     return (
       anyApproved.find(asset => !taken.has(asset.id)) ?? onSubject[0] ?? anyApproved[0] ?? null
     );

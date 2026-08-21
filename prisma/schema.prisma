@@ -719,28 +719,69 @@ model PostDraft {
   @@map("post_drafts")
 }
 
+/// A photograph placed in a brand's library. A brand with none falls back to the
+/// whole approved pool, so an unassigned library keeps working as a shared one.
+model AccountGroupAsset {
+  id      String       @id @default(uuid())
+  groupId String
+  group   AccountGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  assetId String
+  asset   BrandAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+
+  @@unique([groupId, assetId])
+  @@index([assetId])
+  @@map("account_group_assets")
+}
+
+/// A named set of photographs — "Repair bench shots", "Office lifestyle".
+/// A brand is assigned whole sets; art direction rotates through their images.
 model BrandAsset {
-  id        String @id @default(uuid())
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+
+  kind String @default("photo")
+
+  /// A set is usable once it is approved; every image inside it comes with it.
+  approved Boolean @default(false)
+
+  images BrandAssetImage[]
+  groups AccountGroupAsset[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@index([kind, approved])
+  @@map("brand_assets")
+}
+
+/// One photograph inside a set, tagged and framed on its own.
+model BrandAssetImage {
+  id      String     @id @default(uuid())
+  assetId String
+  asset   BrandAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
   url       String
-  // Filename the render service resolves inside its photo directory.
+  /// Stable name for this image. Also what earlier versions called the reference.
   reference String @unique
 
-  kind        String   @default("photo")
   subjects    String[] @default([])
   hasPerson   Boolean  @default(false)
   subjectSide String?
   brightness  String?
 
-  approved   Boolean   @default(false)
   usageCount Int       @default(0)
   lastUsedAt DateTime? @db.Timestamptz()
 
   createdAt DateTime @default(now()) @db.Timestamptz()
   updatedAt DateTime @updatedAt @db.Timestamptz()
 
-  @@index([kind, approved])
+  @@index([assetId])
   @@index([lastUsedAt])
-  @@map("brand_assets")
+  @@map("brand_asset_images")
 }
 
 // ─────────────────────────────────────────────
@@ -793,9 +834,13 @@ model AccountGroup {
   serviceLine   String?
   audience      String?
   defaultFormat String   @default("post")
+  /// Frames per post. Null takes the house length for the format — five for a
+  /// carousel, three for a story.
+  slideCount    Int?
 
   members   AccountGroupMember[]
   agentRuns AgentRun[]
+  assets    AccountGroupAsset[]
 
   createdAt DateTime @default(now()) @db.Timestamptz()
   updatedAt DateTime @updatedAt @db.Timestamptz()

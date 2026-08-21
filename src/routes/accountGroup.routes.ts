@@ -1,5 +1,8 @@
 import {
   addAccountsToGroup,
+  assignGroupAssets,
+  listGroupAssets,
+  unassignGroupAsset,
   createAccountGroup,
   deleteAccountGroup,
   getAccountGroup,
@@ -13,6 +16,9 @@ import { asyncWrapper } from '@/middlewares/async_wrapper.middleware';
 import { authGuard } from '@/middlewares/authGuard';
 import {
   AddAccountsToGroupSchema,
+  AssignGroupAssetsSchema,
+  ListGroupAssetsSchema,
+  UnassignGroupAssetSchema,
   CreateAccountGroupSchema,
   DeleteAccountGroupSchema,
   GetAccountGroupSchema,
@@ -73,6 +79,24 @@ export async function accountGroupRoutes(app: FastifyInstance) {
     '/account-groups/:id/accounts/:accountId',
     { schema: { ...SetGroupAccountActiveSchema, tags: TAGS }, onRequest: [authGuard] },
     asyncWrapper(setGroupAccountActive)
+  );
+
+  app.get(
+    '/account-groups/:id/assets',
+    { schema: { ...ListGroupAssetsSchema, tags: TAGS }, onRequest: [authGuard] },
+    asyncWrapper(listGroupAssets)
+  );
+
+  app.post(
+    '/account-groups/:id/assets',
+    { schema: { ...AssignGroupAssetsSchema, tags: TAGS }, onRequest: [authGuard] },
+    asyncWrapper(assignGroupAssets)
+  );
+
+  app.delete(
+    '/account-groups/:id/assets/:assetId',
+    { schema: { ...UnassignGroupAssetSchema, tags: TAGS }, onRequest: [authGuard] },
+    asyncWrapper(unassignGroupAsset)
   );
 
   app.get(

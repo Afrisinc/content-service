@@ -480,6 +480,9 @@ export class AutomationService {
       const draft = await this.postAgent.createFromBrief({
         topic,
         format: asPostFormat(group.defaultFormat),
+        // Null means the house length for the format, which is what the copy
+        // agent already falls back to.
+        slideCount: group.slideCount ?? undefined,
         serviceLine: group.serviceLine ?? undefined,
         audience: group.audience ?? undefined,
         userId,

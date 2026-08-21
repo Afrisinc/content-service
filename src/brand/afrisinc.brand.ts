@@ -50,7 +50,7 @@ export const POST_ARC: ReadonlyArray<{ role: SlideRole; surface: PostSurface }> 
  */
 export const SLIDE_COUNTS: Record<PostFormatName, { min: number; max: number; preferred: number }> =
   {
-    post: { min: 4, max: 10, preferred: 5 },
+    post: { min: 2, max: 10, preferred: 5 },
     // A story is a sequence of standalone frames rather than one swipeable set,
     // so it runs short and each frame has to stand on its own.
     story: { min: 1, max: 3, preferred: 3 },

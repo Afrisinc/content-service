@@ -67,13 +67,21 @@ def validate_surface_order(surfaces: list[Surface]) -> None:
     if not surfaces:
         raise BrandRuleError("a post needs at least one frame")
     if len(surfaces) > MAX_FRAMES:
-        raise BrandRuleError(
-            f"a post is at most {MAX_FRAMES} slides, got {len(surfaces)}"
-        )
+        raise BrandRuleError(f"a post is at most {MAX_FRAMES} slides, got {len(surfaces)}")
 
     unknown = [s for s in surfaces if s not in SURFACES]
     if unknown:
         raise BrandRuleError(f"unknown surface(s): {sorted(set(unknown))}")
+
+    if len(surfaces) == 2:
+        # A pair has no middle. Requiring both ends azure would make the two
+        # frames identical surfaces and break the adjacency rule at the same
+        # time, so a pair opens on azure and closes on anything else.
+        if surfaces[0] != AZURE:
+            raise BrandRuleError("the first slide must be azure")
+        if surfaces[1] == AZURE:
+            raise BrandRuleError("a two-slide post must not close on azure")
+        return
 
     if len(surfaces) > 1:
         if surfaces[0] != AZURE:

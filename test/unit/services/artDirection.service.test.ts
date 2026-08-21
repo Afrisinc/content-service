@@ -199,3 +199,105 @@ describe('ArtDirectionService', () => {
     expect(repo.recordUse).toHaveBeenCalledWith(['1', '2']);
   });
 });
+
+describe('a brand with its own photographs', () => {
+  function trackingRepository(byGroup: Record<string, unknown[]>, shared: unknown[], count = 1) {
+    return {
+      countForGroup: vi.fn(async () => count),
+      findCandidates: vi.fn(async (_subjects: string[], groupId?: string) =>
+        groupId ? (byGroup[groupId] ?? []) : shared
+      ),
+      recordUse: vi.fn(async () => undefined),
+      create: vi.fn(),
+      findByReference: vi.fn(),
+    };
+  }
+
+  it('draws only from the brand’s library when it has one', async () => {
+    const repo = trackingRepository({ 'group-1': [{ id: 'b1', reference: 'brand-a.png' }] }, [
+      { id: 's1', reference: 'shared.png' },
+    ]);
+    const service = new ArtDirectionService(repo as never);
+
+    const result = await service.assignPhotos(copyWithPhotoSlides(), 'group-1');
+
+    expect(result.photosByIndex[1]).toBe('brand-a.png');
+    expect(result.assetIds).toEqual(['b1']);
+  });
+
+  it('falls back to the shared library when the brand has none', async () => {
+    const repo = trackingRepository({}, [{ id: 's1', reference: 'shared.png' }], 0);
+    const service = new ArtDirectionService(repo as never);
+
+    const result = await service.assignPhotos(copyWithPhotoSlides(), 'group-1');
+
+    // countForGroup returned 0, so the brand scope is dropped entirely.
+    expect(result.photosByIndex[1]).toBe('shared.png');
+    expect(repo.findCandidates).toHaveBeenCalledWith(expect.anything(), undefined);
+  });
+
+  it('uses the shared library when no brand is named at all', async () => {
+    const repo = trackingRepository({}, [{ id: 's1', reference: 'shared.png' }]);
+    const service = new ArtDirectionService(repo as never);
+
+    await service.assignPhotos(copyWithPhotoSlides());
+
+    expect(repo.countForGroup).not.toHaveBeenCalled();
+    expect(repo.findCandidates).toHaveBeenCalledWith(expect.anything(), undefined);
+  });
+
+  it('checks the brand library once, not once per frame', async () => {
+    const repo = trackingRepository(
+      {
+        'group-1': [
+          { id: 'b1', reference: 'a.png' },
+          { id: 'b2', reference: 'b.png' },
+        ],
+      },
+      []
+    );
+    const service = new ArtDirectionService(repo as never);
+
+    await service.assignPhotos(copyWithPhotoSlides(), 'group-1');
+
+    expect(repo.countForGroup).toHaveBeenCalledOnce();
+  });
+});
+
+describe('a two-frame carousel', () => {
+  function pair(): PostCopy {
+    return {
+      concept: 'concept',
+      caption: 'caption',
+      hashtags: ['#AFRISINC'],
+      claims: [],
+      slides: [
+        { role: 'hook', eyebrow: 'HOOK', eyebrowKind: 'label', headline: ['one'] },
+        { role: 'cta', eyebrow: 'TALK', eyebrowKind: 'label', headline: ['two'] },
+      ],
+    };
+  }
+
+  it('puts the photograph on the closing frame, not the opener', () => {
+    // The opener is azure by brand rule, so a photograph there would be dropped.
+    const repo = fakeRepository([{ id: '1', reference: 'bench.png' }]);
+    const service = new ArtDirectionService(repo as never);
+
+    const result = service.assignPhotos(pair());
+
+    return result.then(assignment => {
+      expect(assignment.photosByIndex[0]).toBeUndefined();
+      expect(assignment.photosByIndex[1]).toBe('bench.png');
+    });
+  });
+
+  it('still publishes a pair when the library is empty', async () => {
+    // A pair closes on white without one, the same way a lone frame falls back.
+    const repo = fakeRepository([]);
+    const service = new ArtDirectionService(repo as never);
+
+    const result = await service.assignPhotos(pair());
+
+    expect(result).toEqual({ photosByIndex: {}, assetIds: [], reused: 0 });
+  });
+});

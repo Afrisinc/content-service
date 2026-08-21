@@ -19,6 +19,7 @@ import {
   UpdateAccountGroupPayload,
 } from '@/types/accountGroup.types';
 import type { SocialPlatformKey } from '@/types/socialMediaIntegration.types';
+import { BrandAssetRepository, brandAssetRepository } from '@/repositories/brandAsset.repository';
 import { BadRequestError, ConflictError, NotFoundError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
 import { Prisma } from '@prisma/client';
@@ -66,6 +67,7 @@ export function toAccountGroupDTO(group: AccountGroupWithMembers): AccountGroupD
     serviceLine: group.serviceLine,
     audience: group.audience,
     defaultFormat: group.defaultFormat,
+    slideCount: group.slideCount,
     members,
     activeMemberCount: members.filter(member => member.isActive && member.accountIsActive).length,
     platforms: [...new Set(members.map(member => member.platform))],
@@ -78,7 +80,8 @@ export class AccountGroupService {
   constructor(
     private readonly groups: AccountGroupRepository = accountGroupRepository,
     private readonly accounts: SocialMediaAccountRepository = socialMediaAccountRepository,
-    private readonly policies: AutomationPolicyRepository = automationPolicyRepository
+    private readonly policies: AutomationPolicyRepository = automationPolicyRepository,
+    private readonly assets: BrandAssetRepository = brandAssetRepository
   ) {}
 
   async list(userId: string): Promise<AccountGroupDTO[]> {
@@ -119,6 +122,11 @@ export class AccountGroupService {
 
       if (accountIds.length) {
         await this.groups.addMembers(created.id, accountIds, tx);
+      }
+      // A brand with no photographs of its own falls back to the shared pool,
+      // so leaving this empty is a real choice rather than an unfinished one.
+      if (payload.assetIds?.length) {
+        await this.assets.assignToGroup(created.id, payload.assetIds, tx);
       }
       if (isDefault) {
         await this.groups.clearDefaultForUser(userId, created.id, tx);
@@ -170,6 +178,34 @@ export class AccountGroupService {
     });
 
     return toAccountGroupDTO(updated);
+  }
+
+  /** The photographs a brand draws from, and whether it has a library at all. */
+  async listAssets(userId: string, groupId: string) {
+    await this.requireGroup(userId, groupId);
+    return this.assets.findByGroup(groupId);
+  }
+
+  async assignAssets(userId: string, groupId: string, assetIds: string[]) {
+    await this.requireGroup(userId, groupId);
+
+    if (!assetIds.length) {
+      throw new BadRequestError('no photographs to assign');
+    }
+
+    await this.assets.assignToGroup(groupId, assetIds);
+    return this.assets.findByGroup(groupId);
+  }
+
+  async unassignAsset(userId: string, groupId: string, assetId: string) {
+    await this.requireGroup(userId, groupId);
+
+    const removed = await this.assets.unassignFromGroup(groupId, assetId);
+    if (removed.count === 0) {
+      throw new NotFoundError('that photograph is not in this brand');
+    }
+
+    return this.assets.findByGroup(groupId);
   }
 
   async remove(userId: string, groupId: string): Promise<void> {
@@ -264,6 +300,7 @@ export class AccountGroupService {
       ...(payload.timezone !== undefined ? { timezone: payload.timezone } : {}),
       ...(payload.postsPerRun !== undefined ? { postsPerRun: payload.postsPerRun } : {}),
       ...(payload.defaultFormat !== undefined ? { defaultFormat: payload.defaultFormat } : {}),
+      ...(payload.slideCount !== undefined ? { slideCount: payload.slideCount } : {}),
     };
   }
 

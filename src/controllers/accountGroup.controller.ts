@@ -75,6 +75,25 @@ export async function setGroupAccountActive(request: FastifyRequest, reply: Fast
   return success(reply, 200, isActive ? 'Account activated' : 'Account paused', 1002, group);
 }
 
+export async function listGroupAssets(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as GroupParams;
+  const assets = await accountGroupService.listAssets(requireUserId(request), id);
+  return success(reply, 200, 'Brand photographs retrieved', 1000, { assets });
+}
+
+export async function assignGroupAssets(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as GroupParams;
+  const { assetIds } = request.body as { assetIds: string[] };
+  const assets = await accountGroupService.assignAssets(requireUserId(request), id, assetIds);
+  return success(reply, 200, 'Photographs added to this brand', 1002, { assets });
+}
+
+export async function unassignGroupAsset(request: FastifyRequest, reply: FastifyReply) {
+  const { id, assetId } = request.params as GroupParams & { assetId: string };
+  const assets = await accountGroupService.unassignAsset(requireUserId(request), id, assetId);
+  return success(reply, 200, 'Photograph removed from this brand', 1003, { assets });
+}
+
 export async function getGroupTargets(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as GroupParams;
   const targets = await accountGroupService.resolveTargets(requireUserId(request), id);

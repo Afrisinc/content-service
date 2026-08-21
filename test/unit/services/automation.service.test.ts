@@ -1412,3 +1412,26 @@ describe('running one brand on its own', () => {
     expect(postAgent.createFromBrief).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('frames per post', () => {
+  it('passes the brand’s frame count to the copy agent', async () => {
+    const { service, postAgent } = build({ groups: [groupRow({ slideCount: 7 })] });
+
+    await service.runForUser('user-1');
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ slideCount: 7 })
+    );
+  });
+
+  it('leaves the house length to the copy agent when the brand set none', async () => {
+    // slideCountFor() already falls back to the preferred length per format, so
+    // sending null would override that with nothing useful.
+    const { service, postAgent } = build({ groups: [groupRow({ slideCount: null })] });
+
+    await service.runForUser('user-1');
+
+    const brief = postAgent.createFromBrief.mock.calls[0][0] as { slideCount?: number };
+    expect(brief.slideCount).toBeUndefined();
+  });
+});

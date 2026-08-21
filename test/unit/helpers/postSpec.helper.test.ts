@@ -170,3 +170,61 @@ describe('captions', () => {
     expect(caption).toContain('support@afrisinc.com');
   });
 });
+
+describe('a two-frame carousel', () => {
+  function pair(): PostCopy {
+    return {
+      concept: 'concept',
+      caption: 'caption',
+      hashtags: ['#AFRISINC'],
+      claims: [],
+      slides: [
+        { role: 'hook', eyebrow: 'HOOK', eyebrowKind: 'label', headline: ['one'] },
+        {
+          role: 'cta',
+          eyebrow: 'TALK',
+          eyebrowKind: 'label',
+          headline: ['two'],
+          cta: 'afrisinc.com',
+        },
+      ],
+    };
+  }
+
+  /**
+   * The render service rejects both `azure, azure` (adjacent) and anything that
+   * does not open on azure. A pair has no middle, so it opens on azure and
+   * closes on something else — the one legal shape for two frames.
+   */
+  it('opens on azure and closes on a photograph', () => {
+    const spec = buildPostSpecFromCopy('pair-abc123', pair(), { 1: 'bench.png' });
+
+    expect(spec.slides.map(slide => slide.surface)).toEqual(['azure', 'photo']);
+  });
+
+  it('closes on white when no photograph was assigned', () => {
+    const spec = buildPostSpecFromCopy('pair-abc123', pair(), {});
+
+    expect(spec.slides.map(slide => slide.surface)).toEqual(['azure', 'white']);
+  });
+
+  it('never closes a pair on azure', () => {
+    for (const slug of ['a', 'b', 'c', 'd', 'e']) {
+      const spec = buildPostSpecFromCopy(slug, pair(), { 1: 'bench.png' });
+      expect(spec.slides[1].surface).not.toBe('azure');
+    }
+  });
+
+  it('leaves a longer carousel closing on azure', () => {
+    const copy = pair();
+    copy.slides = [
+      copy.slides[0],
+      { role: 'proof', eyebrow: 'PROOF', eyebrowKind: 'label', headline: ['two'] },
+      copy.slides[1],
+    ];
+
+    const spec = buildPostSpecFromCopy('trio-abc123', copy, { 1: 'bench.png' });
+
+    expect(spec.slides.map(slide => slide.surface)).toEqual(['azure', 'photo', 'azure']);
+  });
+});

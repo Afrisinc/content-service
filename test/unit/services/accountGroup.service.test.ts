@@ -104,8 +104,20 @@ function build(overrides: Record<string, unknown> = {}) {
     clearDefaultGroup: vi.fn(async () => ({ count: 0 })),
   };
 
-  const service = new AccountGroupService(groups as never, accounts as never, policies as never);
-  return { service, groups, accounts, policies, row };
+  const assets = {
+    assignToGroup: vi.fn(async () => ({ count: 1 })),
+    unassignFromGroup: vi.fn(async () => ({ count: 1 })),
+    findByGroup: vi.fn(async () => [{ id: 'asset-1', reference: 'bench' }]),
+    countForGroup: vi.fn(async () => 1),
+  };
+
+  const service = new AccountGroupService(
+    groups as never,
+    accounts as never,
+    policies as never,
+    assets as never
+  );
+  return { service, groups, accounts, policies, assets, row };
 }
 
 beforeEach(() => {
@@ -328,5 +340,59 @@ describe('resolveDefaultGroupId', () => {
     groups.findDefaultForUser.mockResolvedValueOnce(null as never);
 
     await expect(service.resolveDefaultGroupId('user-1')).resolves.toBeNull();
+  });
+});
+
+describe('a brand’s own photographs', () => {
+  /**
+   * The bug this pins: assigning ran on the repository's own connection while
+   * the group was still uncommitted inside the transaction, so Postgres refused
+   * it with a foreign key violation. The transaction client has to be passed.
+   */
+  it('assigns the photographs inside the transaction that created the brand', async () => {
+    const { service, assets } = build();
+
+    await service.create('user-1', { name: 'AFRISINC', assetIds: ['asset-1', 'asset-2'] });
+
+    expect(assets.assignToGroup).toHaveBeenCalledWith(
+      'group-1',
+      ['asset-1', 'asset-2'],
+      expect.anything()
+    );
+
+    const [, , client] = assets.assignToGroup.mock.calls[0];
+    expect(client).toBeDefined();
+  });
+
+  it('leaves a brand on the shared library when none are named', async () => {
+    const { service, assets } = build();
+
+    await service.create('user-1', { name: 'AFRISINC' });
+
+    expect(assets.assignToGroup).not.toHaveBeenCalled();
+  });
+
+  it('refuses an empty assignment rather than pretending it did something', async () => {
+    const { service, assets } = build();
+
+    await expect(service.assignAssets('user-1', 'group-1', [])).rejects.toThrow(BadRequestError);
+    expect(assets.assignToGroup).not.toHaveBeenCalled();
+  });
+
+  it('404s when unassigning a photograph the brand does not hold', async () => {
+    const { service, assets } = build();
+    assets.unassignFromGroup.mockResolvedValueOnce({ count: 0 } as never);
+
+    await expect(service.unassignAsset('user-1', 'group-1', 'asset-9')).rejects.toThrow(
+      NotFoundError
+    );
+  });
+
+  it('never reads another workspace’s brand', async () => {
+    const { service, groups, assets } = build();
+    groups.findByIdForUser.mockResolvedValueOnce(null as never);
+
+    await expect(service.listAssets('user-1', 'group-1')).rejects.toThrow(NotFoundError);
+    expect(assets.findByGroup).not.toHaveBeenCalled();
   });
 });

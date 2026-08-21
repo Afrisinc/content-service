@@ -1,4 +1,5 @@
 import { POST_ARC, CONTACT, MAX_HEADLINE_LINES } from '@/brand/afrisinc.brand';
+import { applyVariation, makeVariation, varySlide } from '@/helpers/composition.helper';
 import {
   PostCopy,
   PostCopySlide,
@@ -30,6 +31,15 @@ function surfaceForRole(
   // A lone frame gets a photograph when one was assigned; the arc does not apply.
   if (total === 1) {
     return photosByIndex[index] ? 'photo' : 'azure';
+  }
+
+  // A pair has no middle: it opens on azure and closes on anything else, which
+  // is the one shape the render service accepts for two frames.
+  if (total === 2) {
+    if (index === 0) {
+      return 'azure';
+    }
+    return photosByIndex[index] ? 'photo' : 'white';
   }
 
   const byRole = POST_ARC.find(entry => entry.role === slide.role);
@@ -66,6 +76,9 @@ export function buildPostSpecFromCopy(
   format: PostFormatName = 'post'
 ): PostSpec {
   const total = copy.slides.length;
+  // Seeded from the slug, so this post always composes the same way and the next
+  // one does not. See composition.helper.
+  const next = makeVariation(slug);
 
   const slides: PostSlideSpec[] = copy.slides.map((slide, index) => {
     const surface = surfaceForRole(slide, index, total, photosByIndex);
@@ -103,7 +116,15 @@ export function buildPostSpecFromCopy(
       spec.cta = { text: slide.cta || CONTACT.site, arrow: true };
     }
 
-    return spec;
+    return applyVariation(
+      spec,
+      varySlide(next, {
+        carriesPhoto: surface === 'photo',
+        carriesRows: Boolean(spec.rows?.length),
+        // One coral element per slide: a claim eyebrow or a strike already spends it.
+        canTakeCoral: !isClaim && strike === null,
+      })
+    );
   });
 
   return { slug, format, slides };

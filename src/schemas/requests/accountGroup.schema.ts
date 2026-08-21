@@ -25,6 +25,8 @@ const groupProperties = {
   serviceLine: { type: 'string', maxLength: 60 },
   audience: { type: 'string', maxLength: 120 },
   defaultFormat: { type: 'string', enum: ['post', 'story', 'single'] },
+  // Frames per post. Null takes the house length for the format.
+  slideCount: { type: ['integer', 'null'], minimum: 1, maximum: 10 },
   autopilotEnabled: { type: 'boolean' },
   // Weekdays as 0=Sunday..6=Saturday, comma separated.
   slotWeekdays: { type: 'string', pattern: '^[0-6](,[0-6])*$' },
@@ -53,6 +55,12 @@ export const CreateAccountGroupSchema = {
       accountIds: {
         type: 'array',
         maxItems: 100,
+        items: { type: 'string', format: 'uuid' },
+      },
+      // Omit to let this brand draw from the shared photograph library.
+      assetIds: {
+        type: 'array',
+        maxItems: 200,
         items: { type: 'string', format: 'uuid' },
       },
     },
@@ -112,6 +120,43 @@ export const SetGroupAccountActiveSchema = {
       isActive: { type: 'boolean' },
     },
   },
+};
+
+const assetParams = {
+  type: 'object',
+  required: ['id', 'assetId'],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    assetId: { type: 'string', format: 'uuid' },
+  },
+} as const;
+
+export const ListGroupAssetsSchema = {
+  description: 'The photographs this brand publishes with',
+  params: idParams,
+};
+
+export const AssignGroupAssetsSchema = {
+  description: 'Add photographs to a brand’s own library',
+  params: idParams,
+  body: {
+    type: 'object',
+    required: ['assetIds'],
+    additionalProperties: false,
+    properties: {
+      assetIds: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 200,
+        items: { type: 'string', format: 'uuid' },
+      },
+    },
+  },
+};
+
+export const UnassignGroupAssetSchema = {
+  description: 'Take a photograph out of a brand’s library',
+  params: assetParams,
 };
 
 export const GetGroupTargetsSchema = {
