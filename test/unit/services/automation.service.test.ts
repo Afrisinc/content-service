@@ -1435,3 +1435,71 @@ describe('frames per post', () => {
     expect(brief.slideCount).toBeUndefined();
   });
 });
+
+describe('the review step is only skipped on autopilot', () => {
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+  it('holds drafts in review when the workspace is on manual', async () => {
+    const { service, postAgent } = build({
+      policy: { mode: 'manual', autoPublish: true, maxPostsPerDay: 10 },
+    });
+
+    await service.runForUser('user-1');
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ autoPublish: false })
+    );
+    expect(postAgent.approve).not.toHaveBeenCalled();
+  });
+
+  it('holds them on a hand-pressed run too, not just the cron', async () => {
+    const { service, postAgent } = build({
+      policy: { mode: 'manual', autoPublish: true, maxPostsPerDay: 10 },
+    });
+
+    await service.requestRun('user-1');
+    await settle();
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ autoPublish: false })
+    );
+    expect(postAgent.approve).not.toHaveBeenCalled();
+  });
+
+  it('releases them once the workspace is on autopilot', async () => {
+    const { service, postAgent } = build({
+      policy: { mode: 'autopilot', autoPublish: true, maxPostsPerDay: 10 },
+    });
+
+    await service.runForUser('user-1');
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ autoPublish: true })
+    );
+    expect(postAgent.approve).toHaveBeenCalledWith('draft-1', 'autopilot');
+  });
+
+  it('still holds them when autopilot is on but auto-publish is off', async () => {
+    const { service, postAgent } = build({
+      policy: { mode: 'autopilot', autoPublish: false, maxPostsPerDay: 10 },
+    });
+
+    await service.runForUser('user-1');
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ autoPublish: false })
+    );
+    expect(postAgent.approve).not.toHaveBeenCalled();
+  });
+
+  it('defaults an untouched workspace to manual, so nothing publishes unattended', async () => {
+    const { service, postAgent } = build();
+
+    await service.runForUser('user-1');
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ autoPublish: false })
+    );
+    expect(postAgent.approve).not.toHaveBeenCalled();
+  });
+});

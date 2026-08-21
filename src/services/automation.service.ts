@@ -1,3 +1,6 @@
+import { env } from '@/config/env';
+import { pluralise } from '@/helpers/agentRun.helper';
+import { cancelRun, isRunCancellable } from '@/helpers/runCancellation.helper';
 import {
   AccountGroupRepository,
   accountGroupRepository,
@@ -8,7 +11,6 @@ import {
   AutomationPolicyRepository,
   automationPolicyRepository,
 } from '@/repositories/automationPolicy.repository';
-import { cancelRun, isRunCancellable } from '@/helpers/runCancellation.helper';
 import { AgentRunTracker, agentRunTracker } from '@/services/agentRunTracker.service';
 import { PostAgentService, postAgentService } from '@/services/postAgent.service';
 import {
@@ -17,9 +19,7 @@ import {
   AutomationPolicyDTO,
   UpdateAutomationPolicyPayload,
 } from '@/types/accountGroup.types';
-import { pluralise } from '@/helpers/agentRun.helper';
 import { PostFormatName } from '@/types/post.types';
-import { env } from '@/config/env';
 import { BadRequestError, ConflictError, NotFoundError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
 import { AgentRunStatus, AgentStepStatus, AutomationMode, PostDraftStatus } from '@prisma/client';
@@ -362,7 +362,7 @@ export class AutomationService {
   ): Promise<AutopilotRunSummary> {
     const policy = await this.policies.findByUser(userId);
     const mode = policy?.mode ?? AutomationMode.manual;
-    const autoPublish = policy?.autoPublish ?? true;
+    const autoPublish = mode === AutomationMode.autopilot && (policy?.autoPublish ?? true);
     const maxPostsPerDay = policy?.maxPostsPerDay ?? DEFAULT_MAX_POSTS_PER_DAY;
 
     const groups = await this.runnableGroups(userId, groupId);
