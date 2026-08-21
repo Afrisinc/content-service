@@ -11,6 +11,11 @@ function convertBigInts(obj: any): any {
     if (Array.isArray(obj)) {
       return obj.map(convertBigInts);
     }
+    // A Date has no enumerable own properties, so walking it as a plain object
+    // yields `{}` and every timestamp reaches the client unusable.
+    if (obj instanceof Date) {
+      return obj.toISOString();
+    }
     const converted: any = {};
     for (const key in obj) {
       if (Object.prototype.hasOwnProperty.call(obj, key)) {

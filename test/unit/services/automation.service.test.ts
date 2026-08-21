@@ -266,8 +266,9 @@ describe('runForUser', () => {
     );
   });
 
-  it('reuses the first topic once every one has been covered', async () => {
+  it('rotates to the stalest topic once every one has been covered', async () => {
     const { service, runs, postAgent } = build();
+    // Newest first: "Software development" ran most recently, so the other is due.
     runs.findRecentTopics.mockResolvedValueOnce([
       'Software development',
       'Design systems',
@@ -276,7 +277,7 @@ describe('runForUser', () => {
     await service.runForUser('user-1');
 
     expect(postAgent.createFromBrief).toHaveBeenCalledWith(
-      expect.objectContaining({ topic: 'Software development' })
+      expect.objectContaining({ topic: 'Design systems' })
     );
   });
 
@@ -568,7 +569,7 @@ describe('requestRun', () => {
 
     const outcome = await service.requestRun('user-1');
 
-    expect(outcome).toEqual({
+    expect(outcome).toMatchObject({
       accepted: true,
       alreadyRunning: false,
       activeRunId: null,
@@ -882,7 +883,7 @@ describe('requestRun', () => {
 
     const outcome = await service.requestRun('user-1');
 
-    expect(outcome).toEqual({
+    expect(outcome).toMatchObject({
       accepted: true,
       alreadyRunning: false,
       activeRunId: null,
@@ -1207,5 +1208,207 @@ describe('the daily cap', () => {
 
     expect(outcome.accepted).toBe(false);
     expect(outcome.reason).toMatch(/today's limit of 3 posts/);
+  });
+});
+
+describe('topic rotation', () => {
+  it('covers a topic that has never run before anything else', async () => {
+    const { service, runs, postAgent } = build();
+    runs.findRecentTopics.mockResolvedValueOnce(['Software development'] as never);
+
+    await service.runForUser('user-1');
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ topic: 'Design systems' })
+    );
+  });
+
+  /**
+   * The bug this replaces: once history covered every topic, the old rule fell
+   * back to `topics[0]` and posted the same subject for ever.
+   */
+  it('keeps rotating once every topic has been covered', async () => {
+    const { service, runs, postAgent } = build();
+    // Newest first, so "Design systems" ran most recently.
+    runs.findRecentTopics.mockResolvedValueOnce([
+      'Design systems',
+      'Software development',
+    ] as never);
+
+    await service.runForUser('user-1');
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ topic: 'Software development' })
+    );
+  });
+
+  it('picks the stalest topic, not merely one that is absent from the head', async () => {
+    const { service, runs, postAgent } = build({
+      groups: [groupRow({ topics: ['A', 'B', 'C'] })],
+    });
+    runs.findRecentTopics.mockResolvedValueOnce(['B', 'A', 'C'] as never);
+
+    await service.runForUser('user-1');
+
+    // C is furthest back in the history, so it is the one due.
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(expect.objectContaining({ topic: 'C' }));
+  });
+
+  it('never repeats a topic inside one batch', async () => {
+    const { service, postAgent } = build({
+      policy: { mode: 'autopilot', autoPublish: true, maxPostsPerDay: 10 },
+      groups: [groupRow({ postsPerRun: 2 })],
+    });
+
+    await service.runForUser('user-1');
+
+    const topics = postAgent.createFromBrief.mock.calls.map(
+      call => (call[0] as { topic: string }).topic
+    );
+    expect(new Set(topics).size).toBe(2);
+  });
+
+  it('reuses a topic only when the batch outruns the list', async () => {
+    const { service, postAgent } = build({
+      policy: { mode: 'autopilot', autoPublish: true, maxPostsPerDay: 10 },
+      groups: [groupRow({ topics: ['Only one'], postsPerRun: 3 })],
+    });
+
+    await service.runForUser('user-1');
+
+    const topics = postAgent.createFromBrief.mock.calls.map(
+      call => (call[0] as { topic: string }).topic
+    );
+    expect(topics).toEqual(['Only one', 'Only one', 'Only one']);
+  });
+
+  it('is stable when nothing has run at all', async () => {
+    const { service, postAgent } = build();
+
+    await service.runForUser('user-1');
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ topic: 'Software development' })
+    );
+  });
+});
+
+describe('how many posts a trigger will draft', () => {
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+  it('reports the batch size, so three runs from one click is not a surprise', async () => {
+    const { service } = build({
+      policy: { mode: 'manual', autoPublish: true, maxPostsPerDay: 10 },
+      groups: [groupRow({ postsPerRun: 3 })],
+    });
+
+    const outcome = await service.requestRun('user-1');
+
+    expect(outcome.plannedPosts).toBe(3);
+    await settle();
+  });
+
+  it('sums across every brand that will run', async () => {
+    const { service } = build({
+      policy: { mode: 'manual', autoPublish: true, maxPostsPerDay: 10 },
+      groups: [groupRow({ postsPerRun: 3 }), groupRow({ id: 'group-2', postsPerRun: 2 })],
+    });
+
+    const outcome = await service.requestRun('user-1');
+
+    expect(outcome.plannedPosts).toBe(5);
+    await settle();
+  });
+
+  it('clamps the batch to what the daily budget still allows', async () => {
+    const { service, runs } = build({
+      policy: { mode: 'manual', autoPublish: true, maxPostsPerDay: 5 },
+      groups: [groupRow({ postsPerRun: 3 }), groupRow({ id: 'group-2', postsPerRun: 3 })],
+    });
+    runs.countSince.mockResolvedValue(3 as never);
+
+    const outcome = await service.requestRun('user-1');
+
+    // Two of five left, so the first brand takes both and the second gets none.
+    expect(outcome.plannedPosts).toBe(2);
+    await settle();
+  });
+
+  it('plans nothing when the trigger was refused', async () => {
+    const { service, groups } = build();
+    groups.findAutopilotGroups.mockResolvedValueOnce([] as never);
+
+    await expect(service.requestRun('user-1')).resolves.toMatchObject({
+      accepted: false,
+      plannedPosts: 0,
+    });
+  });
+});
+
+describe('running one brand on its own', () => {
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+  it('runs only the brand it was given', async () => {
+    const { service, groups, postAgent } = build({
+      policy: { mode: 'manual', autoPublish: true, maxPostsPerDay: 10 },
+      groups: [groupRow(), groupRow({ id: 'group-2', name: 'Stories' })],
+    });
+
+    await service.requestRun('user-1', 'group-2');
+    await settle();
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledOnce();
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ groupId: 'group-2' })
+    );
+    expect(groups.findByIdForUser).toHaveBeenCalledWith('group-2', 'user-1');
+  });
+
+  it('plans only that brand’s batch', async () => {
+    const { service } = build({
+      policy: { mode: 'manual', autoPublish: true, maxPostsPerDay: 10 },
+      groups: [groupRow({ postsPerRun: 3 }), groupRow({ id: 'group-2', postsPerRun: 1 })],
+    });
+
+    const outcome = await service.requestRun('user-1', 'group-2');
+
+    expect(outcome.plannedPosts).toBe(1);
+    await settle();
+  });
+
+  it('404s on a brand the caller does not own', async () => {
+    const { service, groups, postAgent } = build();
+    groups.findByIdForUser.mockResolvedValueOnce(null as never);
+
+    await expect(service.requestRun('user-1', 'someone-elses')).rejects.toThrow(NotFoundError);
+    expect(postAgent.createFromBrief).not.toHaveBeenCalled();
+  });
+
+  it('refuses a brand whose agents are switched off, rather than running the others', async () => {
+    const { service, postAgent } = build({
+      groups: [groupRow(), groupRow({ id: 'group-2' })],
+    });
+
+    const outcome = await service.requestRun('user-1', 'group-3');
+
+    expect(outcome).toMatchObject({
+      accepted: false,
+      reason: 'this brand does not have its agents switched on',
+      plannedPosts: 0,
+    });
+    await settle();
+    expect(postAgent.createFromBrief).not.toHaveBeenCalled();
+  });
+
+  it('still runs every brand when none is named', async () => {
+    const { service, postAgent } = build({
+      policy: { mode: 'manual', autoPublish: true, maxPostsPerDay: 10 },
+      groups: [groupRow(), groupRow({ id: 'group-2' })],
+    });
+
+    await service.requestRun('user-1');
+    await settle();
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledTimes(2);
   });
 });

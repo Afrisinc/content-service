@@ -15,6 +15,7 @@ import {
   AGENT_STEP_KEYS,
   RUN_STATE_KEYS,
   RunStateKey,
+  describeSlot,
   pluralise,
   runStateKey,
 } from '@/helpers/agentRun.helper';
@@ -499,7 +500,7 @@ export class PostAgentService {
     await this.tracker.succeed(
       runId,
       AGENT_STEP_KEYS.queue,
-      `${pluralise(targets.length, 'page')} · ${scheduledAt.toISOString()}`
+      `${pluralise(targets.length, 'page')} · ${describeSlot(scheduledAt)}`
     );
 
     // Approval and release are the two stages a human still owns in manual mode.

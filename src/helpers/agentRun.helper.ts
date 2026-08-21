@@ -79,3 +79,19 @@ export function runStateKey(runId: string, part: RunStateKey): string {
   const base = `agent:run:${runId}:${part}`;
   return version === 1 ? base : `${base}.v${version}`;
 }
+
+/**
+ * A slot as a person reads it — "Fri 21 Aug, 06:00". The stage detail is shown
+ * verbatim in the timeline, so an ISO string there is machine output leaking
+ * into the interface.
+ */
+export function describeSlot(when: Date): string {
+  return when.toLocaleString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}

@@ -89,11 +89,13 @@ export const GetActiveAgentRunSchema = {
 
 export const RunAutomationNowSchema = {
   description:
-    'Start an agent pass over every autopilot-enabled group. Returns as soon as ' +
-    'the work is accepted; follow it in the run log.',
+    'Start an agent pass. Returns as soon as the work is accepted; follow it in ' + 'the run log.',
   body: {
     type: 'object',
     additionalProperties: false,
-    properties: {},
+    properties: {
+      // Omit to run every brand whose agents are on; name one to run just it.
+      groupId: { type: 'string', format: 'uuid' },
+    },
   },
 };

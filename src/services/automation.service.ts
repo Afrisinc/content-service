@@ -46,6 +46,12 @@ export interface RunRequestOutcome {
   alreadyRunning: boolean;
   activeRunId: string | null;
   reason: string | null;
+  /**
+   * How many posts this trigger will draft. One click is not one post — a brand
+   * with `postsPerRun: 3` produces three, each as its own run — and without this
+   * the extra runs look like the system starting work on its own.
+   */
+  plannedPosts: number;
 }
 
 export interface AutopilotRunSummary {
@@ -137,7 +143,14 @@ export class AutomationService {
    * be held open. The work runs detached and reports through the run log, which
    * is what the dashboard polls, so closing the page does not stop it.
    */
-  async requestRun(userId: string): Promise<RunRequestOutcome> {
+  async requestRun(userId: string, groupId?: string): Promise<RunRequestOutcome> {
+    if (groupId) {
+      const owned = await this.groups.findByIdForUser(groupId, userId);
+      if (!owned) {
+        throw new NotFoundError('account group not found');
+      }
+    }
+
     const active = await this.runs.findActiveForUser(userId);
     if (active) {
       return {
@@ -145,16 +158,20 @@ export class AutomationService {
         alreadyRunning: true,
         activeRunId: active.id,
         reason: 'a run is already going',
+        plannedPosts: 0,
       };
     }
 
-    const groups = await this.groups.findAutopilotGroups([userId]);
+    const groups = await this.runnableGroups(userId, groupId);
     if (!groups.length) {
       return {
         accepted: false,
         alreadyRunning: false,
         activeRunId: null,
-        reason: 'no brand has its agents switched on',
+        reason: groupId
+          ? 'this brand does not have its agents switched on'
+          : 'no brand has its agents switched on',
+        plannedPosts: 0,
       };
     }
 
@@ -172,19 +189,47 @@ export class AutomationService {
         reason:
           `today's limit of ${pluralise(cap, 'post')} is already used — ` +
           'raise the cap, or wait until tomorrow',
+        plannedPosts: 0,
       };
     }
 
     // Deliberately not awaited. Failures are recorded on the run rows, and the
     // catch here is only so an unhandled rejection cannot take the process down.
-    void this.runForUser(userId, MANUAL_TRIGGER).catch(err => {
+    void this.runForUser(userId, MANUAL_TRIGGER, groupId).catch(err => {
       logger.error(
         { userId, error: err instanceof Error ? err.message : String(err) },
         'Detached agent run failed'
       );
     });
 
-    return { accepted: true, alreadyRunning: false, activeRunId: null, reason: null };
+    return {
+      accepted: true,
+      alreadyRunning: false,
+      activeRunId: null,
+      reason: null,
+      plannedPosts: this.plannedPosts(groups, cap - usedToday),
+    };
+  }
+
+  /**
+   * The brands a pass covers: one when the caller named it, otherwise every
+   * brand with its agents switched on. Naming a brand that is switched off
+   * yields nothing rather than quietly running the others.
+   */
+  private async runnableGroups(userId: string, groupId?: string) {
+    const groups = await this.groups.findAutopilotGroups([userId]);
+    return groupId ? groups.filter(group => group.id === groupId) : groups;
+  }
+
+  /** What the pass will actually produce, once the budget has had its say. */
+  private plannedPosts(groups: ReadonlyArray<{ postsPerRun: number }>, budget: number): number {
+    let remaining = Math.max(budget, 0);
+
+    return groups.reduce((total, group) => {
+      const wanted = Math.min(group.postsPerRun, remaining);
+      remaining -= wanted;
+      return total + wanted;
+    }, 0);
   }
 
   /**
@@ -204,6 +249,7 @@ export class AutomationService {
         alreadyRunning: true,
         activeRunId: run.id,
         reason: 'this run is already going',
+        plannedPosts: 0,
       };
     }
 
@@ -218,6 +264,7 @@ export class AutomationService {
         alreadyRunning: true,
         activeRunId: active.id,
         reason: 'another run is already going',
+        plannedPosts: 0,
       };
     }
 
@@ -242,7 +289,13 @@ export class AutomationService {
       });
     });
 
-    return { accepted: true, alreadyRunning: false, activeRunId: runId, reason: null };
+    return {
+      accepted: true,
+      alreadyRunning: false,
+      activeRunId: runId,
+      reason: null,
+      plannedPosts: 1,
+    };
   }
 
   /**
@@ -302,13 +355,17 @@ export class AutomationService {
    * One autopilot pass over a workspace: every group whose autopilot is on and
    * that has not already produced its batch today drafts, renders and queues.
    */
-  async runForUser(userId: string, trigger: string = MANUAL_TRIGGER): Promise<AutopilotRunSummary> {
+  async runForUser(
+    userId: string,
+    trigger: string = MANUAL_TRIGGER,
+    groupId?: string
+  ): Promise<AutopilotRunSummary> {
     const policy = await this.policies.findByUser(userId);
     const mode = policy?.mode ?? AutomationMode.manual;
     const autoPublish = policy?.autoPublish ?? true;
     const maxPostsPerDay = policy?.maxPostsPerDay ?? DEFAULT_MAX_POSTS_PER_DAY;
 
-    const groups = await this.groups.findAutopilotGroups([userId]);
+    const groups = await this.runnableGroups(userId, groupId);
     const since = startOfToday();
     let remaining = Math.max(maxPostsPerDay - (await this.runs.countSince(userId, since)), 0);
 
@@ -384,9 +441,11 @@ export class AutomationService {
 
     let drafted = 0;
     let failure: string | null = null;
+    const usedThisRun = new Set<string>();
 
     for (let index = 0; index < wanted; index += 1) {
-      const topic = this.pickTopic(group.topics, [...covered, ...group.topics.slice(0, drafted)]);
+      const topic = this.pickTopic(group.topics, covered, usedThisRun);
+      usedThisRun.add(topic);
       const error = await this.draftOne(userId, group, topic, trigger, autoPublish, targets.length);
 
       if (error) {
@@ -459,9 +518,32 @@ export class AutomationService {
   }
 
   /** The first topic the group has not covered lately, else the top of the list. */
-  private pickTopic(topics: string[], covered: string[]): string {
-    const used = new Set(covered);
-    return topics.find(topic => !used.has(topic)) ?? topics[0];
+  /**
+   * The topic covered least recently.
+   *
+   * The old rule — first topic not in the recent history — degenerated as soon
+   * as history covered every topic: it fell back to `topics[0]` and posted the
+   * same subject for ever. Ranking by staleness keeps rotating whatever the
+   * history looks like.
+   *
+   * `recent` arrives newest-first, so a larger index means longer ago, and a
+   * topic absent from it has never been covered at all.
+   */
+  private pickTopic(topics: string[], recent: string[], usedThisRun: Set<string>): string {
+    // Never repeat inside one batch; only reuse if the batch is longer than the list.
+    const fresh = topics.filter(topic => !usedThisRun.has(topic));
+    const pool = fresh.length ? fresh : topics;
+
+    const staleness = (topic: string): number => {
+      const index = recent.indexOf(topic);
+      return index === -1 ? Number.POSITIVE_INFINITY : index;
+    };
+
+    // Ties keep list order, so the choice is stable rather than arbitrary.
+    return pool.reduce(
+      (best, topic) => (staleness(topic) > staleness(best) ? topic : best),
+      pool[0]
+    );
   }
 
   private skipped(group: AccountGroupWithMembers, reason: string): AutopilotGroupOutcome {

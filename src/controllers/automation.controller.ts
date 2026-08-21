@@ -53,10 +53,12 @@ export async function getAutomationSummary(request: FastifyRequest, reply: Fasti
 }
 
 export async function runAutomationNow(request: FastifyRequest, reply: FastifyReply) {
-  const outcome = await automationService.requestRun(requireUserId(request));
+  const { groupId } = (request.body ?? {}) as { groupId?: string };
+  const outcome = await automationService.requestRun(requireUserId(request), groupId);
 
+  const planned = `${outcome.plannedPosts} post${outcome.plannedPosts === 1 ? '' : 's'}`;
   const message = outcome.accepted
-    ? 'Agents are running — follow along in the run log'
+    ? `Drafting ${planned} — follow along in the run log`
     : (outcome.reason ?? 'Nothing to run');
 
   return success(reply, 202, message, 1004, outcome);
