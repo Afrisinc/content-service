@@ -85,3 +85,81 @@ describe('parseWeekdays', () => {
     expect(parseWeekdays('')).toEqual([]);
   });
 });
+
+describe('a slot in the brand’s timezone', () => {
+  const friday = new Date('2026-08-21T00:00:00Z');
+
+  /**
+   * A brand's posting hour belongs to its audience, not to whichever machine
+   * runs the cron. `timezone` was stored on the brand and never applied.
+   */
+  it('reads as the chosen hour in the chosen zone', () => {
+    for (const timeZone of ['UTC', 'Africa/Kigali', 'America/New_York', 'Asia/Tokyo']) {
+      const slot = nextFreeSlot([], { weekdays: [2, 5], hour: 9, from: friday, timeZone });
+
+      const local = new Intl.DateTimeFormat('en-GB', {
+        timeZone,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).format(slot);
+
+      expect(local).toBe('09:00');
+    }
+  });
+
+  it('lands on a weekday the brand asked for, read in its own zone', () => {
+    const slot = nextFreeSlot([], {
+      weekdays: [2, 5],
+      hour: 9,
+      from: friday,
+      timeZone: 'Asia/Tokyo',
+    });
+
+    const weekday = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Tokyo',
+      weekday: 'short',
+    }).format(slot);
+
+    expect(['Tue', 'Fri']).toContain(weekday);
+  });
+
+  it('holds the hour across a daylight-saving change', () => {
+    // US clocks go back on 2026-11-01; the same 09:00 is a different UTC instant.
+    const before = nextFreeSlot([], {
+      weekdays: [2],
+      hour: 9,
+      from: new Date('2026-10-27T00:00:00Z'),
+      timeZone: 'America/New_York',
+    });
+    const after = nextFreeSlot([], {
+      weekdays: [2],
+      hour: 9,
+      from: new Date('2026-11-03T00:00:00Z'),
+      timeZone: 'America/New_York',
+    });
+
+    expect(before.toISOString()).toContain('T13:00');
+    expect(after.toISOString()).toContain('T14:00');
+  });
+
+  it('falls back to the server clock when no zone is given', () => {
+    const slot = nextFreeSlot([], { weekdays: [2, 5], hour: 9, from: friday });
+
+    expect(slot.getHours()).toBe(9);
+  });
+
+  it('does not read the date parts in the wrong order', () => {
+    // en-GB formats day before month; reading them positionally swapped the two
+    // and threw the slot a year out.
+    const slot = nextFreeSlot([], {
+      weekdays: [5],
+      hour: 9,
+      from: friday,
+      timeZone: 'Africa/Kigali',
+    });
+
+    expect(slot.getUTCFullYear()).toBe(2026);
+    expect(slot.getUTCMonth()).toBe(7);
+  });
+});

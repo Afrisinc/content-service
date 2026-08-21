@@ -45,6 +45,7 @@ function build(overrides: { policy?: Record<string, unknown> | null; groups?: un
 
   const runs = {
     start: vi.fn(async () => ({ id: 'run-1' })),
+    findDraftIdsForGroup: vi.fn(async () => ['draft-1']),
     findActiveForUser: vi.fn(async () => null),
     findByIdForUser: vi.fn(async () => null),
     findStale: vi.fn(async () => []),
@@ -71,16 +72,19 @@ function build(overrides: { policy?: Record<string, unknown> | null; groups?: un
   };
 
   const tracker = { finish: vi.fn(async () => undefined) };
+  // Nothing queued ahead by default, so a brand is due.
+  const drafts = { countScheduledAfter: vi.fn(async () => 0) };
 
   const service = new AutomationService(
     policies as never,
     groups as never,
     runs as never,
     postAgent as never,
-    tracker as never
+    tracker as never,
+    drafts as never
   );
 
-  return { service, policies, groups, runs, postAgent, tracker };
+  return { service, policies, groups, runs, postAgent, tracker, drafts };
 }
 
 beforeEach(() => {
@@ -235,23 +239,23 @@ describe('runForUser', () => {
     expect(postAgent.createFromBrief).not.toHaveBeenCalled();
   });
 
-  it('does not run a group twice on the same day from the cron', async () => {
-    const { service, runs, postAgent } = build();
-    runs.countForGroupSince.mockResolvedValueOnce(1 as never);
+  it('leaves a brand alone while its next slot is already spoken for', async () => {
+    const { service, drafts, postAgent } = build();
+    drafts.countScheduledAfter.mockResolvedValueOnce(1 as never);
 
     const summary = await service.runForUser('user-1', 'autopilot');
 
-    expect(summary.groups[0].skipped).toBe('already ran today');
+    expect(summary.groups[0].skipped).toBe('1 post already waiting on a slot');
     expect(postAgent.createFromBrief).not.toHaveBeenCalled();
   });
 
-  it('lets a hand-triggered run go again the same day', async () => {
-    const { service, runs, postAgent } = build();
-    runs.countForGroupSince.mockResolvedValueOnce(1 as never);
+  it('lets a hand-triggered run go even when the queue is full', async () => {
+    const { service, drafts, postAgent } = build();
+    drafts.countScheduledAfter.mockResolvedValue(5 as never);
 
     await service.runForUser('user-1', 'manual');
 
-    expect(runs.countForGroupSince).not.toHaveBeenCalled();
+    expect(drafts.countScheduledAfter).not.toHaveBeenCalled();
     expect(postAgent.createFromBrief).toHaveBeenCalledOnce();
   });
 
@@ -1501,5 +1505,53 @@ describe('the review step is only skipped on autopilot', () => {
       expect.objectContaining({ autoPublish: false })
     );
     expect(postAgent.approve).not.toHaveBeenCalled();
+  });
+});
+
+describe('pacing against the posting slots', () => {
+  /**
+   * The drift this replaces: the guard was "did it run today", so a Tue/Fri
+   * brand drafted seven times a week into two slots. Each new post took the
+   * next free slot, pushing the schedule further out every day.
+   */
+  it('drafts when the next slot has nothing in it', async () => {
+    const { service, drafts, postAgent } = build();
+    drafts.countScheduledAfter.mockResolvedValue(0 as never);
+
+    await service.runForUser('user-1', 'autopilot');
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledOnce();
+  });
+
+  it('holds off once the queue is as deep as the brand posts per run', async () => {
+    const { service, drafts, postAgent } = build({
+      groups: [groupRow({ postsPerRun: 2 })],
+    });
+    drafts.countScheduledAfter.mockResolvedValue(2 as never);
+
+    const summary = await service.runForUser('user-1', 'autopilot');
+
+    expect(summary.groups[0].skipped).toMatch(/already waiting on a slot/);
+    expect(postAgent.createFromBrief).not.toHaveBeenCalled();
+  });
+
+  it('tops the queue back up when a slot frees', async () => {
+    const { service, drafts, postAgent } = build({
+      groups: [groupRow({ postsPerRun: 2 })],
+    });
+    drafts.countScheduledAfter.mockResolvedValue(1 as never);
+
+    await service.runForUser('user-1', 'autopilot');
+
+    expect(postAgent.createFromBrief).toHaveBeenCalled();
+  });
+
+  it('counts only this brand’s drafts', async () => {
+    const { service, runs, drafts } = build();
+
+    await service.runForUser('user-1', 'autopilot');
+
+    expect(runs.findDraftIdsForGroup).toHaveBeenCalledWith('group-1');
+    expect(drafts.countScheduledAfter).toHaveBeenCalledWith(['draft-1'], expect.any(Date));
   });
 });

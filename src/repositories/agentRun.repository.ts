@@ -236,6 +236,27 @@ export class AgentRunRepository {
     });
   }
 
+  /**
+   * Drafts this brand produced recently. `draftId` is a plain column rather than
+   * a relation, so the schedule is counted in a second query against them.
+   */
+  async findDraftIdsForGroup(groupId: string, limit = 50): Promise<string[]> {
+    const rows = await this.prisma.agentRun.findMany({
+      where: {
+        groupId,
+        draftId: { not: null },
+        status: { in: [AgentRunStatus.running, AgentRunStatus.succeeded] },
+      },
+      select: { draftId: true },
+      orderBy: { startedAt: 'desc' },
+      take: limit,
+    });
+
+    return rows
+      .map((row: { draftId: string | null }) => row.draftId)
+      .filter((id: string | null): id is string => id !== null);
+  }
+
   /** Topics the group has already covered lately, so the agent does not repeat itself. */
   async findRecentTopics(groupId: string, limit = 20): Promise<string[]> {
     const rows = await this.prisma.agentRun.findMany({

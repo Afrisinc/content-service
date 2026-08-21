@@ -657,8 +657,10 @@ describe('publishing to a brand group', () => {
     });
 
     const [, , scheduledAt] = drafts.markQueued.mock.calls[0] as [string, string[], Date];
-    expect(scheduledAt.getDay()).toBe(0);
-    expect(scheduledAt.getHours()).toBe(6);
+    // The cadence names UTC, so the slot reads 06:00 there — not on whatever
+    // clock the test machine happens to keep.
+    expect(scheduledAt.getUTCDay()).toBe(0);
+    expect(scheduledAt.getUTCHours()).toBe(6);
   });
 
   it('ignores a group cadence with no usable weekdays', async () => {

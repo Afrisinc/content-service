@@ -7,6 +7,7 @@ import {
   type AccountGroupWithMembers,
 } from '@/repositories/accountGroup.repository';
 import { AgentRunRepository, agentRunRepository } from '@/repositories/agentRun.repository';
+import { PostDraftRepository, postDraftRepository } from '@/repositories/postDraft.repository';
 import {
   AutomationPolicyRepository,
   automationPolicyRepository,
@@ -77,7 +78,8 @@ export class AutomationService {
     private readonly groups: AccountGroupRepository = accountGroupRepository,
     private readonly runs: AgentRunRepository = agentRunRepository,
     private readonly postAgent: PostAgentService = postAgentService,
-    private readonly tracker: AgentRunTracker = agentRunTracker
+    private readonly tracker: AgentRunTracker = agentRunTracker,
+    private readonly drafts: PostDraftRepository = postDraftRepository
   ) {}
 
   async getPolicy(userId: string): Promise<AutomationPolicyDTO> {
@@ -209,6 +211,12 @@ export class AutomationService {
       reason: null,
       plannedPosts: this.plannedPosts(groups, cap - usedToday),
     };
+  }
+
+  /** Posts this brand already has waiting on a future slot. */
+  private async queuedAhead(groupId: string): Promise<number> {
+    const draftIds = await this.runs.findDraftIdsForGroup(groupId);
+    return this.drafts.countScheduledAfter(draftIds, new Date());
   }
 
   /**
@@ -418,12 +426,15 @@ export class AutomationService {
     autoPublish: boolean,
     remaining: number
   ): Promise<AutopilotGroupOutcome> {
-    // A scheduled tick fires far more often than a posting slot comes round, so
-    // a group that already produced its batch today is left alone.
+    // A scheduled tick fires far more often than a posting slot comes round.
+    // Pacing keys off the queue rather than the calendar: a brand drafts when
+    // its next slot has nothing in it, so a Tue/Fri brand drafts about twice a
+    // week. Keying off "did it run today" made it draft daily into a schedule
+    // with two slots a week, pushing posts further out with every tick.
     if (trigger === AUTOPILOT_TRIGGER) {
-      const today = await this.runs.countForGroupSince(group.id, startOfToday());
-      if (today > 0) {
-        return this.skipped(group, 'already ran today');
+      const queued = await this.queuedAhead(group.id);
+      if (queued >= group.postsPerRun) {
+        return this.skipped(group, `${pluralise(queued, 'post')} already waiting on a slot`);
       }
     }
 

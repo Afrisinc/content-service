@@ -65,6 +65,27 @@ export class PostDraftRepository {
     return { items, total, page, limit };
   }
 
+  /**
+   * How many of these drafts are still waiting on a future slot.
+   *
+   * Pacing keys off this rather than off "did it run today": a brand posting
+   * twice a week should draft about twice a week, or the schedule drifts
+   * further into the future with every tick.
+   */
+  async countScheduledAfter(ids: string[], after: Date): Promise<number> {
+    if (!ids.length) {
+      return 0;
+    }
+
+    return this.prisma.postDraft.count({
+      where: {
+        id: { in: ids },
+        scheduledAt: { gt: after },
+        status: { notIn: [PostDraftStatus.rejected, PostDraftStatus.failed] },
+      },
+    });
+  }
+
   /** Slots already claimed by another draft, so two never land on the same day. */
   async findTakenSlots(after: Date): Promise<Date[]> {
     const rows = await this.prisma.postDraft.findMany({

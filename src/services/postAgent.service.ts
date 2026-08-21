@@ -663,7 +663,7 @@ export class PostAgentService {
 
   private async cadenceFor(
     groupId?: string
-  ): Promise<{ weekdays: number[]; hour: number } | undefined> {
+  ): Promise<{ weekdays: number[]; hour: number; timeZone?: string } | undefined> {
     if (!groupId) {
       return undefined;
     }
@@ -674,14 +674,21 @@ export class PostAgentService {
     }
 
     const weekdays = parseWeekdays(cadence.slotWeekdays);
-    return weekdays.length ? { weekdays, hour: cadence.slotHour } : undefined;
+    return weekdays.length
+      ? { weekdays, hour: cadence.slotHour, timeZone: cadence.timezone || undefined }
+      : undefined;
   }
 
-  private async resolveSlot(cadence?: { weekdays: number[]; hour: number }): Promise<Date> {
+  private async resolveSlot(cadence?: {
+    weekdays: number[];
+    hour: number;
+    timeZone?: string;
+  }): Promise<Date> {
     const taken = await this.drafts.findTakenSlots(new Date());
     return nextFreeSlot(taken, {
       weekdays: cadence?.weekdays ?? parseWeekdays(env.POST_SLOT_WEEKDAYS),
       hour: cadence?.hour ?? env.POST_SLOT_HOUR,
+      timeZone: cadence?.timeZone,
     });
   }
 

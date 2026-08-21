@@ -5,10 +5,78 @@ export const CANCELLED_POST_STATUS = 'deleted';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LOOKAHEAD_DAYS = 120;
 
-function atHour(day: Date, hour: number): Date {
-  const slot = new Date(day);
-  slot.setHours(hour, 0, 0, 0);
-  return slot;
+/**
+ * The parts of an instant as they read in a given timezone.
+ *
+ * Read by type rather than by position: locales order the parts differently, so
+ * destructuring the array swaps day and month in half the world.
+ */
+function partsIn(when: Date, timeZone: string): { year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(when);
+
+  const value = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find(part => part.type === type)?.value ?? 0);
+
+  return { year: value('year'), month: value('month'), day: value('day') };
+}
+
+/** How far the zone sits from UTC at that instant, in minutes. */
+function offsetMinutes(when: Date, timeZone: string): number {
+  // `en-CA` formats as YYYY-MM-DD, which Date.parse reads back unambiguously.
+  const local = new Date(
+    `${new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    })
+      .format(when)
+      .replace(', ', 'T')}Z`
+  );
+
+  return (local.getTime() - when.getTime()) / 60000;
+}
+
+/**
+ * The instant at which the clock reads `hour:00` on the calendar day `day` falls
+ * on, in `timeZone`.
+ *
+ * A brand's posting hour belongs to its audience, not to whichever machine runs
+ * the cron, so this cannot use `setHours` — that would resolve in server time.
+ * The offset is measured twice because it can change between the guess and the
+ * answer, which is exactly what happens across a daylight-saving boundary.
+ */
+function atHour(day: Date, hour: number, timeZone?: string): Date {
+  if (!timeZone) {
+    const slot = new Date(day);
+    slot.setHours(hour, 0, 0, 0);
+    return slot;
+  }
+
+  const { year, month, day: date } = partsIn(day, timeZone);
+  const asUtc = Date.UTC(year, month - 1, date, hour, 0, 0, 0);
+
+  const guess = new Date(asUtc - offsetMinutes(new Date(asUtc), timeZone) * 60000);
+  return new Date(asUtc - offsetMinutes(guess, timeZone) * 60000);
+}
+
+/** The weekday `when` falls on, as read in `timeZone`. */
+function weekdayIn(when: Date, timeZone?: string): number {
+  if (!timeZone) {
+    return when.getDay();
+  }
+
+  const label = new Intl.DateTimeFormat('en-GB', { timeZone, weekday: 'short' }).format(when);
+  return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(label);
 }
 
 /**
@@ -19,7 +87,7 @@ function atHour(day: Date, hour: number): Date {
  */
 export function nextFreeSlot(
   taken: ReadonlyArray<Date>,
-  options: { weekdays: number[]; hour: number; from?: Date }
+  options: { weekdays: number[]; hour: number; from?: Date; timeZone?: string }
 ): Date {
   const weekdays = new Set(options.weekdays);
   if (weekdays.size === 0) {
@@ -31,11 +99,11 @@ export function nextFreeSlot(
 
   for (let offset = 0; offset <= MAX_LOOKAHEAD_DAYS; offset += 1) {
     const day = new Date(from.getTime() + offset * DAY_MS);
-    if (!weekdays.has(day.getDay())) {
+    if (!weekdays.has(weekdayIn(day, options.timeZone))) {
       continue;
     }
 
-    const slot = atHour(day, options.hour);
+    const slot = atHour(day, options.hour, options.timeZone);
     if (slot.getTime() <= from.getTime()) {
       continue;
     }
