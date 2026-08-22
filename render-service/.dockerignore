@@ -4,3 +4,7 @@ tests/
 .pytest_cache/
 .out/
 requirements-dev.txt
+venv/
+.venv/
+*.egg-info/
+.mypy_cache/

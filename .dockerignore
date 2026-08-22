@@ -28,3 +28,13 @@ Dockerfile
 .prettierrc
 eslint.config.js
 .claude
+
+# The render service is built from its own context; without this the
+# content-service build uploads its 112MB virtualenv on every push.
+render-service
+
+# Not needed to build or run the bundle.
+test
+docs
+.github
+*.tsbuildinfo
