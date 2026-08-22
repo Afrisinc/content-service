@@ -35,6 +35,8 @@ import {
 } from '@/helpers/postingSlot.helper';
 import { PostDraftRepository, postDraftRepository } from '@/repositories/postDraft.repository';
 import { socialMediaPostRepository } from '@/repositories/socialMediaPost.repository';
+import { UserRepository, userRepository } from '@/repositories/user.repository';
+import { requestPostReview } from '@/helpers/reviewNotification.helper';
 import { ArtDirectionService, artDirectionService } from '@/services/artDirection.service';
 import { PostCopyService, postCopyService } from '@/services/postCopy.service';
 import {
@@ -67,7 +69,8 @@ export class PostAgentService {
     private readonly groups: AccountGroupRepository = accountGroupRepository,
     private readonly policies: AutomationPolicyRepository = automationPolicyRepository,
     private readonly tracker: AgentRunTracker = agentRunTracker,
-    private readonly runs: AgentRunRepository = agentRunRepository
+    private readonly runs: AgentRunRepository = agentRunRepository,
+    private readonly users: UserRepository = userRepository
   ) {}
 
   async createFromBrief(brief: PostBriefPayload): Promise<PostDraft> {
@@ -508,6 +511,18 @@ export class PostAgentService {
       await this.tracker.skip(runId, AGENT_STEP_KEYS.approval, 'autopilot');
     } else {
       await this.tracker.waitingOn(runId, AGENT_STEP_KEYS.approval);
+      await requestPostReview(
+        {
+          userId: draft.userId,
+          draftId: draft.id,
+          topic: draft.topic,
+          format: draft.format,
+          slideCount: draft.slideUrls.length,
+          postCount: postIds.length,
+          scheduledAt,
+        },
+        this.users
+      );
     }
 
     logger.info(

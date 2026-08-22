@@ -90,6 +90,17 @@ export const env = {
   NOTIFY_APP_ID: process.env.NOTIFY_APP_ID || '',
   NOTIFY_ACCOUNT_ID: process.env.NOTIFY_ACCOUNT_ID || '',
 
+  // Notify (transactional notifications). No key switches every send off.
+  NOTIFY_API_KEY: process.env.NOTIFY_API_KEY || '',
+  NOTIFY_TIMEOUT_MS: Number(process.env.NOTIFY_TIMEOUT_MS) || 30000,
+  NOTIFY_RETRIES: Number(process.env.NOTIFY_RETRIES ?? 3),
+  NOTIFY_REVIEW_CHANNELS: (process.env.NOTIFY_REVIEW_CHANNELS || 'in_app,email')
+    .split(',')
+    .map(channel => channel.trim())
+    .filter(Boolean),
+  NOTIFY_DEDUPE_TTL_SECONDS: Number(process.env.NOTIFY_DEDUPE_TTL_SECONDS) || 86400,
+  DASHBOARD_URL: process.env.DASHBOARD_URL || 'http://localhost:5173',
+
   // Daily newsletter digest
   NEWSLETTER_DIGEST_ENABLED: process.env.NEWSLETTER_DIGEST_ENABLED === 'true',
   CRON_SCHEDULE_NEWSLETTER_DIGEST: process.env.CRON_SCHEDULE_NEWSLETTER_DIGEST || '30 6 * * *',

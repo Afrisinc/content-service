@@ -18,8 +18,14 @@ vi.mock('@/repositories/socialMediaPost.repository', () => ({
   },
 }));
 
+vi.mock('@/utils/notify', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
+  sendNotification: vi.fn(async () => ({ sent: [{ id: 'notif-1' }], failed: 0, skipped: null })),
+}));
+
 const { socialMediaPostRepository } = await import('@/repositories/socialMediaPost.repository');
 const { cacheDelete } = await import('@/utils/cache');
+const { sendNotification } = await import('@/utils/notify');
 
 const COPY: PostCopy = {
   concept: 'The design performs the sentence.',
@@ -58,6 +64,7 @@ function build(overrides: Record<string, unknown> = {}) {
     id: 'draft-1',
     userId: 'user-1',
     status: 'awaiting_approval',
+    topic: 'Software development',
     format: 'post',
     auditPassed: true,
     slideUrls: ['https://render/slide-01.png'],
@@ -148,6 +155,10 @@ function build(overrides: Record<string, unknown> = {}) {
     })),
   };
 
+  const users = {
+    findById: vi.fn(async () => ({ id: 'user-1', email: 'editor@example.com', name: 'Amina' })),
+  };
+
   const service = new PostAgentService(
     drafts as never,
     copyService as never,
@@ -158,7 +169,8 @@ function build(overrides: Record<string, unknown> = {}) {
     groups as never,
     policies as never,
     tracker as never,
-    runs as never
+    runs as never,
+    users as never
   );
 
   return {
@@ -173,6 +185,7 @@ function build(overrides: Record<string, unknown> = {}) {
     policies,
     tracker,
     runs,
+    users,
     draft,
   };
 }
@@ -453,6 +466,96 @@ describe('queueing for review', () => {
     const { service } = build({ status: 'rejected' });
 
     await expect(service.schedule('draft-1', {})).rejects.toThrow(ConflictError);
+  });
+});
+
+describe('asking for a review', () => {
+  it('notifies the owner to review and approve once the post is held in review', async () => {
+    const { service } = build();
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(sendNotification).toHaveBeenCalledOnce();
+    expect(sendNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        template: 'post-review-requested',
+        priority: 'high',
+        dedupeKey: 'notify:post-review:draft-1',
+        data: expect.objectContaining({
+          draft_id: 'draft-1',
+          topic: 'Software development',
+          action: 'review-and-approve',
+          review_url: expect.stringContaining('/posts/draft-1'),
+        }),
+      })
+    );
+  });
+
+  it('addresses the owner on their own account details', async () => {
+    const { service, users } = build();
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(users.findById).toHaveBeenCalledWith('user-1');
+    const request = vi.mocked(sendNotification).mock.calls[0][0];
+    expect(request.targets).toEqual(expect.arrayContaining([{ channel: 'in_app', to: 'user-1' }]));
+    expect(request.data).toMatchObject({ name: 'Amina' });
+  });
+
+  it('reports how much the approval would release', async () => {
+    const { service } = build();
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(vi.mocked(sendNotification).mock.calls[0][0].data).toMatchObject({
+      post_count: 1,
+      slide_count: 1,
+      format: 'post',
+    });
+  });
+
+  it('stays quiet when the post goes straight to the publish queue', async () => {
+    const { service } = build();
+
+    await service.createFromBrief({
+      topic: 'Software development',
+      userId: 'user-1',
+      autoPublish: true,
+    });
+
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it('still asks for the review when the owner record cannot be read', async () => {
+    const { service, users } = build();
+    users.findById.mockRejectedValueOnce(new Error('users table down'));
+
+    await expect(
+      service.createFromBrief({ topic: 'Software development', userId: 'user-1' })
+    ).resolves.toBeDefined();
+
+    const request = vi.mocked(sendNotification).mock.calls[0][0];
+    expect(request.targets).toEqual([{ channel: 'in_app', to: 'user-1' }]);
+  });
+
+  it('does not ask for a review on a draft that never made it into the queue', async () => {
+    const { service, drafts } = build();
+    drafts.markQueued.mockRejectedValueOnce(new Error('slot table down'));
+
+    await service.createFromBrief({ topic: 'Software development', userId: 'user-1' });
+
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it('keeps the post when the notification cannot be delivered', async () => {
+    const { service, drafts } = build();
+    vi.mocked(sendNotification).mockRejectedValueOnce(new Error('notify down'));
+
+    await expect(
+      service.createFromBrief({ topic: 'Software development', userId: 'user-1' })
+    ).resolves.toBeDefined();
+
+    expect(drafts.markFailed).not.toHaveBeenCalled();
   });
 });
 

@@ -63,3 +63,5 @@ export class UserRepository {
     return prisma.user.create({ data });
   }
 }
+
+export const userRepository = new UserRepository();
