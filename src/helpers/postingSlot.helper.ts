@@ -118,8 +118,14 @@ export function nextFreeSlot(
 }
 
 export function parseWeekdays(raw: string): number[] {
-  return raw
-    .split(',')
-    .map(value => Number(value.trim()))
-    .filter(value => Number.isInteger(value) && value >= 0 && value <= 6);
+  return (
+    raw
+      .split(',')
+      .map(value => value.trim())
+      // An empty segment is not a Sunday: `Number('')` is 0, which would silently
+      // turn a blank setting into "post on Sundays".
+      .filter(value => value.length > 0)
+      .map(Number)
+      .filter(value => Number.isInteger(value) && value >= 0 && value <= 6)
+  );
 }

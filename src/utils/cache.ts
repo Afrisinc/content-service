@@ -1,6 +1,6 @@
-import { Redis } from 'ioredis';
 import { env } from '@/config/env';
 import { logger } from '@/utils/logger';
+import { Redis } from 'ioredis';
 
 const OPERATION_TIMEOUT_MS = 1000;
 
@@ -176,4 +176,19 @@ export async function cacheDelete(key: string): Promise<void> {
       'Cache delete failed'
     );
   }
+}
+
+export async function cacheThrough<T>(
+  key: string,
+  ttlSeconds: number,
+  load: () => Promise<T>
+): Promise<T> {
+  const hit = await cacheGet<T>(key);
+  if (hit !== null) {
+    return hit;
+  }
+
+  const value = await load();
+  await cacheSet(key, value, ttlSeconds);
+  return value;
 }

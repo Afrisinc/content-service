@@ -33,6 +33,7 @@ function composeRecorders(recorders: IUsageRecorder[]): IUsageRecorder {
 }
 
 const ledger: BatchingUsageRecorder = createPrismaUsageRecorder();
+const usageRecorder = composeRecorders([createLoggingUsageRecorder(), ledger]);
 
 /**
  * Summarising costs a model call per fold, so it is opt-in. Without it a long thread simply
@@ -55,7 +56,10 @@ function buildMemory(): IChatMemory {
 
   return createSummarisingChatMemory({
     inner: memory,
-    summarise: createClaudeSummariser({ model: env.AI_MEMORY_SUMMARY_MODEL }),
+    summarise: createClaudeSummariser({
+      model: env.AI_MEMORY_SUMMARY_MODEL,
+      usage: usageRecorder,
+    }),
     keepRecentTurns: env.AI_MEMORY_KEEP_RECENT_TURNS,
     summariseAfterTurns: env.AI_MEMORY_SUMMARISE_AFTER_TURNS,
     logger,
@@ -70,7 +74,7 @@ function buildMemory(): IChatMemory {
 export const nodeServices: NodeServices = {
   memory: buildMemory(),
   cache: createRedisResponseCache(),
-  usage: composeRecorders([createLoggingUsageRecorder(), ledger]),
+  usage: usageRecorder,
   ...(env.AI_DAILY_BUDGET_MICRO_USD > 0
     ? {
         budget: createRedisBudgetGuard({

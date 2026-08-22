@@ -222,3 +222,31 @@ export const FACEBOOK_MESSAGE_MAX_LENGTH = 63206;
 
 /** Reel descriptions are capped well below a feed post. */
 export const FACEBOOK_REEL_DESCRIPTION_MAX_LENGTH = 2200;
+
+export interface MetaPostMetrics {
+  impressions: number;
+  reach: number;
+  engagements: number;
+  clicks: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  saves: number;
+  views: number;
+}
+
+export interface MetaAccountMetrics {
+  followers: number;
+  follows: number;
+  postsCount: number;
+  reach: number;
+  impressions: number;
+  profileViews: number;
+}
+
+/** Meta's own view of how much of the hourly app quota is spent, 0–100. */
+export interface MetaUsage {
+  callCount: number;
+  totalTime: number;
+  totalCpuTime: number;
+}

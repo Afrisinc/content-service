@@ -3,8 +3,30 @@
  * Handles all OpenAI API interactions for content generation
  */
 
+import { nodeServices } from '@/adapters/nodes/nodeServices';
+import { CHATGPT_PRICING } from '@/nodes/chatgpt/chatgpt.pricing';
+import { costMicroUsd, findPricing } from '@/nodes/core';
 import { logger } from '@/utils/logger';
 import OpenAI from 'openai';
+
+/**
+ * DALL·E is billed per image, not per token, so the token price table cannot
+ * cost it. Standard 1024x1024 list price, in micro-USD per image.
+ */
+const IMAGE_MICRO_USD_PER_IMAGE = 40_000;
+
+interface CallRecord {
+  resource: string;
+  operation: string;
+  model: string;
+  startedAt: number;
+  success: boolean;
+  errorCode?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  images?: number;
+}
 
 export interface AIGenerationRequest {
   prompt: string;
@@ -135,6 +157,8 @@ class OpenAIHelper {
       throw new Error(`OpenAI configuration invalid: ${config.errors.join(', ')}`);
     }
 
+    const startedAt = Date.now();
+
     try {
       logger.info(
         {
@@ -159,6 +183,17 @@ class OpenAIHelper {
           },
         ],
         temperature: 0.7,
+      });
+
+      this.record({
+        resource: 'text',
+        operation: 'message',
+        model: this.textModel,
+        startedAt,
+        success: true,
+        inputTokens: message.usage?.prompt_tokens,
+        outputTokens: message.usage?.completion_tokens,
+        cacheReadTokens: message.usage?.prompt_tokens_details?.cached_tokens,
       });
 
       const content = message.choices[0].message.content || '';
@@ -222,6 +257,14 @@ class OpenAIHelper {
         },
         'Content generation failed'
       );
+      this.record({
+        resource: 'text',
+        operation: 'message',
+        model: this.textModel,
+        startedAt,
+        success: false,
+        errorCode: error instanceof Error ? error.name : 'unknown',
+      });
       throw error;
     }
   }
@@ -273,6 +316,8 @@ class OpenAIHelper {
       throw new Error(`OpenAI configuration invalid: ${config.errors.join(', ')}`);
     }
 
+    const startedAt = Date.now();
+
     try {
       logger.info(
         {
@@ -297,13 +342,31 @@ class OpenAIHelper {
         ],
         temperature: 0.7,
         stream: true,
+        stream_options: { include_usage: true },
       });
 
+      // A stream reports its usage only in the final chunk, and only when asked.
+      let usage: OpenAI.CompletionUsage | undefined;
+
       for await (const chunk of stream) {
+        if (chunk.usage) {
+          usage = chunk.usage;
+        }
         if (chunk.choices[0]?.delta?.content) {
           yield chunk.choices[0].delta.content;
         }
       }
+
+      this.record({
+        resource: 'text',
+        operation: 'stream',
+        model: this.textModel,
+        startedAt,
+        success: true,
+        inputTokens: usage?.prompt_tokens,
+        outputTokens: usage?.completion_tokens,
+        cacheReadTokens: usage?.prompt_tokens_details?.cached_tokens,
+      });
 
       logger.info({}, 'Streaming content generation completed');
     } catch (error) {
@@ -313,6 +376,14 @@ class OpenAIHelper {
         },
         'Content streaming failed'
       );
+      this.record({
+        resource: 'text',
+        operation: 'stream',
+        model: this.textModel,
+        startedAt,
+        success: false,
+        errorCode: error instanceof Error ? error.name : 'unknown',
+      });
       throw error;
     }
   }
@@ -325,6 +396,8 @@ class OpenAIHelper {
     if (!config.valid) {
       throw new Error(`OpenAI configuration invalid: ${config.errors.join(', ')}`);
     }
+
+    const startedAt = Date.now();
 
     try {
       logger.info(
@@ -357,6 +430,17 @@ class OpenAIHelper {
         ],
       });
 
+      this.record({
+        resource: 'text',
+        operation: 'vision',
+        model: this.textModel,
+        startedAt,
+        success: true,
+        inputTokens: message.usage?.prompt_tokens,
+        outputTokens: message.usage?.completion_tokens,
+        cacheReadTokens: message.usage?.prompt_tokens_details?.cached_tokens,
+      });
+
       const content = message.choices[0].message.content || '';
 
       if (!content) {
@@ -371,6 +455,14 @@ class OpenAIHelper {
         },
         'Vision content generation failed'
       );
+      this.record({
+        resource: 'text',
+        operation: 'vision',
+        model: this.textModel,
+        startedAt,
+        success: false,
+        errorCode: error instanceof Error ? error.name : 'unknown',
+      });
       throw error;
     }
   }
@@ -386,6 +478,8 @@ class OpenAIHelper {
     if (!config.valid) {
       throw new Error(`OpenAI configuration invalid: ${config.errors.join(', ')}`);
     }
+
+    const startedAt = Date.now();
 
     try {
       const stylePrompt = style ? ` in a ${style} style` : '';
@@ -404,6 +498,15 @@ class OpenAIHelper {
         n: 1,
         size: '1024x1024',
         quality: 'standard',
+      });
+
+      this.record({
+        resource: 'image',
+        operation: 'generate',
+        model: this.imageModel,
+        startedAt,
+        success: true,
+        images: response.data?.length ?? 0,
       });
 
       if (!response.data || response.data.length === 0) {
@@ -431,7 +534,61 @@ class OpenAIHelper {
         },
         'Image generation failed'
       );
+      this.record({
+        resource: 'image',
+        operation: 'generate',
+        model: this.imageModel,
+        startedAt,
+        success: false,
+        errorCode: error instanceof Error ? error.name : 'unknown',
+      });
       throw error;
+    }
+  }
+
+  /**
+   * Every paid call lands in the same ledger the AI nodes write to.
+   *
+   * These calls bypass the node pipeline, so without this they spent money the
+   * usage page could not see. Recording never throws: a ledger problem must not
+   * fail a generation the caller already paid for.
+   */
+  private record(call: CallRecord): void {
+    try {
+      const inputTokens = call.inputTokens ?? 0;
+      const outputTokens = call.outputTokens ?? 0;
+      const cacheReadTokens = call.cacheReadTokens ?? 0;
+
+      const cost = call.images
+        ? BigInt(call.images * IMAGE_MICRO_USD_PER_IMAGE)
+        : costMicroUsd(
+            { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens: 0, totalTokens: 0 },
+            findPricing(call.model, CHATGPT_PRICING)
+          );
+
+      nodeServices.usage?.record({
+        node: 'chatGpt',
+        model: call.model,
+        resource: call.resource,
+        operation: call.operation,
+        userId: null,
+        sessionId: null,
+        requestId: null,
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        cacheWriteTokens: 0,
+        costMicroUsd: cost,
+        latencyMs: Date.now() - call.startedAt,
+        success: call.success,
+        cached: false,
+        errorCode: call.errorCode ?? null,
+      });
+    } catch (error) {
+      logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        '[ai-usage] could not record an OpenAI call'
+      );
     }
   }
 

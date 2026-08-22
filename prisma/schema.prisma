@@ -236,9 +236,9 @@ model SocialMediaPost {
 
 model SocialMediaAnalytics {
   id     String @id @default(uuid())
-  postId String @unique
+  postId String
 
-  date     DateTime @db.Timestamptz()
+  date     DateTime @db.Date
   platform String
 
   // Volume metrics
@@ -263,6 +263,7 @@ model SocialMediaAnalytics {
   createdAt DateTime @default(now()) @db.Timestamptz()
   updatedAt DateTime @updatedAt @db.Timestamptz()
 
+  @@unique([postId, date])
   @@index([postId])
   @@index([platform])
   @@index([date])
@@ -948,4 +949,29 @@ model AgentRunStep {
   @@unique([runId, key])
   @@index([runId, sequence])
   @@map("agent_run_steps")
+}
+
+/// A day's standing for one connected account: followers, reach, profile views.
+/// Per account per day, so one call covers every post that account carries.
+model SocialAccountSnapshot {
+  id        String @id @default(uuid())
+  accountId String
+
+  date     DateTime @db.Date
+  platform String
+
+  followers    Int @default(0)
+  follows      Int @default(0)
+  postsCount   Int @default(0)
+  reach        Int @default(0)
+  impressions  Int @default(0)
+  profileViews Int @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([accountId, date])
+  @@index([accountId, date])
+  @@index([platform])
+  @@map("social_account_snapshots")
 }

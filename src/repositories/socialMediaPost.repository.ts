@@ -308,6 +308,8 @@ export class SocialMediaPostRepository {
       comments?: number;
       shares?: number;
       views?: number;
+      reach?: number;
+      impressions?: number;
     }
   ) {
     return this.prisma.socialMediaPost.update({
@@ -424,10 +426,23 @@ export class SocialMediaPostRepository {
 
   /**
    * Get analytics for post
+   *
+   * A post now carries one row per day, so this returns the most recent day.
+   * `getPostAnalyticsHistory` returns the series.
    */
   async getPostAnalytics(postId: string) {
-    return this.prisma.socialMediaAnalytics.findUnique({
+    return this.prisma.socialMediaAnalytics.findFirst({
       where: { postId },
+      orderBy: { date: 'desc' },
+    });
+  }
+
+  /** Every day recorded for a post, oldest first, for trend reporting. */
+  async getPostAnalyticsHistory(postId: string, limit = 60) {
+    return this.prisma.socialMediaAnalytics.findMany({
+      where: { postId },
+      orderBy: { date: 'asc' },
+      take: limit,
     });
   }
 
@@ -455,7 +470,7 @@ export class SocialMediaPostRepository {
     }
   ) {
     return this.prisma.socialMediaAnalytics.upsert({
-      where: { postId },
+      where: { postId_date: { postId, date: data.date } },
       update: {
         ...data,
         updatedAt: new Date(),

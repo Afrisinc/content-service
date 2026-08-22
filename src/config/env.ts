@@ -72,6 +72,19 @@ export const env = {
   // starting over. Past this the copy is gone and the run has to be redone.
   AGENT_RUN_STATE_TTL_SECONDS: Number(process.env.AGENT_RUN_STATE_TTL_SECONDS) || 86400,
 
+  // Analytics pull: one sweep an hour reads back what the platforms report for
+  // recently published posts, plus a daily follower snapshot per account.
+  ANALYTICS_PULL_ENABLED: process.env.ANALYTICS_PULL_ENABLED !== 'false',
+  CRON_SCHEDULE_ANALYTICS_PULL: process.env.CRON_SCHEDULE_ANALYTICS_PULL || '20 * * * *',
+  // Meta allows 200 calls per user per hour; this stays well under it so a
+  // sweep can never starve publishing, which shares the same quota.
+  ANALYTICS_PULL_CALL_BUDGET: Number(process.env.ANALYTICS_PULL_CALL_BUDGET) || 120,
+  ANALYTICS_PULL_POST_LIMIT: Number(process.env.ANALYTICS_PULL_POST_LIMIT) || 100,
+  ANALYTICS_PULL_ACCOUNT_LIMIT: Number(process.env.ANALYTICS_PULL_ACCOUNT_LIMIT) || 50,
+  // Meta reports quota use as a percentage; past this the sweep stops early and
+  // picks up on the next tick rather than earning a block.
+  ANALYTICS_PULL_USAGE_CEILING: Number(process.env.ANALYTICS_PULL_USAGE_CEILING) || 80,
+
   // Notify (campaign delivery)
   NOTIFY_API_URL: process.env.NOTIFY_API_URL || '',
   NOTIFY_APP_ID: process.env.NOTIFY_APP_ID || '',

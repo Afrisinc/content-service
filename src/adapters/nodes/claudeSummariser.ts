@@ -1,10 +1,15 @@
 import { claudeCredentialsFromEnv, runClaude, summaryTranscript } from '@/nodes';
-import type { MemoryMessage } from '@/nodes/core';
+import type { IUsageRecorder, MemoryMessage } from '@/nodes/core';
 import { logger } from '@/utils/logger';
 
 export interface ClaudeSummariserOptions {
   model?: string;
   maxTokens?: number;
+  /**
+   * Passed in rather than imported: `nodeServices` builds this summariser, so
+   * reaching back for its recorder would close an import cycle.
+   */
+  usage?: IUsageRecorder;
 }
 
 const SYSTEM_PROMPT =
@@ -24,6 +29,8 @@ export function createClaudeSummariser(
     const items = await runClaude({
       credentials: claudeCredentialsFromEnv(),
       logger,
+      ...(options.usage ? { services: { usage: options.usage } } : {}),
+      usageContext: { requestId: 'chat-memory-summary' },
       parameters: {
         resource: 'text',
         operation: 'message',

@@ -313,12 +313,14 @@ async function main() {
     // ============================================
     console.log('Creating analytics records...');
 
+    const post1AnalyticsDate = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+
     await prisma.socialMediaAnalytics.upsert({
-      where: { postId: post1.id },
+      where: { postId_date: { postId: post1.id, date: post1AnalyticsDate } },
       update: {},
       create: {
         postId: post1.id,
-        date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+        date: post1AnalyticsDate,
         platform: 'facebook',
         impressions: 3200,
         reaches: 2850,
@@ -336,12 +338,14 @@ async function main() {
       },
     });
 
+    const post2AnalyticsDate = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
     await prisma.socialMediaAnalytics.upsert({
-      where: { postId: post2.id },
+      where: { postId_date: { postId: post2.id, date: post2AnalyticsDate } },
       update: {},
       create: {
         postId: post2.id,
-        date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+        date: post2AnalyticsDate,
         platform: 'facebook',
         impressions: 1500,
         reaches: 1234,
@@ -357,12 +361,14 @@ async function main() {
       },
     });
 
+    const post3AnalyticsDate = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
+
     await prisma.socialMediaAnalytics.upsert({
-      where: { postId: post3.id },
+      where: { postId_date: { postId: post3.id, date: post3AnalyticsDate } },
       update: {},
       create: {
         postId: post3.id,
-        date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+        date: post3AnalyticsDate,
         platform: 'instagram',
         impressions: 6200,
         reaches: 5678,

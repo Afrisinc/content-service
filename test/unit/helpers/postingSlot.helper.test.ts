@@ -61,13 +61,17 @@ describe('nextFreeSlot', () => {
 
   it('gives up rather than looping forever when every slot is taken', () => {
     const taken: Date[] = [];
-    for (let i = 0; i < 60; i += 1) {
-      taken.push(nextFreeSlot(taken, { weekdays: TUESDAY_AND_FRIDAY, hour: 9, from: MONDAY }));
-    }
 
-    expect(() =>
-      nextFreeSlot(taken, { weekdays: TUESDAY_AND_FRIDAY, hour: 9, from: MONDAY })
-    ).toThrow('no free posting slot');
+    // More slots than the lookahead horizon can hold, so this must end in a
+    // throw rather than spinning.
+    expect(() => {
+      for (let i = 0; i < 60; i += 1) {
+        taken.push(nextFreeSlot(taken, { weekdays: TUESDAY_AND_FRIDAY, hour: 9, from: MONDAY }));
+      }
+    }).toThrow('no free posting slot');
+
+    expect(taken.length).toBeGreaterThan(0);
+    expect(taken.length).toBeLessThan(60);
   });
 });
 

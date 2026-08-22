@@ -2,6 +2,11 @@
 # yarn lockfile v1
 
 
+"@afrisinc/notify-sdk@^0.1.1":
+  version "0.1.1"
+  resolved "https://registry.yarnpkg.com/@afrisinc/notify-sdk/-/notify-sdk-0.1.1.tgz#e6188cf07c76fd6944f88cd68f8bbce64921564c"
+  integrity sha512-qeTN2w5Ejby7aOj+1FkicQMbQrJznIs/JsBNQTatM8tnteGGmXACdE4h4F6jemFQ69Ev5hXO7zWeUWyo+PZ6zQ==
+
 "@anthropic-ai/sdk@^0.117.1":
   version "0.117.1"
   resolved "https://registry.yarnpkg.com/@anthropic-ai/sdk/-/sdk-0.117.1.tgz#9c4351d29f5ce9e3ed276e5d30f90694b1160356"

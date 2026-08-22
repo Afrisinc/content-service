@@ -1,6 +1,7 @@
 import { HealthRouteSchema } from '@/schemas';
 import { FastifyInstance } from 'fastify';
 import { accountGroupRoutes } from './accountGroup.routes';
+import { analyticsRoutes } from './analytics.routes';
 import { aiGenerationRoutes } from './aiGeneration.routes';
 import { automationRoutes } from './automation.routes';
 import { ArticlesRoutes } from './articles.routes';
@@ -38,4 +39,5 @@ export async function registerRoutes(app: FastifyInstance) {
   app.register(postAgentRoutes);
   app.register(accountGroupRoutes);
   app.register(automationRoutes);
+  app.register(analyticsRoutes);
 }

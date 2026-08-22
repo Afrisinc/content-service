@@ -3,6 +3,9 @@
 import axios, { AxiosInstance } from 'axios';
 import { logger } from '@/utils/logger';
 import {
+  MetaAccountMetrics,
+  MetaPostMetrics,
+  MetaUsage,
   MetaPostResponse,
   MetaPlatform,
   MetaFeedRequest,
@@ -17,6 +20,17 @@ import {
   InstagramContainerRequest,
   InstagramContainerStatus,
 } from './meta.types';
+
+const FB_FIELDS_WITH_INSIGHTS =
+  'likes.summary(true),comments.summary(true),shares,' +
+  'insights.metric(post_impressions,post_impressions_unique,post_clicks,post_engaged_users)';
+const FB_FIELDS_PLAIN = 'likes.summary(true),comments.summary(true),shares';
+
+const IG_FIELDS_WITH_INSIGHTS =
+  'like_count,comments_count,insights.metric(reach,saved,shares,views,total_interactions)';
+const IG_FIELDS_LEGACY_INSIGHTS =
+  'like_count,comments_count,insights.metric(impressions,reach,saved,video_views)';
+const IG_FIELDS_PLAIN = 'like_count,comments_count';
 
 export class MetaClient {
   private client: AxiosInstance;
@@ -33,6 +47,7 @@ export class MetaClient {
   private readonly CONTAINER_MAX_POLLS = 20;
   /** Reels and video stories transcode well past the image ceiling. */
   private readonly VIDEO_CONTAINER_MAX_POLLS = 100;
+  private usage: MetaUsage | null = null;
 
   constructor() {
     this.client = axios.create({
@@ -428,6 +443,191 @@ export class MetaClient {
     } catch (error) {
       this.handleError(error, 'Delete post');
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Insights
+  // ---------------------------------------------------------------------------
+
+  /**
+   * How one published post is performing.
+   *
+   * Returns null rather than throwing: a nightly sweep over every post must not
+   * stop because one of them lost its permissions or was deleted on the platform.
+   *
+   * Insights are requested as a nested field on the post so counts and insights
+   * arrive in one call, which is what keeps the sweep inside the app's hourly
+   * quota. Meta retires metric names between versions, so a rejected insight
+   * degrades to the plain counters instead of losing the row entirely.
+   */
+  async getPostMetrics(
+    postId: string,
+    accessToken: string,
+    platform: MetaPlatform
+  ): Promise<MetaPostMetrics | null> {
+    const attempts =
+      platform === MetaPlatform.INSTAGRAM
+        ? [IG_FIELDS_WITH_INSIGHTS, IG_FIELDS_LEGACY_INSIGHTS, IG_FIELDS_PLAIN]
+        : [FB_FIELDS_WITH_INSIGHTS, FB_FIELDS_PLAIN];
+
+    for (const fields of attempts) {
+      const data = await this.readNode(postId, accessToken, fields);
+      if (data) {
+        return platform === MetaPlatform.INSTAGRAM
+          ? this.instagramMetrics(data)
+          : this.facebookMetrics(data);
+      }
+    }
+
+    logger.warn({ postId, platform }, '[MetaClient] No metrics available for post');
+    return null;
+  }
+
+  /** Follower counts and profile-level reach for one connected account. */
+  async getAccountMetrics(
+    accountId: string,
+    accessToken: string,
+    platform: MetaPlatform
+  ): Promise<MetaAccountMetrics | null> {
+    const fields =
+      platform === MetaPlatform.INSTAGRAM
+        ? 'followers_count,follows_count,media_count'
+        : 'fan_count,followers_count';
+
+    const data = await this.readNode(accountId, accessToken, fields);
+    if (!data) {
+      logger.warn({ accountId, platform }, '[MetaClient] No account metrics available');
+      return null;
+    }
+
+    const followers = this.num(
+      platform === MetaPlatform.INSTAGRAM
+        ? data.followers_count
+        : (data.followers_count ?? data.fan_count)
+    );
+
+    return {
+      followers,
+      follows: this.num(data.follows_count),
+      postsCount: this.num(data.media_count),
+      reach: 0,
+      impressions: 0,
+      profileViews: 0,
+    };
+  }
+
+  /** The share of the hourly app quota Meta reported on the last response. */
+  lastUsage(): MetaUsage | null {
+    return this.usage;
+  }
+
+  private async readNode(
+    nodeId: string,
+    accessToken: string,
+    fields: string
+  ): Promise<Record<string, any> | null> {
+    try {
+      const response = await this.client.get<Record<string, any>>(
+        `${this.GRAPH_API_BASE}/${this.API_VERSION}/${nodeId}`,
+        { params: { access_token: accessToken, fields } }
+      );
+      this.recordUsage(response.headers);
+      return response.data ?? null;
+    } catch (error) {
+      // axios does not type its error shape; narrowing stops at this boundary.
+      const axiosError = error as any;
+      this.recordUsage(axiosError?.response?.headers);
+      logger.warn(
+        {
+          nodeId,
+          fields,
+          status: axiosError?.response?.status,
+          error: axiosError?.response?.data?.error?.message ?? (error as Error).message,
+        },
+        '[MetaClient] Node read failed'
+      );
+      return null;
+    }
+  }
+
+  private recordUsage(headers: unknown): void {
+    const raw = (headers as Record<string, string> | undefined)?.['x-app-usage'];
+    if (!raw) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      this.usage = {
+        callCount: Number(parsed.call_count) || 0,
+        totalTime: Number(parsed.total_time) || 0,
+        totalCpuTime: Number(parsed.total_cputime) || 0,
+      };
+    } catch {
+      this.usage = null;
+    }
+  }
+
+  private num(value: unknown): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  /** Meta returns insights as a list of named series; flatten to the latest value. */
+  private insightValues(data: Record<string, any>): Record<string, number> {
+    const entries = data?.insights?.data;
+    if (!Array.isArray(entries)) {
+      return {};
+    }
+
+    const values: Record<string, number> = {};
+    for (const entry of entries) {
+      const series = entry?.values;
+      const latest = Array.isArray(series) ? series[series.length - 1]?.value : undefined;
+      if (entry?.name) {
+        values[entry.name] = this.num(latest);
+      }
+    }
+    return values;
+  }
+
+  private facebookMetrics(data: Record<string, any>): MetaPostMetrics {
+    const insights = this.insightValues(data);
+    const likes = this.num(data?.likes?.summary?.total_count);
+    const comments = this.num(data?.comments?.summary?.total_count);
+    const shares = this.num(data?.shares?.count);
+
+    return {
+      impressions: insights.post_impressions ?? 0,
+      reach: insights.post_impressions_unique ?? 0,
+      engagements: insights.post_engaged_users ?? likes + comments + shares,
+      clicks: insights.post_clicks ?? 0,
+      likes,
+      comments,
+      shares,
+      saves: 0,
+      views: insights.post_video_views ?? 0,
+    };
+  }
+
+  private instagramMetrics(data: Record<string, any>): MetaPostMetrics {
+    const insights = this.insightValues(data);
+    const likes = this.num(data?.like_count);
+    const comments = this.num(data?.comments_count);
+    const shares = insights.shares ?? 0;
+    const views = insights.views ?? insights.video_views ?? 0;
+
+    return {
+      impressions: insights.impressions ?? views,
+      reach: insights.reach ?? 0,
+      engagements: insights.total_interactions ?? likes + comments + shares + (insights.saved ?? 0),
+      clicks: 0,
+      likes,
+      comments,
+      shares,
+      saves: insights.saved ?? 0,
+      views,
+    };
   }
 
   // ---------------------------------------------------------------------------

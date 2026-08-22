@@ -9,6 +9,7 @@ import {
   STORY_BRIEF_NOTE,
   VOICE_PROMPT,
 } from '@/brand/afrisinc.brand';
+import { nodeServices } from '@/adapters/nodes/nodeServices';
 import { env } from '@/config/env';
 import { ClaudeNode, claudeCredentialsFromEnv, runClaude } from '@/nodes';
 import { PostBriefPayload, PostCopy, PostFormatName } from '@/types/post.types';
@@ -228,6 +229,8 @@ export class PostCopyService {
         signal,
         credentials: claudeCredentialsFromEnv(),
         logger,
+        services: nodeServices,
+        usageContext: { userId: brief.userId, requestId: brief.runId },
         parameters: {
           resource: 'text',
           operation: 'message',
