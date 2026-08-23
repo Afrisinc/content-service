@@ -3,6 +3,8 @@ import { PostCopy } from '@/types/post.types';
 import { BadRequestError } from '@/utils/http-error';
 import { describe, expect, it, vi } from 'vitest';
 
+const USER = 'user-1';
+
 interface FakeAsset {
   id: string;
   reference: string;
@@ -54,7 +56,7 @@ describe('ArtDirectionService', () => {
     ]);
     const service = new ArtDirectionService(repo as never);
 
-    const result = await service.assignPhotos(copyWithPhotoSlides());
+    const result = await service.assignPhotos(copyWithPhotoSlides(), USER);
 
     expect(Object.keys(result.photosByIndex).sort()).toEqual(['1', '3']);
     expect(result.assetIds).toHaveLength(2);
@@ -67,7 +69,7 @@ describe('ArtDirectionService', () => {
     ]);
     const service = new ArtDirectionService(repo as never);
 
-    const result = await service.assignPhotos(copyWithPhotoSlides());
+    const result = await service.assignPhotos(copyWithPhotoSlides(), USER);
 
     expect(result.photosByIndex[1]).not.toBe(result.photosByIndex[3]);
   });
@@ -78,7 +80,7 @@ describe('ArtDirectionService', () => {
     const repo = fakeRepository([{ id: '1', reference: 'bench.png' }]);
     const service = new ArtDirectionService(repo as never);
 
-    const result = await service.assignPhotos(copyWithPhotoSlides());
+    const result = await service.assignPhotos(copyWithPhotoSlides(), USER);
 
     expect(result.photosByIndex[1]).toBe('bench.png');
     expect(result.photosByIndex[3]).toBe('bench.png');
@@ -90,8 +92,10 @@ describe('ArtDirectionService', () => {
     const repo = fakeRepository([]);
     const service = new ArtDirectionService(repo as never);
 
-    await expect(service.assignPhotos(copyWithPhotoSlides())).rejects.toThrow(BadRequestError);
-    await expect(service.assignPhotos(copyWithPhotoSlides())).rejects.toThrow(
+    await expect(service.assignPhotos(copyWithPhotoSlides(), USER)).rejects.toThrow(
+      BadRequestError
+    );
+    await expect(service.assignPhotos(copyWithPhotoSlides(), USER)).rejects.toThrow(
       /no approved photograph in the brand asset library/
     );
   });
@@ -108,7 +112,7 @@ describe('ArtDirectionService', () => {
     };
     const service = new ArtDirectionService(repo as never);
 
-    const result = await service.assignPhotos(copyWithPhotoSlides());
+    const result = await service.assignPhotos(copyWithPhotoSlides(), USER);
 
     expect(result.photosByIndex[1]).toBe('office.png');
     expect(result.assetIds).toEqual(['9']);
@@ -130,7 +134,7 @@ describe('ArtDirectionService', () => {
     };
     const service = new ArtDirectionService(repo as never);
 
-    const result = await service.assignPhotos(copyWithPhotoSlides());
+    const result = await service.assignPhotos(copyWithPhotoSlides(), USER);
 
     expect(result.photosByIndex[1]).toBe('bench.png');
     // The differentiator slide asked for "network", which nothing carries, so it
@@ -145,7 +149,7 @@ describe('ArtDirectionService', () => {
     const copy = copyWithPhotoSlides();
     copy.slides = [copy.slides[1]];
 
-    const result = await service.assignPhotos(copy);
+    const result = await service.assignPhotos(copy, USER);
 
     expect(result).toEqual({ photosByIndex: {}, assetIds: [], reused: 0 });
   });
@@ -158,7 +162,7 @@ describe('ArtDirectionService', () => {
       slide => slide.role !== 'proof' && slide.role !== 'differentiator'
     );
 
-    const result = await service.assignPhotos(copy);
+    const result = await service.assignPhotos(copy, USER);
 
     expect(result).toEqual({ photosByIndex: {}, assetIds: [], reused: 0 });
     expect(repo.findCandidates).not.toHaveBeenCalled();
@@ -171,7 +175,7 @@ describe('ArtDirectionService', () => {
     ]);
     const service = new ArtDirectionService(repo as never);
 
-    const result = await service.assignPhotos(copyWithPhotoSlides());
+    const result = await service.assignPhotos(copyWithPhotoSlides(), USER);
 
     expect(result.photosByIndex[1]).toBe('https://cdn.example/photo-a.jpg');
     expect(result.photosByIndex[3]).toBe('https://cdn.example/photo-b.jpg');
@@ -184,7 +188,7 @@ describe('ArtDirectionService', () => {
     ]);
     const service = new ArtDirectionService(repo as never);
 
-    const result = await service.assignPhotos(copyWithPhotoSlides());
+    const result = await service.assignPhotos(copyWithPhotoSlides(), USER);
 
     expect(result.photosByIndex[1]).toBe('bench.png');
     expect(result.photosByIndex[3]).toBe('network.png');
@@ -204,7 +208,7 @@ describe('a brand with its own photographs', () => {
   function trackingRepository(byGroup: Record<string, unknown[]>, shared: unknown[], count = 1) {
     return {
       countForGroup: vi.fn(async () => count),
-      findCandidates: vi.fn(async (_subjects: string[], groupId?: string) =>
+      findCandidates: vi.fn(async (_subjects: string[], _userId: string, groupId?: string) =>
         groupId ? (byGroup[groupId] ?? []) : shared
       ),
       recordUse: vi.fn(async () => undefined),
@@ -219,31 +223,31 @@ describe('a brand with its own photographs', () => {
     ]);
     const service = new ArtDirectionService(repo as never);
 
-    const result = await service.assignPhotos(copyWithPhotoSlides(), 'group-1');
+    const result = await service.assignPhotos(copyWithPhotoSlides(), USER, 'group-1');
 
     expect(result.photosByIndex[1]).toBe('brand-a.png');
     expect(result.assetIds).toEqual(['b1']);
   });
 
-  it('falls back to the shared library when the brand has none', async () => {
+  it('falls back to the account’s own library when the brand has none', async () => {
     const repo = trackingRepository({}, [{ id: 's1', reference: 'shared.png' }], 0);
     const service = new ArtDirectionService(repo as never);
 
-    const result = await service.assignPhotos(copyWithPhotoSlides(), 'group-1');
+    const result = await service.assignPhotos(copyWithPhotoSlides(), USER, 'group-1');
 
     // countForGroup returned 0, so the brand scope is dropped entirely.
     expect(result.photosByIndex[1]).toBe('shared.png');
-    expect(repo.findCandidates).toHaveBeenCalledWith(expect.anything(), undefined);
+    expect(repo.findCandidates).toHaveBeenCalledWith(expect.anything(), USER, undefined);
   });
 
-  it('uses the shared library when no brand is named at all', async () => {
+  it('uses the account’s own library when no brand is named at all', async () => {
     const repo = trackingRepository({}, [{ id: 's1', reference: 'shared.png' }]);
     const service = new ArtDirectionService(repo as never);
 
-    await service.assignPhotos(copyWithPhotoSlides());
+    await service.assignPhotos(copyWithPhotoSlides(), USER);
 
     expect(repo.countForGroup).not.toHaveBeenCalled();
-    expect(repo.findCandidates).toHaveBeenCalledWith(expect.anything(), undefined);
+    expect(repo.findCandidates).toHaveBeenCalledWith(expect.anything(), USER, undefined);
   });
 
   it('checks the brand library once, not once per frame', async () => {
@@ -258,7 +262,7 @@ describe('a brand with its own photographs', () => {
     );
     const service = new ArtDirectionService(repo as never);
 
-    await service.assignPhotos(copyWithPhotoSlides(), 'group-1');
+    await service.assignPhotos(copyWithPhotoSlides(), USER, 'group-1');
 
     expect(repo.countForGroup).toHaveBeenCalledOnce();
   });
@@ -283,7 +287,7 @@ describe('a two-frame carousel', () => {
     const repo = fakeRepository([{ id: '1', reference: 'bench.png' }]);
     const service = new ArtDirectionService(repo as never);
 
-    const result = service.assignPhotos(pair());
+    const result = service.assignPhotos(pair(), USER);
 
     return result.then(assignment => {
       expect(assignment.photosByIndex[0]).toBeUndefined();
@@ -296,7 +300,7 @@ describe('a two-frame carousel', () => {
     const repo = fakeRepository([]);
     const service = new ArtDirectionService(repo as never);
 
-    const result = await service.assignPhotos(pair());
+    const result = await service.assignPhotos(pair(), USER);
 
     expect(result).toEqual({ photosByIndex: {}, assetIds: [], reused: 0 });
   });

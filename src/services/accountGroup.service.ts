@@ -183,7 +183,7 @@ export class AccountGroupService {
   /** The photographs a brand draws from, and whether it has a library at all. */
   async listAssets(userId: string, groupId: string) {
     await this.requireGroup(userId, groupId);
-    return this.assets.findByGroup(groupId);
+    return this.assets.findByGroup(groupId, userId);
   }
 
   async assignAssets(userId: string, groupId: string, assetIds: string[]) {
@@ -194,7 +194,7 @@ export class AccountGroupService {
     }
 
     await this.assets.assignToGroup(groupId, assetIds);
-    return this.assets.findByGroup(groupId);
+    return this.assets.findByGroup(groupId, userId);
   }
 
   async unassignAsset(userId: string, groupId: string, assetId: string) {
@@ -205,7 +205,7 @@ export class AccountGroupService {
       throw new NotFoundError('that photograph is not in this brand');
     }
 
-    return this.assets.findByGroup(groupId);
+    return this.assets.findByGroup(groupId, userId);
   }
 
   async remove(userId: string, groupId: string): Promise<void> {

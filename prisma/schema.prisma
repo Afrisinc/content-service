@@ -740,7 +740,10 @@ model AccountGroupAsset {
 /// A named set of photographs — "Repair bench shots", "Office lifestyle".
 /// A brand is assigned whole sets; art direction rotates through their images.
 model BrandAsset {
-  id          String  @id @default(uuid())
+  id String @id @default(uuid())
+
+  userId String?
+
   name        String
   description String?
 
@@ -755,6 +758,7 @@ model BrandAsset {
   createdAt DateTime @default(now()) @db.Timestamptz()
   updatedAt DateTime @updatedAt @db.Timestamptz()
 
+  @@index([userId])
   @@index([kind, approved])
   @@map("brand_assets")
 }
@@ -765,9 +769,11 @@ model BrandAssetImage {
   assetId String
   asset   BrandAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
+  userId String?
+
   url       String
   /// Stable name for this image. Also what earlier versions called the reference.
-  reference String @unique
+  reference String
 
   subjects    String[] @default([])
   hasPerson   Boolean  @default(false)
@@ -780,7 +786,9 @@ model BrandAssetImage {
   createdAt DateTime @default(now()) @db.Timestamptz()
   updatedAt DateTime @updatedAt @db.Timestamptz()
 
+  @@unique([userId, reference])
   @@index([assetId])
+  @@index([userId])
   @@index([lastUsedAt])
   @@map("brand_asset_images")
 }

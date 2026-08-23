@@ -36,7 +36,7 @@ export class ArtDirectionService {
    * @param groupId the brand being published for. Its own library wins; a brand
    * with none falls back to the shared pool.
    */
-  async assignPhotos(copy: PostCopy, groupId?: string): Promise<PhotoAssignment> {
+  async assignPhotos(copy: PostCopy, userId: string, groupId?: string): Promise<PhotoAssignment> {
     // A one-frame post has no proof slide, so the single frame is the photo
     // slide. A pair opens on azure and closes on a photograph, so only its
     // second frame wants one.
@@ -52,7 +52,8 @@ export class ArtDirectionService {
     }
 
     // Resolved once: asking per slide would hit the database for every frame.
-    const library = groupId && (await this.assets.countForGroup(groupId)) > 0 ? groupId : undefined;
+    const library =
+      groupId && (await this.assets.countForGroup(groupId, userId)) > 0 ? groupId : undefined;
 
     const photosByIndex: Record<number, string> = {};
     const assetIds: string[] = [];
@@ -60,7 +61,7 @@ export class ArtDirectionService {
     let reused = 0;
 
     for (const { slide, index } of photoSlides) {
-      const chosen = await this.pickPhoto(slide.photoSubjects ?? [], taken, library);
+      const chosen = await this.pickPhoto(slide.photoSubjects ?? [], taken, userId, library);
 
       if (!chosen) {
         // A single post reads perfectly well on azure, so a bare library is not fatal.
@@ -104,16 +105,19 @@ export class ArtDirectionService {
   private async pickPhoto(
     subjects: string[],
     taken: Set<string>,
+    userId: string,
     groupId?: string
   ): Promise<CandidatePhoto | null> {
-    const onSubject = subjects.length ? await this.assets.findCandidates(subjects, groupId) : [];
+    const onSubject = subjects.length
+      ? await this.assets.findCandidates(subjects, userId, groupId)
+      : [];
 
     const freshOnSubject = onSubject.find(asset => !taken.has(asset.id));
     if (freshOnSubject) {
       return freshOnSubject;
     }
 
-    const anyApproved = await this.assets.findCandidates([], groupId);
+    const anyApproved = await this.assets.findCandidates([], userId, groupId);
     return (
       anyApproved.find(asset => !taken.has(asset.id)) ?? onSubject[0] ?? anyApproved[0] ?? null
     );

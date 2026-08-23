@@ -5,8 +5,24 @@ import {
   type CreateBrandAssetImageInput,
 } from '@/repositories/brandAsset.repository';
 import { success } from '@/utils/response';
-import { BadRequestError, NotFoundError } from '@/utils/http-error';
+import { BadRequestError, NotFoundError, UnauthorizedError } from '@/utils/http-error';
 import { FastifyReply, FastifyRequest } from 'fastify';
+
+function requireUserId(request: FastifyRequest): string {
+  const userId = request.user?.userId;
+  if (!userId) {
+    throw new UnauthorizedError('authentication required');
+  }
+  return userId;
+}
+
+async function requireOwnedAsset(id: string, userId: string) {
+  const asset = await brandAssetRepository.findOwned(id, userId);
+  if (!asset) {
+    throw new NotFoundError('asset not found');
+  }
+  return asset;
+}
 
 interface CreateAssetPayload {
   url: string;
@@ -23,7 +39,7 @@ interface ApproveAssetPayload {
 }
 
 export async function listBrandAssets(request: FastifyRequest, reply: FastifyReply) {
-  const assets = await brandAssetRepository.findAll();
+  const assets = await brandAssetRepository.findAll(requireUserId(request));
   return success(reply, 200, 'Brand assets retrieved', 1000, assets);
 }
 
@@ -72,6 +88,7 @@ export function decodeUpload(content: string): Buffer {
  * 512MB body limit in `app.ts` exists for exactly this.
  */
 export async function uploadBrandAssets(request: FastifyRequest, reply: FastifyReply) {
+  const userId = requireUserId(request);
   const { files } = request.body as { files: UploadedFile[] };
 
   if (!files?.length) {
@@ -121,6 +138,7 @@ export async function uploadBrandAssets(request: FastifyRequest, reply: FastifyR
   }
 
   const asset = await brandAssetRepository.create({
+    userId,
     name: name?.trim() || defaultSetName(prepared.length),
     kind: 'photo',
     approved: false,
@@ -135,6 +153,7 @@ export async function uploadBrandAssets(request: FastifyRequest, reply: FastifyR
 }
 
 export async function createBrandAssets(request: FastifyRequest, reply: FastifyReply) {
+  const userId = requireUserId(request);
   const { assets, name, description } = request.body as {
     assets: CreateAssetPayload[];
     name?: string;
@@ -162,6 +181,7 @@ export async function createBrandAssets(request: FastifyRequest, reply: FastifyR
   }));
 
   const asset = await brandAssetRepository.create({
+    userId,
     name: name?.trim() || defaultSetName(prepared.length),
     description: description?.trim(),
     kind: 'photo',
@@ -177,6 +197,7 @@ export async function createBrandAssets(request: FastifyRequest, reply: FastifyR
 
 /** One photograph, still supported — it becomes a set holding a single image. */
 export async function createBrandAsset(request: FastifyRequest, reply: FastifyReply) {
+  const userId = requireUserId(request);
   const payload = request.body as CreateAssetPayload & { name?: string };
 
   if (!payload.url) {
@@ -185,12 +206,13 @@ export async function createBrandAsset(request: FastifyRequest, reply: FastifyRe
 
   const reference = payload.reference?.trim() || referenceFromUrl(payload.url, 0);
 
-  const existing = await brandAssetRepository.findByReference(reference);
+  const existing = await brandAssetRepository.findByReference(reference, userId);
   if (existing) {
     throw new BadRequestError('a photograph with this reference already exists');
   }
 
   const asset = await brandAssetRepository.create({
+    userId,
     name: payload.name?.trim() || reference,
     kind: payload.kind || 'photo',
     approved: false,
@@ -211,13 +233,11 @@ export async function createBrandAsset(request: FastifyRequest, reply: FastifyRe
 
 /** Adds photographs to a set that already exists. */
 export async function addImagesToAsset(request: FastifyRequest, reply: FastifyReply) {
+  const userId = requireUserId(request);
   const { id } = request.params as { id: string };
   const { images } = request.body as { images: CreateAssetPayload[] };
 
-  const asset = await brandAssetRepository.findById(id);
-  if (!asset) {
-    throw new NotFoundError('asset not found');
-  }
+  await requireOwnedAsset(id, userId);
 
   const prepared: CreateBrandAssetImageInput[] = images.map((image, index) => ({
     url: image.url,
@@ -228,14 +248,15 @@ export async function addImagesToAsset(request: FastifyRequest, reply: FastifyRe
     brightness: image.brightness,
   }));
 
-  const updated = await brandAssetRepository.addImages(id, prepared);
+  const updated = await brandAssetRepository.addImages(id, userId, prepared);
   return success(reply, 200, `${prepared.length} photograph(s) added`, 1002, updated);
 }
 
 export async function removeImageFromAsset(request: FastifyRequest, reply: FastifyReply) {
+  const userId = requireUserId(request);
   const { imageId } = request.params as { id: string; imageId: string };
 
-  const removed = await brandAssetRepository.removeImage(imageId);
+  const removed = await brandAssetRepository.removeOwnedImage(imageId, userId);
   if (removed.count === 0) {
     throw new NotFoundError('photograph not found');
   }
@@ -244,13 +265,11 @@ export async function removeImageFromAsset(request: FastifyRequest, reply: Fasti
 }
 
 export async function updateBrandAsset(request: FastifyRequest, reply: FastifyReply) {
+  const userId = requireUserId(request);
   const { id } = request.params as { id: string };
   const { name, description } = request.body as { name?: string; description?: string };
 
-  const asset = await brandAssetRepository.findById(id);
-  if (!asset) {
-    throw new NotFoundError('asset not found');
-  }
+  await requireOwnedAsset(id, userId);
 
   const updated = await brandAssetRepository.update(id, {
     ...(name !== undefined ? { name: name.trim() } : {}),
@@ -261,25 +280,21 @@ export async function updateBrandAsset(request: FastifyRequest, reply: FastifyRe
 }
 
 export async function approveBrandAsset(request: FastifyRequest, reply: FastifyReply) {
+  const userId = requireUserId(request);
   const { id } = request.params as { id: string };
   const { approved } = request.body as ApproveAssetPayload;
 
-  const asset = await brandAssetRepository.findById(id);
-  if (!asset) {
-    throw new NotFoundError('asset not found');
-  }
+  await requireOwnedAsset(id, userId);
 
   const updated = await brandAssetRepository.approve(id, approved);
   return success(reply, 200, `Asset ${approved ? 'approved' : 'rejected'}`, 1002, updated);
 }
 
 export async function deleteBrandAsset(request: FastifyRequest, reply: FastifyReply) {
+  const userId = requireUserId(request);
   const { id } = request.params as { id: string };
 
-  const asset = await brandAssetRepository.findById(id);
-  if (!asset) {
-    throw new NotFoundError('asset not found');
-  }
+  await requireOwnedAsset(id, userId);
 
   await brandAssetRepository.delete(id);
   return success(reply, 200, 'Asset deleted', 1002);

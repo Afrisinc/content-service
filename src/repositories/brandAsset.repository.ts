@@ -4,6 +4,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 export interface CreateBrandAssetImageInput {
   url: string;
   reference: string;
+  userId?: string | null;
   subjects?: string[];
   hasPerson?: boolean;
   subjectSide?: string;
@@ -11,6 +12,7 @@ export interface CreateBrandAssetImageInput {
 }
 
 export interface CreateBrandAssetInput {
+  userId: string;
   name: string;
   description?: string;
   kind?: string;
@@ -25,6 +27,10 @@ const withImages = {
   images: { orderBy: { createdAt: 'asc' } },
 } satisfies Prisma.BrandAssetInclude;
 
+function visibleTo(userId: string): Prisma.BrandAssetWhereInput {
+  return { OR: [{ userId }, { userId: null }] };
+}
+
 export class BrandAssetRepository {
   private readonly prisma: PrismaClient;
 
@@ -37,17 +43,26 @@ export class BrandAssetRepository {
     const { images, ...set } = data;
 
     return this.prisma.brandAsset.create({
-      data: { ...set, images: { create: images } },
+      data: {
+        ...set,
+        images: { create: images.map(image => ({ ...image, userId: set.userId })) },
+      },
       include: withImages,
     });
   }
 
-  async addImages(assetId: string, images: CreateBrandAssetImageInput[]) {
+  async addImages(assetId: string, userId: string, images: CreateBrandAssetImageInput[]) {
     await this.prisma.brandAssetImage.createMany({
-      data: images.map(image => ({ ...image, assetId })),
+      data: images.map(image => ({ ...image, assetId, userId })),
       skipDuplicates: true,
     });
-    return this.findById(assetId);
+    return this.findById(assetId, userId);
+  }
+
+  async removeOwnedImage(imageId: string, userId: string) {
+    return this.prisma.brandAssetImage.deleteMany({
+      where: { id: imageId, asset: { userId } },
+    });
   }
 
   async removeImage(imageId: string) {
@@ -61,12 +76,13 @@ export class BrandAssetRepository {
    * A brand with sets of its own draws only from them; a brand with none falls
    * back to every approved set, so leaving it unassigned keeps the shared pool.
    */
-  async findCandidates(subjects: string[], groupId?: string) {
+  async findCandidates(subjects: string[], userId: string, groupId?: string) {
     const where: Prisma.BrandAssetImageWhereInput = {
       ...(subjects.length ? { subjects: { hasSome: subjects } } : {}),
       asset: {
         kind: 'photo',
         approved: true,
+        ...visibleTo(userId),
         ...(groupId ? { groups: { some: { groupId } } } : {}),
       },
     };
@@ -79,9 +95,16 @@ export class BrandAssetRepository {
   }
 
   /** Whether a brand has sets of its own, or should use every approved one. */
-  async countForGroup(groupId: string): Promise<number> {
+  async countForGroup(groupId: string, userId: string): Promise<number> {
     return this.prisma.brandAssetImage.count({
-      where: { asset: { kind: 'photo', approved: true, groups: { some: { groupId } } } },
+      where: {
+        asset: {
+          kind: 'photo',
+          approved: true,
+          ...visibleTo(userId),
+          groups: { some: { groupId } },
+        },
+      },
     });
   }
 
@@ -101,22 +124,24 @@ export class BrandAssetRepository {
     return this.prisma.accountGroupAsset.deleteMany({ where: { groupId, assetId } });
   }
 
-  async findByGroup(groupId: string) {
+  async findByGroup(groupId: string, userId: string) {
     return this.prisma.brandAsset.findMany({
-      where: { groups: { some: { groupId } } },
+      where: { groups: { some: { groupId } }, ...visibleTo(userId) },
       include: withImages,
       orderBy: { createdAt: 'desc' },
       take: SET_LIMIT,
     });
   }
 
-  async findByReference(reference: string) {
-    return this.prisma.brandAssetImage.findUnique({ where: { reference } });
+  async findByReference(reference: string, userId: string) {
+    return this.prisma.brandAssetImage.findUnique({
+      where: { userId_reference: { userId, reference } },
+    });
   }
 
-  async findManyByReference(references: string[]) {
+  async findManyByReference(references: string[], userId: string) {
     return this.prisma.brandAssetImage.findMany({
-      where: { reference: { in: references } },
+      where: { reference: { in: references }, asset: visibleTo(userId) },
       take: references.length,
     });
   }
@@ -132,16 +157,24 @@ export class BrandAssetRepository {
     });
   }
 
-  async findAll() {
+  async findAll(userId: string) {
     return this.prisma.brandAsset.findMany({
+      where: visibleTo(userId),
       include: withImages,
       orderBy: { createdAt: 'desc' },
       take: SET_LIMIT,
     });
   }
 
-  async findById(id: string) {
-    return this.prisma.brandAsset.findUnique({ where: { id }, include: withImages });
+  async findById(id: string, userId: string) {
+    return this.prisma.brandAsset.findFirst({
+      where: { id, ...visibleTo(userId) },
+      include: withImages,
+    });
+  }
+
+  async findOwned(id: string, userId: string) {
+    return this.prisma.brandAsset.findFirst({ where: { id, userId }, include: withImages });
   }
 
   async approve(id: string, approved: boolean) {

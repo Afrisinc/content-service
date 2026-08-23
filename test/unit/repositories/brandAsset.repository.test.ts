@@ -6,10 +6,14 @@ function fakePrisma() {
     brandAsset: {
       create: vi.fn(async () => ({ id: 'set-1', images: [] })),
       findUnique: vi.fn(async () => ({ id: 'set-1', images: [] })),
+      findFirst: vi.fn(async () => ({ id: 'set-1', images: [] })),
+      findMany: vi.fn(async () => []),
     },
     brandAssetImage: {
       createMany: vi.fn(async () => ({ count: 2 })),
       findMany: vi.fn(async () => []),
+      findUnique: vi.fn(async () => null),
+      deleteMany: vi.fn(async () => ({ count: 1 })),
       count: vi.fn(async () => 0),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
@@ -67,7 +71,7 @@ describe('create', () => {
 
 describe('findCandidates', () => {
   it('scopes to a brand when one is named', async () => {
-    await repository.findCandidates(['bench'], 'group-1');
+    await repository.findCandidates(['bench'], 'user-1', 'group-1');
 
     const where = prisma.brandAssetImage.findMany.mock.calls[0][0] as {
       where: { asset: { groups?: unknown; approved: boolean } };
@@ -78,7 +82,7 @@ describe('findCandidates', () => {
   });
 
   it('draws from every approved set when no brand is named', async () => {
-    await repository.findCandidates([]);
+    await repository.findCandidates([], 'user-1');
 
     const where = prisma.brandAssetImage.findMany.mock.calls[0][0] as {
       where: { asset: { groups?: unknown } };
@@ -88,7 +92,7 @@ describe('findCandidates', () => {
   });
 
   it('rotates least-recently-used first', async () => {
-    await repository.findCandidates([]);
+    await repository.findCandidates([], 'user-1');
 
     const call = prisma.brandAssetImage.findMany.mock.calls[0][0] as {
       orderBy: Array<Record<string, unknown>>;
@@ -111,5 +115,66 @@ describe('recordUse', () => {
     await repository.recordUse([]);
 
     expect(prisma.brandAssetImage.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('scoping to an account', () => {
+  it('shows an account its own sets and the legacy unowned ones', async () => {
+    await repository.findAll('user-1');
+
+    const args = prisma.brandAsset.findMany.mock.calls[0][0] as {
+      where: { OR: unknown[] };
+    };
+    expect(args.where.OR).toEqual([{ userId: 'user-1' }, { userId: null }]);
+  });
+
+  it('stamps the owner on the set and on every photograph in it', async () => {
+    await repository.create({
+      userId: 'user-1',
+      name: 'Summer',
+      images: [{ url: 'https://cdn.test/a.jpg', reference: 'a' }],
+    });
+
+    const args = prisma.brandAsset.create.mock.calls[0][0] as {
+      data: { userId: string; images: { create: Array<{ userId: string }> } };
+    };
+    expect(args.data.userId).toBe('user-1');
+    expect(args.data.images.create[0].userId).toBe('user-1');
+  });
+
+  it('resolves a reference within the account, so two people may share a filename', async () => {
+    await repository.findByReference('beach', 'user-1');
+
+    const args = prisma.brandAssetImage.findUnique.mock.calls[0][0] as {
+      where: { userId_reference: { userId: string; reference: string } };
+    };
+    expect(args.where.userId_reference).toEqual({ userId: 'user-1', reference: 'beach' });
+  });
+
+  it('will not return another account’s set by id', async () => {
+    await repository.findOwned('asset-1', 'user-1');
+
+    const args = prisma.brandAsset.findFirst.mock.calls[0][0] as {
+      where: { id: string; userId: string };
+    };
+    expect(args.where).toEqual({ id: 'asset-1', userId: 'user-1' });
+  });
+
+  it('deletes a photograph only through the set its owner holds', async () => {
+    await repository.removeOwnedImage('image-1', 'user-1');
+
+    const args = prisma.brandAssetImage.deleteMany.mock.calls[0][0] as {
+      where: { id: string; asset: { userId: string } };
+    };
+    expect(args.where).toEqual({ id: 'image-1', asset: { userId: 'user-1' } });
+  });
+
+  it('never draws a candidate photograph from outside the account', async () => {
+    await repository.findCandidates([], 'user-1');
+
+    const args = prisma.brandAssetImage.findMany.mock.calls[0][0] as {
+      where: { asset: { OR: unknown[] } };
+    };
+    expect(args.where.asset.OR).toEqual([{ userId: 'user-1' }, { userId: null }]);
   });
 });
