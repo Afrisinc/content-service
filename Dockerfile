@@ -24,6 +24,8 @@ COPY --from=builder --chown=node:node /app/package.json ./package.json
 # Migrations must ship with the image; `migrate deploy` replays this directory.
 COPY --chown=node:node prisma ./prisma
 
+COPY --chown=node:node scripts ./scripts
+
 USER node
 EXPOSE 8093
 CMD ["node", "dist/server.js"]

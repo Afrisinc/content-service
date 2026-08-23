@@ -76,7 +76,7 @@ jobs:
             # starting the render service just to run prisma.
             docker compose run --rm --no-deps --entrypoint "" \
               content_service_production \
-              npx prisma migrate deploy
+              npm run db:deploy
 
             docker compose up -d
             docker compose ps
