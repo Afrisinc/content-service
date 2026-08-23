@@ -252,8 +252,13 @@ function baseline(migrations: string[]): void {
   }
 
   for (const name of migrations.slice(0, newestApplied + 1)) {
-    if (hasRow(name)) {
+    if (isRecorded(name)) {
       console.log(`  ${name}: already in migration history`);
+      continue;
+    }
+
+    if (hasRow(name) && absentFromDatabase(readMigration(name))) {
+      console.log(`  ${name}: rolled back and still absent, left for deploy`);
       continue;
     }
     if (!DRY_RUN) {
@@ -314,9 +319,28 @@ function findPhantoms(migrations: string[]): string[] {
   });
 }
 
-function reportPhantoms(phantoms: string[]): void {
-  console.log('Migrations recorded as applied whose changes are missing from the database:');
-  for (const name of phantoms) {
+// A phantom older than the newest fully-present migration is not a gap to replay —
+// it is one a later migration superseded, and re-running it would recreate objects
+// the schema abandoned. Those are reported and left alone. Only phantoms after that
+// boundary are real gaps that will break the next migration to depend on them.
+function reportPhantoms(phantoms: string[], migrations: string[]): void {
+  const boundary = findNewestApplied(migrations);
+  const superseded = phantoms.filter(name => migrations.indexOf(name) <= boundary);
+  const gaps = phantoms.filter(name => migrations.indexOf(name) > boundary);
+
+  if (superseded.length > 0) {
+    console.log('Superseded by later migrations, left as applied:');
+    for (const name of superseded) {
+      console.log(`  ${name}`);
+    }
+  }
+
+  if (gaps.length === 0) {
+    return;
+  }
+
+  console.log('Recorded as applied but missing from the database:');
+  for (const name of gaps) {
     console.log(`  ${name}`);
   }
 
@@ -328,7 +352,7 @@ function reportPhantoms(phantoms: string[]): void {
     );
   }
 
-  for (const name of phantoms) {
+  for (const name of gaps) {
     if (!DRY_RUN) {
       runPrisma(['migrate', 'resolve', '--rolled-back', name]);
     }
@@ -347,7 +371,7 @@ function main(): void {
 
     const phantoms = findPhantoms(migrations);
     if (phantoms.length > 0) {
-      reportPhantoms(phantoms);
+      reportPhantoms(phantoms, migrations);
     }
     console.log('');
   }
