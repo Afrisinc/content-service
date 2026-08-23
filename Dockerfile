@@ -16,12 +16,13 @@ ENV NODE_ENV=production
 # node_modules is copied whole rather than pruned to production dependencies:
 # the deploy runs `prisma migrate deploy` in this image, and the prisma CLI is a
 # devDependency. Pruning would save space and break the migration step.
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+
+COPY --from=builder --chown=node:node /app/dist ./dist
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/package.json ./package.json
 
 # Migrations must ship with the image; `migrate deploy` replays this directory.
-COPY prisma ./prisma
+COPY --chown=node:node prisma ./prisma
 
 USER node
 EXPOSE 8093
