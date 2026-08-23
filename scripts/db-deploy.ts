@@ -1,8 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const PRISMA_BIN = join(process.cwd(), 'node_modules', '.bin', 'prisma');
+const LOCAL_PRISMA = join(process.cwd(), 'node_modules', '.bin', 'prisma');
+const PRISMA_BIN = existsSync(LOCAL_PRISMA) ? LOCAL_PRISMA : 'npx';
+const PRISMA_ARGS = existsSync(LOCAL_PRISMA) ? [] : ['prisma'];
 const SCHEMA = join('prisma', 'schema.prisma');
 const MIGRATIONS_DIR = join(process.cwd(), 'prisma', 'migrations');
 const DRY_RUN = process.argv.includes('--dry-run');
@@ -17,7 +19,9 @@ interface MigrationObjects {
 function runPrisma(args: string[], attempts = 3): void {
   for (let attempt = 1; ; attempt += 1) {
     try {
-      execFileSync(PRISMA_BIN, [...args, '--schema', SCHEMA], { stdio: 'inherit' });
+      execFileSync(PRISMA_BIN, [...PRISMA_ARGS, ...args, '--schema', SCHEMA], {
+        stdio: 'inherit',
+      });
       return;
     } catch (error) {
       if (attempt >= attempts) {
@@ -30,7 +34,7 @@ function runPrisma(args: string[], attempts = 3): void {
 
 function probe(sql: string): boolean {
   try {
-    execFileSync(PRISMA_BIN, ['db', 'execute', '--schema', SCHEMA, '--stdin'], {
+    execFileSync(PRISMA_BIN, [...PRISMA_ARGS, 'db', 'execute', '--schema', SCHEMA, '--stdin'], {
       input: sql,
       stdio: ['pipe', 'ignore', 'ignore'],
     });
@@ -93,45 +97,59 @@ function objectCount(objects: MigrationObjects): number {
   );
 }
 
-function alreadyInDatabase(objects: MigrationObjects): boolean {
-  const names = [
+function objectConditions(objects: MigrationObjects): Array<{ sql: string; label: string }> {
+  return [
+    ...objects.tables.map(table => ({
+      sql:
+        `SELECT 1 FROM information_schema.tables` +
+        ` WHERE table_schema = 'public' AND table_name = '${table}'`,
+      label: `table ${table}`,
+    })),
+    ...objects.columns.map(entry => ({
+      sql:
+        `SELECT 1 FROM information_schema.columns` +
+        ` WHERE table_schema = 'public'` +
+        ` AND table_name = '${entry.table}' AND column_name = '${entry.column}'`,
+      label: `column ${entry.table}.${entry.column}`,
+    })),
+    ...objects.indexes.map(index => ({
+      sql: `SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = '${index}'`,
+      label: `index ${index}`,
+    })),
+    ...objects.types.map(type => ({
+      sql: `SELECT 1 FROM pg_type WHERE typname = '${type}'`,
+      label: `type ${type}`,
+    })),
+  ];
+}
+
+function hasSafeNames(objects: MigrationObjects): boolean {
+  return [
     ...objects.tables,
     ...objects.indexes,
     ...objects.types,
     ...objects.columns.flatMap(entry => [entry.table, entry.column]),
-  ];
-  if (!names.every(isIdentifier)) {
+  ].every(isIdentifier);
+}
+
+function alreadyInDatabase(objects: MigrationObjects): boolean {
+  if (!hasSafeNames(objects)) {
     return false;
   }
+  return probe(assertSql(objectConditions(objects).map(entry => guard(entry.sql, entry.label))));
+}
 
-  const guards = [
-    ...objects.tables.map(table =>
-      guard(
-        `SELECT 1 FROM information_schema.tables` +
-          ` WHERE table_schema = 'public' AND table_name = '${table}'`,
-        `table ${table}`
+function absentFromDatabase(objects: MigrationObjects): boolean {
+  if (!hasSafeNames(objects)) {
+    return false;
+  }
+  return probe(
+    assertSql(
+      objectConditions(objects).map(
+        entry => `IF EXISTS (${entry.sql}) THEN RAISE EXCEPTION '${entry.label}'; END IF;`
       )
-    ),
-    ...objects.columns.map(entry =>
-      guard(
-        `SELECT 1 FROM information_schema.columns` +
-          ` WHERE table_schema = 'public'` +
-          ` AND table_name = '${entry.table}' AND column_name = '${entry.column}'`,
-        `column ${entry.table}.${entry.column}`
-      )
-    ),
-    ...objects.indexes.map(index =>
-      guard(
-        `SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = '${index}'`,
-        `index ${index}`
-      )
-    ),
-    ...objects.types.map(type =>
-      guard(`SELECT 1 FROM pg_type WHERE typname = '${type}'`, `type ${type}`)
-    ),
-  ];
-
-  return probe(assertSql(guards));
+    )
+  );
 }
 
 function isRecorded(name: string): boolean {
@@ -144,6 +162,32 @@ function isRecorded(name: string): boolean {
         `SELECT 1 FROM "_prisma_migrations" WHERE migration_name = '${name}'` +
           ` AND finished_at IS NOT NULL AND rolled_back_at IS NULL`,
         'not recorded'
+      ),
+    ])
+  );
+}
+
+function hasRow(name: string): boolean {
+  if (!isIdentifier(name)) {
+    return false;
+  }
+  return probe(
+    assertSql([
+      guard(`SELECT 1 FROM "_prisma_migrations" WHERE migration_name = '${name}'`, 'no row'),
+    ])
+  );
+}
+
+function isFailed(name: string): boolean {
+  if (!isIdentifier(name)) {
+    return false;
+  }
+  return probe(
+    assertSql([
+      guard(
+        `SELECT 1 FROM "_prisma_migrations" WHERE migration_name = '${name}'` +
+          ` AND finished_at IS NULL AND rolled_back_at IS NULL`,
+        'not failed'
       ),
     ])
   );
@@ -194,8 +238,8 @@ function baseline(migrations: string[]): void {
   }
 
   for (const name of migrations.slice(0, newestApplied + 1)) {
-    if (isRecorded(name)) {
-      console.log(`  ${name}: already recorded`);
+    if (hasRow(name)) {
+      console.log(`  ${name}: already in migration history`);
       continue;
     }
     if (!DRY_RUN) {
@@ -208,12 +252,51 @@ function baseline(migrations: string[]): void {
   }
 }
 
+function reconcileFailed(migrations: string[]): void {
+  for (const name of migrations) {
+    if (!isFailed(name)) {
+      continue;
+    }
+
+    const objects = readMigration(name);
+    if (objectCount(objects) === 0) {
+      throw new Error(
+        `${name} is recorded as failed and has no schema objects to verify. ` +
+          `Inspect it and resolve it manually with prisma migrate resolve.`
+      );
+    }
+
+    if (alreadyInDatabase(objects)) {
+      console.log(`  ${name}: failed record, but its changes are present — marking applied`);
+      if (!DRY_RUN) {
+        runPrisma(['migrate', 'resolve', '--applied', name]);
+      }
+      continue;
+    }
+
+    if (absentFromDatabase(objects)) {
+      console.log(`  ${name}: failed record, changes rolled back — marking rolled back to retry`);
+      if (!DRY_RUN) {
+        runPrisma(['migrate', 'resolve', '--rolled-back', name]);
+      }
+      continue;
+    }
+
+    throw new Error(
+      `${name} is recorded as failed and only partly present in the database. ` +
+        `Finish or undo it by hand, then re-run. Its error is in the logs column of ` +
+        `the _prisma_migrations row.`
+    );
+  }
+}
+
 function main(): void {
   const migrations = listMigrations();
   const newest = migrations.at(-1);
 
   if (hasExistingSchema() && newest && !isRecorded(newest)) {
     console.log('Reconciling migration history with the live database:');
+    reconcileFailed(migrations);
     baseline(migrations);
     console.log('');
   }
