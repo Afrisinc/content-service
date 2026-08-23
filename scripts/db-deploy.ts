@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,6 +9,17 @@ const PRISMA_ARGS = existsSync(LOCAL_PRISMA) ? [] : ['prisma'];
 const SCHEMA = join('prisma', 'schema.prisma');
 const MIGRATIONS_DIR = join(process.cwd(), 'prisma', 'migrations');
 const DRY_RUN = process.argv.includes('--dry-run');
+const LOCK_TIMEOUT_MS = 15000;
+
+function migrationEnv(): NodeJS.ProcessEnv {
+  const url = process.env.DATABASE_URL;
+  if (!url || /[?&]options=/.test(url)) {
+    return process.env;
+  }
+  const separator = url.includes('?') ? '&' : '?';
+  const options = encodeURIComponent(`-c lock_timeout=${LOCK_TIMEOUT_MS}`);
+  return { ...process.env, DATABASE_URL: `${url}${separator}options=${options}` };
+}
 
 interface MigrationObjects {
   tables: string[];
@@ -21,6 +33,7 @@ function runPrisma(args: string[], attempts = 3): void {
     try {
       execFileSync(PRISMA_BIN, [...PRISMA_ARGS, ...args, '--schema', SCHEMA], {
         stdio: 'inherit',
+        env: migrationEnv(),
       });
       return;
     } catch (error) {
