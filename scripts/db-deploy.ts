@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { PrismaClient } from '@prisma/client';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -29,45 +30,72 @@ interface MigrationObjects {
   types: string[];
 }
 
-function runPrisma(args: string[], attempts = 3): void {
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      execFileSync(PRISMA_BIN, [...PRISMA_ARGS, ...args, '--schema', SCHEMA], {
-        stdio: 'inherit',
-        env: migrationEnv(),
+function runPrisma(args: string[]): void {
+  execFileSync(PRISMA_BIN, [...PRISMA_ARGS, ...args, '--schema', SCHEMA], {
+    stdio: 'inherit',
+    env: migrationEnv(),
+  });
+}
+
+interface HistoryRow {
+  applied: boolean;
+  rolledBack: boolean;
+  failed: boolean;
+}
+
+interface Catalog {
+  tables: Set<string>;
+  columns: Set<string>;
+  indexes: Set<string>;
+  types: Set<string>;
+  history: Map<string, HistoryRow>;
+}
+
+// One connection and five catalog queries, rather than a prisma subprocess per
+// check: the per-object approach spent minutes spawning processes on a history
+// this size, which reads as a hang.
+async function readCatalog(prisma: PrismaClient): Promise<Catalog> {
+  const [tables, columns, indexes, types, historyExists] = await Promise.all([
+    prisma.$queryRawUnsafe<Array<{ name: string }>>(
+      `SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public'`
+    ),
+    prisma.$queryRawUnsafe<Array<{ name: string }>>(
+      `SELECT table_name || '.' || column_name AS name FROM information_schema.columns` +
+        ` WHERE table_schema = 'public'`
+    ),
+    prisma.$queryRawUnsafe<Array<{ name: string }>>(
+      `SELECT indexname AS name FROM pg_indexes WHERE schemaname = 'public'`
+    ),
+    prisma.$queryRawUnsafe<Array<{ name: string }>>(`SELECT typname AS name FROM pg_type`),
+    prisma.$queryRawUnsafe<Array<{ present: string | null }>>(
+      `SELECT to_regclass('public._prisma_migrations')::text AS present`
+    ),
+  ]);
+
+  const history = new Map<string, HistoryRow>();
+  if (historyExists[0]?.present) {
+    const rows = await prisma.$queryRawUnsafe<
+      Array<{ name: string; finished: boolean; rolled_back: boolean }>
+    >(
+      `SELECT migration_name AS name, finished_at IS NOT NULL AS finished,` +
+        ` rolled_back_at IS NOT NULL AS rolled_back FROM "_prisma_migrations"`
+    );
+    for (const row of rows) {
+      history.set(row.name, {
+        applied: row.finished && !row.rolled_back,
+        rolledBack: row.rolled_back,
+        failed: !row.finished && !row.rolled_back,
       });
-      return;
-    } catch (error) {
-      if (attempt >= attempts) {
-        throw error;
-      }
-      console.log(`  retrying (${attempt}/${attempts - 1})`);
     }
   }
-}
 
-function probe(sql: string): boolean {
-  try {
-    execFileSync(PRISMA_BIN, [...PRISMA_ARGS, 'db', 'execute', '--schema', SCHEMA, '--stdin'], {
-      input: sql,
-      stdio: ['pipe', 'ignore', 'ignore'],
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function guard(condition: string, label: string): string {
-  return `IF NOT EXISTS (${condition}) THEN RAISE EXCEPTION '${label}'; END IF;`;
-}
-
-function assertSql(guards: string[]): string {
-  return `DO $$ BEGIN ${guards.join(' ')} END $$;`;
-}
-
-function isIdentifier(name: string): boolean {
-  return /^[A-Za-z0-9_.$-]+$/.test(name);
+  return {
+    tables: new Set(tables.map(row => row.name)),
+    columns: new Set(columns.map(row => row.name)),
+    indexes: new Set(indexes.map(row => row.name)),
+    types: new Set(types.map(row => row.name)),
+    history,
+  };
 }
 
 function matchAll(sql: string, pattern: RegExp): string[] {
@@ -111,112 +139,44 @@ function objectCount(objects: MigrationObjects): number {
   );
 }
 
-function objectConditions(objects: MigrationObjects): Array<{ sql: string; label: string }> {
+function objectNames(objects: MigrationObjects): Array<{ key: string; set: keyof Catalog }> {
   return [
-    ...objects.tables.map(table => ({
-      sql:
-        `SELECT 1 FROM information_schema.tables` +
-        ` WHERE table_schema = 'public' AND table_name = '${table}'`,
-      label: `table ${table}`,
-    })),
+    ...objects.tables.map(table => ({ key: table, set: 'tables' as const })),
     ...objects.columns.map(entry => ({
-      sql:
-        `SELECT 1 FROM information_schema.columns` +
-        ` WHERE table_schema = 'public'` +
-        ` AND table_name = '${entry.table}' AND column_name = '${entry.column}'`,
-      label: `column ${entry.table}.${entry.column}`,
+      key: `${entry.table}.${entry.column}`,
+      set: 'columns' as const,
     })),
-    ...objects.indexes.map(index => ({
-      sql: `SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = '${index}'`,
-      label: `index ${index}`,
-    })),
-    ...objects.types.map(type => ({
-      sql: `SELECT 1 FROM pg_type WHERE typname = '${type}'`,
-      label: `type ${type}`,
-    })),
+    ...objects.indexes.map(index => ({ key: index, set: 'indexes' as const })),
+    ...objects.types.map(type => ({ key: type, set: 'types' as const })),
   ];
 }
 
-function hasSafeNames(objects: MigrationObjects): boolean {
-  return [
-    ...objects.tables,
-    ...objects.indexes,
-    ...objects.types,
-    ...objects.columns.flatMap(entry => [entry.table, entry.column]),
-  ].every(isIdentifier);
+function isPresent(entry: { key: string; set: keyof Catalog }, catalog: Catalog): boolean {
+  return (catalog[entry.set] as Set<string>).has(entry.key);
 }
 
-function alreadyInDatabase(objects: MigrationObjects): boolean {
-  if (!hasSafeNames(objects)) {
-    return false;
-  }
-  return probe(assertSql(objectConditions(objects).map(entry => guard(entry.sql, entry.label))));
+function alreadyInDatabase(objects: MigrationObjects, catalog: Catalog): boolean {
+  return objectNames(objects).every(entry => isPresent(entry, catalog));
 }
 
-function absentFromDatabase(objects: MigrationObjects): boolean {
-  if (!hasSafeNames(objects)) {
-    return false;
-  }
-  return probe(
-    assertSql(
-      objectConditions(objects).map(
-        entry => `IF EXISTS (${entry.sql}) THEN RAISE EXCEPTION '${entry.label}'; END IF;`
-      )
-    )
-  );
+function absentFromDatabase(objects: MigrationObjects, catalog: Catalog): boolean {
+  return objectNames(objects).every(entry => !isPresent(entry, catalog));
 }
 
-function isRecorded(name: string): boolean {
-  if (!isIdentifier(name)) {
-    return false;
-  }
-  return probe(
-    assertSql([
-      guard(
-        `SELECT 1 FROM "_prisma_migrations" WHERE migration_name = '${name}'` +
-          ` AND finished_at IS NOT NULL AND rolled_back_at IS NULL`,
-        'not recorded'
-      ),
-    ])
-  );
+function isRecorded(name: string, catalog: Catalog): boolean {
+  return catalog.history.get(name)?.applied === true;
 }
 
-function hasRow(name: string): boolean {
-  if (!isIdentifier(name)) {
-    return false;
-  }
-  return probe(
-    assertSql([
-      guard(`SELECT 1 FROM "_prisma_migrations" WHERE migration_name = '${name}'`, 'no row'),
-    ])
-  );
+function hasRow(name: string, catalog: Catalog): boolean {
+  return catalog.history.has(name);
 }
 
-function isFailed(name: string): boolean {
-  if (!isIdentifier(name)) {
-    return false;
-  }
-  return probe(
-    assertSql([
-      guard(
-        `SELECT 1 FROM "_prisma_migrations" WHERE migration_name = '${name}'` +
-          ` AND finished_at IS NULL AND rolled_back_at IS NULL`,
-        'not failed'
-      ),
-    ])
-  );
+function isFailed(name: string, catalog: Catalog): boolean {
+  return catalog.history.get(name)?.failed === true;
 }
 
-function hasExistingSchema(): boolean {
-  return probe(
-    assertSql([
-      guard(
-        `SELECT 1 FROM information_schema.tables` +
-          ` WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
-        'empty schema'
-      ),
-    ])
-  );
+function hasExistingSchema(catalog: Catalog): boolean {
+  return catalog.tables.size > 0;
 }
 
 function listMigrations(): string[] {
@@ -230,21 +190,21 @@ function readMigration(name: string): MigrationObjects {
   return parseObjects(readFileSync(join(MIGRATIONS_DIR, name, 'migration.sql'), 'utf8'));
 }
 
-function findNewestApplied(migrations: string[]): number {
+function findNewestApplied(migrations: string[], catalog: Catalog): number {
   for (let index = migrations.length - 1; index >= 0; index -= 1) {
     const objects = readMigration(migrations[index]);
     if (objectCount(objects) === 0) {
       continue;
     }
-    if (alreadyInDatabase(objects)) {
+    if (alreadyInDatabase(objects, catalog)) {
       return index;
     }
   }
   return -1;
 }
 
-function baseline(migrations: string[]): void {
-  const newestApplied = findNewestApplied(migrations);
+function baseline(migrations: string[], catalog: Catalog): void {
+  const newestApplied = findNewestApplied(migrations, catalog);
 
   if (newestApplied < 0) {
     console.log('  no migration matches this database — deploying the full history');
@@ -252,12 +212,12 @@ function baseline(migrations: string[]): void {
   }
 
   for (const name of migrations.slice(0, newestApplied + 1)) {
-    if (isRecorded(name)) {
+    if (isRecorded(name, catalog)) {
       console.log(`  ${name}: already in migration history`);
       continue;
     }
 
-    if (hasRow(name) && absentFromDatabase(readMigration(name))) {
+    if (hasRow(name, catalog) && absentFromDatabase(readMigration(name), catalog)) {
       console.log(`  ${name}: rolled back and still absent, left for deploy`);
       continue;
     }
@@ -271,9 +231,9 @@ function baseline(migrations: string[]): void {
   }
 }
 
-function reconcileFailed(migrations: string[]): void {
+function reconcileFailed(migrations: string[], catalog: Catalog): void {
   for (const name of migrations) {
-    if (!isFailed(name)) {
+    if (!isFailed(name, catalog)) {
       continue;
     }
 
@@ -285,7 +245,7 @@ function reconcileFailed(migrations: string[]): void {
       );
     }
 
-    if (alreadyInDatabase(objects)) {
+    if (alreadyInDatabase(objects, catalog)) {
       console.log(`  ${name}: failed record, but its changes are present — marking applied`);
       if (!DRY_RUN) {
         runPrisma(['migrate', 'resolve', '--applied', name]);
@@ -293,7 +253,7 @@ function reconcileFailed(migrations: string[]): void {
       continue;
     }
 
-    if (absentFromDatabase(objects)) {
+    if (absentFromDatabase(objects, catalog)) {
       console.log(`  ${name}: failed record, changes rolled back — marking rolled back to retry`);
       if (!DRY_RUN) {
         runPrisma(['migrate', 'resolve', '--rolled-back', name]);
@@ -309,22 +269,36 @@ function reconcileFailed(migrations: string[]): void {
   }
 }
 
-function findPhantoms(migrations: string[]): string[] {
-  return migrations.filter(name => {
-    if (!isRecorded(name)) {
-      return false;
-    }
-    const objects = readMigration(name);
-    return objectCount(objects) > 0 && absentFromDatabase(objects);
-  });
+// Tables and enums are the reliable signal that a migration truly never ran: later
+// migrations in this history drop columns and indexes, but never a table. Judging a
+// migration by its columns would flag a healthy one whose columns a successor
+// removed.
+function createsMissingTables(name: string, catalog: Catalog): boolean {
+  const objects = readMigration(name);
+  const created = [
+    ...objects.tables.map(table => ({ key: table, set: 'tables' as const })),
+    ...objects.types.map(type => ({ key: type, set: 'types' as const })),
+  ];
+  return created.length > 0 && created.every(entry => !isPresent(entry, catalog));
+}
+
+function findPhantoms(migrations: string[], catalog: Catalog): string[] {
+  return migrations.filter(
+    name => isRecorded(name, catalog) && createsMissingTables(name, catalog)
+  );
 }
 
 // A phantom older than the newest fully-present migration is not a gap to replay —
 // it is one a later migration superseded, and re-running it would recreate objects
 // the schema abandoned. Those are reported and left alone. Only phantoms after that
 // boundary are real gaps that will break the next migration to depend on them.
-function reportPhantoms(phantoms: string[], migrations: string[]): void {
-  const boundary = findNewestApplied(migrations);
+async function reportPhantoms(
+  phantoms: string[],
+  migrations: string[],
+  catalog: Catalog,
+  prisma: PrismaClient
+): Promise<void> {
+  const boundary = findNewestApplied(migrations, catalog);
   const superseded = phantoms.filter(name => migrations.indexOf(name) <= boundary);
   const gaps = phantoms.filter(name => migrations.indexOf(name) > boundary);
 
@@ -339,41 +313,61 @@ function reportPhantoms(phantoms: string[], migrations: string[]): void {
     return;
   }
 
-  console.log('Recorded as applied but missing from the database:');
-  for (const name of gaps) {
+  // Everything from the earliest gap onward was built on tables that never existed,
+  // so the whole tail is replayed rather than the gaps alone. Re-applying only the
+  // gaps would leave the ALTER-only migrations between them permanently skipped,
+  // and their columns missing from the tables being recreated.
+  const firstGap = Math.min(...gaps.map(name => migrations.indexOf(name)));
+  const tail = migrations.slice(firstGap).filter(name => hasRow(name, catalog));
+
+  console.log(`Never applied to this database, starting at ${migrations[firstGap]}:`);
+  for (const name of tail) {
     console.log(`  ${name}`);
   }
 
   if (!REPAIR_HISTORY) {
     throw new Error(
-      `History does not match the database. Re-run with --repair-history to mark ` +
-        `these rolled back so they are applied again, after confirming the tables ` +
-        `they create are genuinely absent.`
+      `History does not match the database. Re-run with --repair-history to drop ` +
+        `these history rows so the migrations are applied again, after confirming ` +
+        `the tables they create are genuinely absent.`
     );
   }
 
-  for (const name of gaps) {
+  // prisma migrate resolve --rolled-back only accepts a migration in a failed
+  // state (P3012), so a row claiming success cannot be reset through the CLI.
+  // Deleting the row is the only way to make deploy apply the migration again.
+  for (const name of tail) {
     if (!DRY_RUN) {
-      runPrisma(['migrate', 'resolve', '--rolled-back', name]);
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM "_prisma_migrations" WHERE migration_name = $1`,
+        name
+      );
     }
-    console.log(`  ${name}: ${DRY_RUN ? 'would mark' : 'marked'} rolled back to re-apply`);
+    console.log(`  ${name}: ${DRY_RUN ? 'would drop' : 'dropped'} history row to re-apply`);
   }
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const migrations = listMigrations();
   const newest = migrations.at(-1);
 
-  if (hasExistingSchema() && newest && !isRecorded(newest)) {
-    console.log('Reconciling migration history with the live database:');
-    reconcileFailed(migrations);
-    baseline(migrations);
+  const prisma = new PrismaClient();
+  try {
+    const catalog = await readCatalog(prisma);
 
-    const phantoms = findPhantoms(migrations);
-    if (phantoms.length > 0) {
-      reportPhantoms(phantoms, migrations);
+    if (hasExistingSchema(catalog) && newest && !isRecorded(newest, catalog)) {
+      console.log('Reconciling migration history with the live database:');
+      reconcileFailed(migrations, catalog);
+      baseline(migrations, catalog);
+
+      const phantoms = findPhantoms(migrations, catalog);
+      if (phantoms.length > 0) {
+        await reportPhantoms(phantoms, migrations, catalog, prisma);
+      }
+      console.log('');
     }
-    console.log('');
+  } finally {
+    await prisma.$disconnect();
   }
 
   if (DRY_RUN) {
@@ -381,7 +375,10 @@ function main(): void {
     return;
   }
 
-  runPrisma(['migrate', 'deploy'], 1);
+  runPrisma(['migrate', 'deploy']);
 }
 
-main();
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exit(1);
+});
