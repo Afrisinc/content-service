@@ -9,6 +9,7 @@ const PRISMA_ARGS = existsSync(LOCAL_PRISMA) ? [] : ['prisma'];
 const SCHEMA = join('prisma', 'schema.prisma');
 const MIGRATIONS_DIR = join(process.cwd(), 'prisma', 'migrations');
 const DRY_RUN = process.argv.includes('--dry-run');
+const REPAIR_HISTORY = process.argv.includes('--repair-history');
 const LOCK_TIMEOUT_MS = 15000;
 
 function migrationEnv(): NodeJS.ProcessEnv {
@@ -261,7 +262,7 @@ function baseline(migrations: string[]): void {
     console.log(`  ${name}: ${DRY_RUN ? 'would mark' : 'marked'} applied`);
   }
   for (const name of migrations.slice(newestApplied + 1)) {
-    console.log(`  ${name}: pending, will be applied by deploy`);
+    console.log(`  ${name}: changes not in database`);
   }
 }
 
@@ -303,6 +304,38 @@ function reconcileFailed(migrations: string[]): void {
   }
 }
 
+function findPhantoms(migrations: string[]): string[] {
+  return migrations.filter(name => {
+    if (!isRecorded(name)) {
+      return false;
+    }
+    const objects = readMigration(name);
+    return objectCount(objects) > 0 && absentFromDatabase(objects);
+  });
+}
+
+function reportPhantoms(phantoms: string[]): void {
+  console.log('Migrations recorded as applied whose changes are missing from the database:');
+  for (const name of phantoms) {
+    console.log(`  ${name}`);
+  }
+
+  if (!REPAIR_HISTORY) {
+    throw new Error(
+      `History does not match the database. Re-run with --repair-history to mark ` +
+        `these rolled back so they are applied again, after confirming the tables ` +
+        `they create are genuinely absent.`
+    );
+  }
+
+  for (const name of phantoms) {
+    if (!DRY_RUN) {
+      runPrisma(['migrate', 'resolve', '--rolled-back', name]);
+    }
+    console.log(`  ${name}: ${DRY_RUN ? 'would mark' : 'marked'} rolled back to re-apply`);
+  }
+}
+
 function main(): void {
   const migrations = listMigrations();
   const newest = migrations.at(-1);
@@ -311,6 +344,11 @@ function main(): void {
     console.log('Reconciling migration history with the live database:');
     reconcileFailed(migrations);
     baseline(migrations);
+
+    const phantoms = findPhantoms(migrations);
+    if (phantoms.length > 0) {
+      reportPhantoms(phantoms);
+    }
     console.log('');
   }
 
@@ -319,7 +357,7 @@ function main(): void {
     return;
   }
 
-  runPrisma(['migrate', 'deploy']);
+  runPrisma(['migrate', 'deploy'], 1);
 }
 
 main();
