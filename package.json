@@ -24,13 +24,14 @@
     "db:migrate:init": "prisma migrate dev --name init",
     "db:migrate:reset": "prisma migrate reset",
     "db:migrate:deploy": "prisma migrate deploy",
+    "db:deploy": "tsx scripts/db-deploy.ts",
     "db:seed": "tsx src/database/seed.ts",
     "db:setup": "npm run db:migrate:init && npm run db:generate && npm run db:seed",
     "db:reset": "npm run db:migrate:reset && npm run db:seed",
     "db:studio": "prisma studio",
     "db:push:skip": "prisma db push --skip-generate",
     "start:with-db-push": "npm run db:push:skip && npm run db:generate && npm run start",
-    "start:with-migrate": "npm run db:migrate:deploy && npm run db:generate && npm run start"
+    "start:with-migrate": "npm run db:deploy && npm run db:generate && npm run start"
   },
   "keywords": [
     "nodejs",

@@ -138,7 +138,8 @@ dist
 # Folders
 .claude
 docs/
-scripts/
+scripts/*
+!scripts/db-deploy.ts
 
 Files
 CLAUDE.md
