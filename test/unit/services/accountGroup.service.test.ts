@@ -201,6 +201,24 @@ describe('create', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it('falls back to the house accent when no color is named', async () => {
+    const { service } = build();
+
+    await service.create('user-1', { name: 'AFRISINC' });
+
+    const created = await vi.mocked(prisma.$transaction).mock.results[0].value;
+    expect(created.color).toBe('azure');
+  });
+
+  it('keeps the accent the caller picked', async () => {
+    const { service } = build();
+
+    await service.create('user-1', { name: 'AFRISINC', color: 'coral' });
+
+    const created = await vi.mocked(prisma.$transaction).mock.results[0].value;
+    expect(created.color).toBe('coral');
+  });
+
   it('disambiguates a slug that is already taken', async () => {
     const { service, groups } = build();
     groups.findBySlug.mockResolvedValueOnce({ id: 'other' } as never);

@@ -19,7 +19,10 @@ const accountParams = {
 const groupProperties = {
   name: { type: 'string', minLength: 2, maxLength: 80 },
   description: { type: 'string', maxLength: 280 },
-  color: { type: 'string', maxLength: 32 },
+  color: {
+    type: 'string',
+    enum: ['azure', 'coral', 'primary', 'emerald', 'terra', 'gold', 'forest', 'indigo'],
+  },
   isDefault: { type: 'boolean' },
   topics: { type: 'array', maxItems: 50, items: { type: 'string', minLength: 3, maxLength: 200 } },
   serviceLine: { type: 'string', maxLength: 60 },

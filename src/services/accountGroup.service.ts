@@ -8,6 +8,7 @@ import {
   AutomationPolicyRepository,
   automationPolicyRepository,
 } from '@/repositories/automationPolicy.repository';
+import { BrandAssetRepository, brandAssetRepository } from '@/repositories/brandAsset.repository';
 import {
   SocialMediaAccountRepository,
   socialMediaAccountRepository,
@@ -19,7 +20,6 @@ import {
   UpdateAccountGroupPayload,
 } from '@/types/accountGroup.types';
 import type { SocialPlatformKey } from '@/types/socialMediaIntegration.types';
-import { BrandAssetRepository, brandAssetRepository } from '@/repositories/brandAsset.repository';
 import { BadRequestError, ConflictError, NotFoundError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
 import { Prisma } from '@prisma/client';
@@ -111,7 +111,7 @@ export class AccountGroupService {
           slug,
           name: payload.name.trim(),
           description: payload.description?.trim(),
-          color: payload.color,
+          color: payload.color ?? 'azure',
           isDefault,
           topics: payload.topics ?? [],
           serviceLine: payload.serviceLine?.trim(),
