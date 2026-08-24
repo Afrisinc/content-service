@@ -15,7 +15,7 @@ from afrisinc_render.schema import Eyebrow, PostSpec, SlideSpec
 
 
 def _render(spec: SlideSpec, geo=POST_GEO) -> Image.Image:
-    image, _ = slide.render(spec, geo)
+    image = slide.render(spec, geo).image
     return image
 
 
@@ -26,7 +26,7 @@ def test_slide_renders_at_canvas_size(azure_slide):
 @pytest.mark.parametrize("fixture", ["azure_slide", "photo_slide", "white_slide", "cta_slide"])
 def test_every_surface_passes_its_own_audit(request, fixture):
     spec = request.getfixturevalue(fixture)
-    image, _ = slide.render(spec, POST_GEO)
+    image = slide.render(spec, POST_GEO).image
     findings = audit.audit_slide(0, spec, image, POST_GEO)
     assert [f for f in findings if f.severity == "error"] == []
 
@@ -145,7 +145,7 @@ def test_a_cta_slide_drops_the_header_domain():
         cta={"text": "afrisinc.com"},
     )
     assert spec.shows_site is False
-    image, _ = slide.render(spec, POST_GEO)
+    image = slide.render(spec, POST_GEO).image
     findings = audit.audit_slide(0, spec, image, POST_GEO)
     assert all(f.rule != "duplicate_domain" for f in findings)
 
@@ -156,7 +156,7 @@ def test_banned_word_is_a_warning_not_a_block():
         eyebrow=Eyebrow(text="Software development", kind="label"),
         headline=["Seamless delivery."],
     )
-    image, _ = slide.render(spec, POST_GEO)
+    image = slide.render(spec, POST_GEO).image
     findings = audit.audit_slide(0, spec, image, POST_GEO)
     banned = [f for f in findings if f.rule == "banned_word"]
     assert banned and banned[0].severity == "warning"

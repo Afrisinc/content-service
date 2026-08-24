@@ -76,7 +76,10 @@ def grade(image: Image.Image) -> Image.Image:
     red = red.point(lambda v: min(255, int(v * T.PHOTO_RED_GAIN)))
     blue = blue.point(lambda v: min(255, int(v * T.PHOTO_BLUE_GAIN)))
     merged = Image.merge("RGB", (red, green, blue))
-    return ImageEnhance.Contrast(merged).enhance(T.PHOTO_CONTRAST)
+    graded = ImageEnhance.Contrast(merged).enhance(T.PHOTO_CONTRAST)
+    # Exposure last: contrast is applied around the midpoint, so pulling first would
+    # be partly undone by it.
+    return ImageEnhance.Brightness(graded).enhance(T.PHOTO_EXPOSURE)
 
 
 def cover_crop(image: Image.Image, target: tuple[int, int], focus: float = 0.5) -> Image.Image:

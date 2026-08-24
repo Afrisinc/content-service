@@ -156,6 +156,38 @@ def headline_size(lines: list[str], width: float) -> int:
     return T.HEADLINE_SIZES[-1]
 
 
+def wrap_to_width(text: str, weight: Weight, size: int, width: float) -> list[str]:
+    """Greedy word wrap. A single word wider than the measure is left long rather
+    than hyphenated — the caller shrinks instead."""
+    words = text.split()
+    if not words:
+        return [text]
+
+    fnt = font(weight, size)
+    track = tracking(size)
+    lines: list[str] = []
+    current = words[0]
+
+    for word in words[1:]:
+        candidate = f"{current} {word}"
+        if text_width(candidate, fnt, track) <= width:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+
+    lines.append(current)
+    return lines
+
+
+def fit_body_size(text: str, weight: Weight, sizes: tuple[int, ...], width: float) -> int:
+    """Largest body size at which the text fits on one line, else the smallest offered."""
+    for size in sizes:
+        if text_width(text, font(weight, size), tracking(size)) <= width:
+            return size
+    return sizes[-1]
+
+
 def headline_leading(size: int, line_count: int) -> float:
     return size * (T.LEADING_TIGHT if line_count > 2 else T.LEADING_OPEN)
 

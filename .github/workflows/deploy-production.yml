@@ -74,9 +74,9 @@ jobs:
             # container: a failed migration stops the deploy instead of leaving
             # the app up against a schema it cannot read. --no-deps keeps it from
             # starting the render service just to run prisma.
-            # docker compose run --rm --no-deps --entrypoint "" \
-            #   content_service_production \
-            #   npm run db:deploy
+            docker compose run --rm --no-deps --entrypoint "" \
+              content_service_production \
+              npm run db:deploy
 
             docker compose up -d
             docker compose ps

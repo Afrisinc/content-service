@@ -8,10 +8,13 @@ from PIL import Image
 from .brand import rules as R
 from .brand import tokens as T
 from .brand.geometry import STORY, Geometry
+from .luminance import contrast_on_white, region_luminance
 from .schema import AuditFinding, SlideSpec
 
 _CORAL = np.array(T.CORAL, dtype=np.int16)
 _CORAL_TOLERANCE = 45
+# Optical hangs legitimately push a glyph a few pixels past the margin.
+OVERFLOW_TOLERANCE = 8
 
 BANNED_WORDS = frozenset(
     {
@@ -59,8 +62,18 @@ def coral_coverage(image: Image.Image) -> float:
     return float(matches.sum()) / (image.width * image.height)
 
 
+def measure_contrast(image: Image.Image, rect: tuple[float, float, float, float]) -> float:
+    """Contrast of white type against the brightest part of what sits behind it."""
+    return contrast_on_white(region_luminance(image, rect))
+
+
 def audit_slide(
-    index: int, spec: SlideSpec, image: Image.Image, geo: Geometry
+    index: int,
+    spec: SlideSpec,
+    image: Image.Image,
+    geo: Geometry,
+    bounds: list[tuple[float, float, float, float]] | None = None,
+    contrast: list[tuple[tuple[float, float, float, float], float]] | None = None,
 ) -> list[AuditFinding]:
     findings: list[AuditFinding] = []
 
@@ -89,6 +102,25 @@ def audit_slide(
         ratio = _contrast_against(_relative_luminance(sample), foreground_is_white)
         if ratio < T.MIN_TEXT_CONTRAST:
             add("contrast", f"{name} band is {ratio:.1f}:1, minimum {T.MIN_TEXT_CONTRAST}:1")
+
+    # Every line of body copy, measured where it actually sits rather than in a
+    # fixed band. A lit monitor mid-frame is invisible to a band check.
+    for left, top, right, bottom in bounds or []:
+        if left < geo.margin - OVERFLOW_TOLERANCE or right > geo.right_edge + OVERFLOW_TOLERANCE:
+            add(
+                "overflow",
+                f"text runs from x={left:.0f} to x={right:.0f}, "
+                f"outside the {geo.margin}–{geo.right_edge} measure",
+            )
+        if top < 0 or bottom > geo.height:
+            add("overflow", f"text runs from y={top:.0f} to y={bottom:.0f}, outside the canvas")
+
+    for rect, ratio in contrast or []:
+        if ratio < T.MIN_TEXT_CONTRAST:
+            add(
+                "contrast",
+                f"type at y={rect[1]:.0f} sits on {ratio:.1f}:1, needs {T.MIN_TEXT_CONTRAST}:1",
+            )
 
     # On a story the platform draws its own UI over the top and bottom of the canvas.
     if geo.name == STORY:

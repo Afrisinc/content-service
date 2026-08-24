@@ -26,18 +26,19 @@ def render_post(spec: PostSpec) -> RenderResult:
     findings = audit_post(spec.slides)
 
     for index, slide_spec in enumerate(spec.slides):
-        image, headline_size = slide_renderer.render(slide_spec, geo)
+        frame = slide_renderer.render(slide_spec, geo)
+        image = frame.image
         filename = f"{geo.filename_prefix}-{index + 1:02d}.png"
         path = target / filename
         image.save(path, format="PNG", optimize=True)
 
-        findings.extend(audit_slide(index, slide_spec, image, geo))
+        findings.extend(audit_slide(index, slide_spec, image, geo, frame.bounds, frame.contrast))
         rendered.append(
             RenderedSlide(
                 index=index,
                 filename=filename,
                 surface=slide_spec.surface,
-                headline_size=headline_size,
+                headline_size=frame.headline_size,
                 bytes=path.stat().st_size,
             )
         )

@@ -50,6 +50,12 @@ class Geometry:
         return self.band_bottom - self.band_top
 
     @property
+    def rail_clearance(self) -> int:
+        """Air between the last line of the stack and the contact rail. Type that ends
+        one baseline above the rail reads as a collision even when nothing overlaps."""
+        return self.contact_rail_y - self.band_bottom
+
+    @property
     def area(self) -> int:
         return self.width * self.height
 
@@ -67,7 +73,7 @@ POST_GEOMETRY: Final[Geometry] = Geometry(
     header_y=128,
     masthead_y=200,
     band_top=240,
-    band_bottom=876,
+    band_bottom=850,
     contact_rail_y=906,
     footer_y=968,
     watermark_size=560,

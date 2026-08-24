@@ -74,6 +74,10 @@ SCRIM_START_DENSE: Final[float] = 0.32
 PHOTO_RED_GAIN: Final[float] = 0.965
 PHOTO_BLUE_GAIN: Final[float] = 1.045
 PHOTO_CONTRAST: Final[float] = 1.06
+# A photograph that has to carry white type is exposed for the type, not for the
+# photograph. Pulling six per cent protects the highlights — a blown monitor or a
+# white bench cannot be recovered once it clips, and that is where type disappears.
+PHOTO_EXPOSURE: Final[float] = 0.94
 
 WATERMARK_ALPHA_DARK: Final[float] = 0.085
 WATERMARK_ALPHA_LIGHT: Final[float] = 0.06

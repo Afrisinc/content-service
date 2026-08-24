@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from PIL import Image, ImageDraw
 
 from ..brand import rules as R
 from ..brand import tokens as T
 from ..brand.geometry import STORY, Geometry
 from ..errors import LayoutOverflowError
+from ..luminance import contrast_on_white, region_luminance
 from ..schema import SlideSpec
 from . import components as C
-from . import furniture, marks, surfaces
+from . import furniture, marks, plate, surfaces
 from . import typography as ty
 
 GAP_EYEBROW_HEADLINE = 62
@@ -105,15 +108,51 @@ def fit_stack(spec: SlideSpec, geo: Geometry) -> tuple[C.Stack, int]:
     )
 
 
-def render(spec: SlideSpec, geo: Geometry) -> tuple[Image.Image, int]:
+def furniture_bounds(geo: Geometry) -> list[plate.Rect]:
+    """The fixed elements are white on every dark surface, so they need protecting
+    from a bright photograph exactly as the headline does."""
+    return [
+        (geo.margin, geo.header_y - 26, geo.right_edge, geo.header_y + 26),
+        (geo.margin, geo.contact_rail_y - 20, geo.right_edge, geo.contact_rail_y + 20),
+        (geo.margin, geo.footer_y - 22, geo.right_edge, geo.footer_y + 22),
+    ]
+
+
+class RenderedFrame(NamedTuple):
+    image: Image.Image
+    headline_size: int
+    bounds: list[plate.Rect]
+    # Measured on the prepared surface *before* the type is drawn. Measuring the
+    # finished frame would sample the white glyphs themselves and report 1:1.
+    contrast: list[tuple[plate.Rect, float]]
+
+
+def render(spec: SlideSpec, geo: Geometry) -> RenderedFrame:
     base = surfaces.build(
         spec.surface,
         geo,
         photo=spec.photo,
         dense_scrim=spec.dense_scrim,
         focus=spec.photo_focus,
-    ).convert("RGBA")
+    )
 
+    stack, headline_size = fit_stack(spec, geo)
+    anchor = resolve_anchor(spec, geo)
+    all_rects = stack.bounds(anchor, geo)
+    plate_rects = stack.plate_bounds(anchor, geo)
+
+    # Two passes: find where the type lands, darken the photograph behind it, and
+    # only then draw. A single pass cannot know that a lit monitor sits mid-frame.
+    if spec.surface == R.PHOTO:
+        base = plate.apply(base, geo, plate_rects + furniture_bounds(geo))
+
+    contrast = (
+        [(rect, contrast_on_white(region_luminance(base, rect))) for rect in plate_rects]
+        if R.is_dark(spec.surface)
+        else []
+    )
+
+    base = base.convert("RGBA")
     overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     foreground = R.foreground(spec.surface)
@@ -123,11 +162,10 @@ def render(spec: SlideSpec, geo: Geometry) -> tuple[Image.Image, int]:
     marks.registration_marks(draw, geo, foreground)
 
     furniture.header(overlay, draw, geo, spec.surface, show_site=spec.shows_site)
-
-    stack, headline_size = fit_stack(spec, geo)
-    stack.draw(draw, overlay, resolve_anchor(spec, geo), geo)
-
+    stack.draw(draw, overlay, anchor, geo)
     furniture.contact_rail(draw, geo, spec.surface)
     furniture.footer(draw, geo, spec.surface)
 
-    return Image.alpha_composite(base, overlay).convert("RGB"), headline_size
+    return RenderedFrame(
+        Image.alpha_composite(base, overlay).convert("RGB"), headline_size, all_rects, contrast
+    )

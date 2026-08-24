@@ -35,25 +35,25 @@ def story_photo_frame() -> SlideSpec:
 
 
 def test_story_renders_at_nine_by_sixteen(story_frame):
-    image, _ = slide.render(story_frame, STORY_GEO)
+    image = slide.render(story_frame, STORY_GEO).image
     assert image.size == (1080, 1920)
 
 
 def test_story_passes_its_own_audit(story_frame):
-    image, _ = slide.render(story_frame, STORY_GEO)
+    image = slide.render(story_frame, STORY_GEO).image
     findings = audit.audit_slide(0, story_frame, image, STORY_GEO)
     assert [f for f in findings if f.severity == "error"] == []
 
 
 def test_story_photo_frame_passes_its_own_audit(story_photo_frame):
-    image, _ = slide.render(story_photo_frame, STORY_GEO)
+    image = slide.render(story_photo_frame, STORY_GEO).image
     findings = audit.audit_slide(0, story_photo_frame, image, STORY_GEO)
     assert [f for f in findings if f.severity == "error"] == []
 
 
 def test_nothing_readable_lands_under_the_platform_ui(story_frame):
     """The top 250px and bottom 340px belong to Instagram, not to us."""
-    image, _ = slide.render(story_frame, STORY_GEO)
+    image = slide.render(story_frame, STORY_GEO).image
     pixels = np.asarray(image.convert("RGB")).astype(int)
 
     background = pixels[STORY_GEO.height // 2, 8]
