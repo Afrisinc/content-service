@@ -1,4 +1,4 @@
-import type { NotifyCampaignRequest } from '@/adapters/notify/notify.types';
+import type { CreateCampaignParams } from '@afrisinc/notify-sdk';
 
 export interface DigestArticle {
   id: string;
@@ -107,16 +107,15 @@ export function buildCampaignPayload(input: {
   html: string;
   recipientTags: string[];
   scheduledAt: Date;
-}): NotifyCampaignRequest {
+}): CreateCampaignParams {
   return {
     name: input.subject,
-    channel: 'EMAIL',
+    channel: 'email',
     recipientType: 'tags',
     recipientTags: input.recipientTags,
     status: 'scheduled',
     scheduledAt: input.scheduledAt.toISOString(),
     subject: input.subject,
     html_content: input.html,
-    type: DIGEST_TYPE,
   };
 }

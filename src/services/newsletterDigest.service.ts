@@ -1,4 +1,4 @@
-import { notifyClient } from '@/adapters/notify/notifyClient';
+import { notify } from '@/adapters/notify/notifySdk';
 import { nodeServices } from '@/adapters/nodes/nodeServices';
 import { env } from '@/config/env';
 import {
@@ -93,7 +93,7 @@ class NewsletterDigestService {
       return { status: 'dry-run', subject, articleIds: context.articleIds, html };
     }
 
-    const campaign = await notifyClient.createCampaign(
+    const campaign = await notify.campaigns.create(
       buildCampaignPayload({
         subject,
         html,

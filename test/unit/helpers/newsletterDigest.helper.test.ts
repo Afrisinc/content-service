@@ -113,14 +113,13 @@ describe('buildCampaignPayload', () => {
 
     expect(payload).toEqual({
       name: 'Afrisinc Media Daily — 2026-08-19',
-      channel: 'EMAIL',
+      channel: 'email',
       recipientType: 'tags',
       recipientTags: ['newsletter'],
       status: 'scheduled',
       scheduledAt: '2026-08-19T07:30:00.000Z',
       subject: 'Afrisinc Media Daily — 2026-08-19',
       html_content: '<html/>',
-      type: 'newsletter_digest',
     });
   });
 });

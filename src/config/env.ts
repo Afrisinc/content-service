@@ -85,21 +85,15 @@ export const env = {
   // picks up on the next tick rather than earning a block.
   ANALYTICS_PULL_USAGE_CEILING: Number(process.env.ANALYTICS_PULL_USAGE_CEILING) || 80,
 
-  // Notify (campaign delivery)
-  NOTIFY_API_URL: process.env.NOTIFY_API_URL || '',
-  NOTIFY_APP_ID: process.env.NOTIFY_APP_ID || '',
-  NOTIFY_ACCOUNT_ID: process.env.NOTIFY_ACCOUNT_ID || '',
-
-  // Notify (transactional notifications). No key switches every send off.
+  // Notify (transactional notifications and campaigns). No key switches every send off.
   NOTIFY_API_KEY: process.env.NOTIFY_API_KEY || '',
-  NOTIFY_TIMEOUT_MS: Number(process.env.NOTIFY_TIMEOUT_MS) || 30000,
-  NOTIFY_RETRIES: Number(process.env.NOTIFY_RETRIES ?? 3),
   NOTIFY_REVIEW_CHANNELS: (process.env.NOTIFY_REVIEW_CHANNELS || 'in_app,email')
     .split(',')
     .map(channel => channel.trim())
     .filter(Boolean),
   NOTIFY_DEDUPE_TTL_SECONDS: Number(process.env.NOTIFY_DEDUPE_TTL_SECONDS) || 86400,
   DASHBOARD_URL: process.env.DASHBOARD_URL || 'http://localhost:5173',
+  POST_REVIEW_TEMPLATE: process.env.POST_REVIEW_TEMPLATE || 'd35e667f-f314-4fb8-b61b-32eb4cef4bee',
 
   // Daily newsletter digest
   NEWSLETTER_DIGEST_ENABLED: process.env.NEWSLETTER_DIGEST_ENABLED === 'true',

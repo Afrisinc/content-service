@@ -20,8 +20,8 @@ vi.mock('@/config/env', () => ({ env: envMock }));
 vi.mock('@/repositories/mediaPost.repository', () => ({
   mediaPostRepository: { getTopArticles: mocks.getTopArticles },
 }));
-vi.mock('@/adapters/notify/notifyClient', () => ({
-  notifyClient: { createCampaign: mocks.createCampaign },
+vi.mock('@/adapters/notify/notifySdk', () => ({
+  notify: { campaigns: { create: mocks.createCampaign } },
 }));
 vi.mock('@/adapters/nodes/nodeServices', () => ({ nodeServices: {} }));
 vi.mock('@/nodes', () => ({
@@ -59,12 +59,11 @@ describe('newsletterDigestService.run', () => {
 
     expect(mocks.createCampaign).toHaveBeenCalledWith(
       expect.objectContaining({
-        channel: 'EMAIL',
+        channel: 'email',
         recipientType: 'tags',
         recipientTags: ['newsletter'],
         status: 'scheduled',
         html_content: '<html>digest</html>',
-        type: 'newsletter_digest',
       })
     );
   });

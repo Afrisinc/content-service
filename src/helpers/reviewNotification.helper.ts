@@ -10,8 +10,6 @@ import {
 } from '@/utils/notify';
 import type { Channel } from '@afrisinc/notify-sdk';
 
-export const POST_REVIEW_TEMPLATE = 'post-review-requested';
-
 export interface ReviewRecipient {
   userId: string;
   email?: string | null;
@@ -56,7 +54,7 @@ export function buildPostReviewNotification(
 ): NotificationRequest {
   return {
     targets: buildReviewTargets(recipient),
-    template: POST_REVIEW_TEMPLATE,
+    template: env.POST_REVIEW_TEMPLATE,
     priority: 'high',
     dedupeKey: `notify:post-review:${notice.draftId}`,
     dedupeTtlSeconds: env.NOTIFY_DEDUPE_TTL_SECONDS,
