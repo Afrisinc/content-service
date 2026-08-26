@@ -78,6 +78,15 @@ jobs:
             #   content_service_production \
             #   npm run db:deploy
 
-            docker compose up -d
+            # --wait-timeout fails fast with a real exit code once the stack's
+            # healthchecks settle, instead of hanging until the SSH action's own
+            # 10-minute command_timeout kills the job with no explanation.
+            if ! docker compose up -d --wait --wait-timeout 120; then
+              echo "::error::Stack did not report healthy in time — dumping logs"
+              docker compose ps
+              docker compose logs --tail=100
+              exit 1
+            fi
+
             docker compose ps content_service_production
             docker image prune -af
