@@ -2,6 +2,7 @@ import { env } from '@/config/env';
 import {
   CopyUnusableError,
   PostCopyService,
+  briefPrompt,
   findVoiceViolations,
 } from '@/services/postCopy.service';
 import { PostCopy } from '@/types/post.types';
@@ -111,6 +112,26 @@ describe('findVoiceViolations', () => {
     const subject = copy();
     subject.slides = subject.slides.slice(0, 3);
     expect(findVoiceViolations(subject)).toContain('the last slide must be the cta');
+  });
+});
+
+describe('briefPrompt', () => {
+  it('weaves in keywords and a reference link when the brief carries them', () => {
+    const prompt = briefPrompt({
+      topic: 'Board level laptop repair for schools',
+      keywords: '#repair #schools',
+      link: 'https://afrisinc.com/repair',
+    });
+
+    expect(prompt).toContain('Keywords or hashtags to weave in: #repair #schools');
+    expect(prompt).toContain('Reference link the CTA can point to: https://afrisinc.com/repair');
+  });
+
+  it('omits those lines when the brief carries neither', () => {
+    const prompt = briefPrompt({ topic: 'Board level laptop repair for schools' });
+
+    expect(prompt).not.toContain('Keywords or hashtags');
+    expect(prompt).not.toContain('Reference link');
   });
 });
 

@@ -76,10 +76,16 @@ export interface PostBriefPayload {
   serviceLine?: string;
   offer?: string;
   audience?: string;
+  /** Free-text keywords or hashtags to weave into the copy. */
+  keywords?: string;
+  /** A reference link the copy or its CTA can point to. */
+  link?: string;
   slideCount?: number;
   userId?: string;
   /** Publish to every switched-on account in this group instead of one page. */
   groupId?: string;
+  /** Photographs picked by hand; overrides the group's library for this post. */
+  assetIds?: string[];
   /** Autopilot: queue the render straight to the publish cron, no review hold. */
   autoPublish?: boolean;
   /** What set this off — `manual`, `autopilot`. Recorded on the run trace. */

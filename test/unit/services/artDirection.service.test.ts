@@ -9,11 +9,14 @@ interface FakeAsset {
   id: string;
   reference: string;
   url?: string;
+  subjects?: string[];
 }
 
 function fakeRepository(assets: FakeAsset[]) {
+  const withSubjects = assets.map(asset => ({ subjects: [], ...asset }));
   return {
-    findCandidates: vi.fn(async () => assets),
+    countForGroup: vi.fn(async () => 0),
+    findCandidates: vi.fn(async () => withSubjects),
     recordUse: vi.fn(async () => undefined),
     create: vi.fn(),
     findByReference: vi.fn(),
@@ -101,15 +104,9 @@ describe('ArtDirectionService', () => {
   });
 
   it('falls back to an off-subject photograph rather than failing', async () => {
-    // findCandidates(subjects) misses, findCandidates([]) hits — which is what
-    // happens whenever the copy agent invents a subject nothing is tagged with.
-    const offSubject = { id: '9', reference: 'office.png' };
-    const repo = {
-      findCandidates: vi.fn(async (subjects: string[]) => (subjects.length ? [] : [offSubject])),
-      recordUse: vi.fn(async () => undefined),
-      create: vi.fn(),
-      findByReference: vi.fn(),
-    };
+    // Nothing in the library is tagged "bench" or "network" — the copy agent
+    // invented subjects nothing carries — so it takes any approved photograph.
+    const repo = fakeRepository([{ id: '9', reference: 'office.png' }]);
     const service = new ArtDirectionService(repo as never);
 
     const result = await service.assignPhotos(copyWithPhotoSlides(), USER);
@@ -119,19 +116,11 @@ describe('ArtDirectionService', () => {
   });
 
   it('prefers an on-subject photograph when one exists', async () => {
-    const repo = {
-      findCandidates: vi.fn(async (subjects: string[]) =>
-        subjects.includes('bench')
-          ? [{ id: '1', reference: 'bench.png' }]
-          : [
-              { id: '2', reference: 'generic-a.png' },
-              { id: '3', reference: 'generic-b.png' },
-            ]
-      ),
-      recordUse: vi.fn(async () => undefined),
-      create: vi.fn(),
-      findByReference: vi.fn(),
-    };
+    const repo = fakeRepository([
+      { id: '1', reference: 'bench.png', subjects: ['bench'] },
+      { id: '2', reference: 'generic-a.png' },
+      { id: '3', reference: 'generic-b.png' },
+    ]);
     const service = new ArtDirectionService(repo as never);
 
     const result = await service.assignPhotos(copyWithPhotoSlides(), USER);
@@ -141,6 +130,15 @@ describe('ArtDirectionService', () => {
     // takes an unused approved photograph instead of repeating the bench.
     expect(result.photosByIndex[3]).not.toBe('bench.png');
     expect(result.reused).toBe(0);
+  });
+
+  it('matches a subject regardless of case or stray whitespace', async () => {
+    const repo = fakeRepository([{ id: '1', reference: 'bench.png', subjects: [' Bench '] }]);
+    const service = new ArtDirectionService(repo as never);
+
+    const result = await service.assignPhotos(copyWithPhotoSlides(), USER);
+
+    expect(result.photosByIndex[1]).toBe('bench.png');
   });
 
   it('still leaves a one-frame post on azure when the library is empty', async () => {
@@ -205,11 +203,16 @@ describe('ArtDirectionService', () => {
 });
 
 describe('a brand with its own photographs', () => {
-  function trackingRepository(byGroup: Record<string, unknown[]>, shared: unknown[], count = 1) {
+  function trackingRepository(
+    byGroup: Record<string, FakeAsset[]>,
+    shared: FakeAsset[],
+    count = 1
+  ) {
+    const withSubjects = (assets: FakeAsset[]) => assets.map(asset => ({ subjects: [], ...asset }));
     return {
       countForGroup: vi.fn(async () => count),
       findCandidates: vi.fn(async (_subjects: string[], _userId: string, groupId?: string) =>
-        groupId ? (byGroup[groupId] ?? []) : shared
+        withSubjects(groupId ? (byGroup[groupId] ?? []) : shared)
       ),
       recordUse: vi.fn(async () => undefined),
       create: vi.fn(),
@@ -237,7 +240,7 @@ describe('a brand with its own photographs', () => {
 
     // countForGroup returned 0, so the brand scope is dropped entirely.
     expect(result.photosByIndex[1]).toBe('shared.png');
-    expect(repo.findCandidates).toHaveBeenCalledWith(expect.anything(), USER, undefined);
+    expect(repo.findCandidates).toHaveBeenCalledWith(expect.anything(), USER, undefined, undefined);
   });
 
   it('uses the account’s own library when no brand is named at all', async () => {
@@ -247,7 +250,7 @@ describe('a brand with its own photographs', () => {
     await service.assignPhotos(copyWithPhotoSlides(), USER);
 
     expect(repo.countForGroup).not.toHaveBeenCalled();
-    expect(repo.findCandidates).toHaveBeenCalledWith(expect.anything(), USER, undefined);
+    expect(repo.findCandidates).toHaveBeenCalledWith(expect.anything(), USER, undefined, undefined);
   });
 
   it('checks the brand library once, not once per frame', async () => {
@@ -265,6 +268,33 @@ describe('a brand with its own photographs', () => {
     await service.assignPhotos(copyWithPhotoSlides(), USER, 'group-1');
 
     expect(repo.countForGroup).toHaveBeenCalledOnce();
+  });
+});
+
+describe('a post with hand-picked photographs', () => {
+  function assetIdRepository(picked: FakeAsset[]) {
+    const withSubjects = picked.map(asset => ({ subjects: [], ...asset }));
+    return {
+      countForGroup: vi.fn(async () => 5),
+      findCandidates: vi.fn(
+        async (_subjects: string[], _userId: string, _groupId?: string, assetIds?: string[]) =>
+          assetIds?.length ? withSubjects : []
+      ),
+      recordUse: vi.fn(async () => undefined),
+      create: vi.fn(),
+      findByReference: vi.fn(),
+    };
+  }
+
+  it('draws only from the selection, bypassing the group library entirely', async () => {
+    const repo = assetIdRepository([{ id: 'p1', reference: 'picked.png' }]);
+    const service = new ArtDirectionService(repo as never);
+
+    const result = await service.assignPhotos(copyWithPhotoSlides(), USER, 'group-1', ['p1']);
+
+    expect(result.photosByIndex[1]).toBe('picked.png');
+    expect(repo.countForGroup).not.toHaveBeenCalled();
+    expect(repo.findCandidates).toHaveBeenCalledWith(expect.anything(), USER, undefined, ['p1']);
   });
 });
 

@@ -28,11 +28,20 @@ export const CreatePostDraftSchema = {
       serviceLine: { type: 'string', maxLength: 60 },
       offer: { type: 'string', maxLength: 60 },
       audience: { type: 'string', maxLength: 120 },
+      keywords: { type: 'string', maxLength: 200 },
+      link: { type: 'string', format: 'uri', maxLength: 500 },
       // Omit for the house length of five; ask explicitly for anything up to ten.
       slideCount: { type: 'integer', minimum: 1, maximum: 10 },
       // Publish to every switched-on account in this brand group. Omit for the
       // workspace default group.
       groupId: { type: 'string', format: 'uuid' },
+      // Photographs picked by hand from the brand library; overrides automatic
+      // subject matching and the group's library for this post.
+      assetIds: {
+        type: 'array',
+        items: { type: 'string', format: 'uuid' },
+        maxItems: 20,
+      },
     },
   },
 };

@@ -100,6 +100,34 @@ describe('findCandidates', () => {
 
     expect(call.orderBy[0]).toHaveProperty('lastUsedAt');
   });
+
+  /**
+   * The bug this pins: assetIds carries brand asset *set* ids — the same ids
+   * the asset selector's checkboxes send — not photograph ids. Filtering by
+   * the photograph's own id instead of its set's id matched nothing, so a
+   * hand-picked selection silently fell through to the whole shared library.
+   */
+  it('scopes to the hand-picked sets by their own id, not the photograph id', async () => {
+    await repository.findCandidates([], 'user-1', undefined, ['set-1', 'set-2']);
+
+    const where = prisma.brandAssetImage.findMany.mock.calls[0][0] as {
+      where: { id?: unknown; asset: { id?: unknown; groups?: unknown } };
+    };
+
+    expect(where.where.id).toBeUndefined();
+    expect(where.where.asset.id).toEqual({ in: ['set-1', 'set-2'] });
+  });
+
+  it('lets a hand-picked selection override the group library', async () => {
+    await repository.findCandidates([], 'user-1', 'group-1', ['set-1']);
+
+    const where = prisma.brandAssetImage.findMany.mock.calls[0][0] as {
+      where: { asset: { id?: unknown; groups?: unknown } };
+    };
+
+    expect(where.where.asset.id).toEqual({ in: ['set-1'] });
+    expect(where.where.asset.groups).toBeUndefined();
+  });
 });
 
 describe('recordUse', () => {

@@ -76,14 +76,22 @@ export class BrandAssetRepository {
    * A brand with sets of its own draws only from them; a brand with none falls
    * back to every approved set, so leaving it unassigned keeps the shared pool.
    */
-  async findCandidates(subjects: string[], userId: string, groupId?: string) {
+  async findCandidates(subjects: string[], userId: string, groupId?: string, assetIds?: string[]) {
+    // assetIds names sets picked by hand — it overrides the group's library.
+    let setScope: Prisma.BrandAssetWhereInput = {};
+    if (assetIds?.length) {
+      setScope = { id: { in: assetIds } };
+    } else if (groupId) {
+      setScope = { groups: { some: { groupId } } };
+    }
+
     const where: Prisma.BrandAssetImageWhereInput = {
       ...(subjects.length ? { subjects: { hasSome: subjects } } : {}),
       asset: {
         kind: 'photo',
         approved: true,
         ...visibleTo(userId),
-        ...(groupId ? { groups: { some: { groupId } } } : {}),
+        ...setScope,
       },
     };
 

@@ -136,7 +136,7 @@ export class PostAgentService {
       runId,
       AGENT_STEP_KEYS.art,
       RUN_STATE_KEYS.art,
-      () => this.artDirection.assignPhotos(copy, userId, brief.groupId),
+      () => this.artDirection.assignPhotos(copy, userId, brief.groupId, brief.assetIds),
       assigned => {
         const photos = pluralise(assigned.assetIds.length, 'photograph');
         return assigned.reused ? `${photos} · ${assigned.reused} reused` : photos;

@@ -79,5 +79,5 @@ jobs:
             #   npm run db:deploy
 
             docker compose up -d
-            docker compose ps
+            docker compose ps content_service_production
             docker image prune -af

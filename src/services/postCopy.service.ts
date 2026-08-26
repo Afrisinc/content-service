@@ -133,7 +133,7 @@ function extractJson(raw: string): unknown {
   }
 }
 
-function briefPrompt(brief: PostBriefPayload, complaint?: string): string {
+export function briefPrompt(brief: PostBriefPayload, complaint?: string): string {
   const format = brief.format ?? 'post';
   const formatNote =
     format === 'story' ? STORY_BRIEF_NOTE : format === 'single' ? SINGLE_BRIEF_NOTE : '';
@@ -143,6 +143,8 @@ function briefPrompt(brief: PostBriefPayload, complaint?: string): string {
     brief.serviceLine ? `Service line: ${brief.serviceLine}` : '',
     brief.offer ? `Offer to lead the CTA with: ${brief.offer}` : '',
     brief.audience ? `Audience: ${brief.audience}` : '',
+    brief.keywords ? `Keywords or hashtags to weave in: ${brief.keywords}` : '',
+    brief.link ? `Reference link the CTA can point to: ${brief.link}` : '',
     `Slides: exactly ${slideCountFor(format, brief.slideCount)}`,
     '',
     'Return JSON in exactly this shape:',

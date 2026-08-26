@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../database/prismaClient';
+import { logger } from '@/utils/logger';
 
 export class UserRepository {
   async findByEmail(email: string) {
@@ -9,10 +11,30 @@ export class UserRepository {
   async ensureUser(id: string, email: string, name?: string) {
     const existingById = await prisma.user.findUnique({ where: { id } });
     if (existingById) {
+      const patch: Prisma.UserUpdateInput = {};
       if (name && !existingById.name) {
-        return prisma.user.update({ where: { id }, data: { name } });
+        patch.name = name;
       }
-      return existingById;
+      if (email && email !== existingById.email) {
+        patch.email = email;
+      }
+
+      if (Object.keys(patch).length === 0) {
+        return existingById;
+      }
+
+      try {
+        return await prisma.user.update({ where: { id }, data: patch });
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          logger.warn(
+            { userId: id, email },
+            'Skipped email sync on ensureUser: email already in use by another user'
+          );
+          return existingById;
+        }
+        throw error;
+      }
     }
 
     const existingByEmail = await prisma.user.findUnique({ where: { email } });

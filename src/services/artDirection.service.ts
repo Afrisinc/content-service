@@ -14,6 +14,12 @@ interface CandidatePhoto {
   id: string;
   reference: string;
   url: string;
+  subjects: string[];
+}
+
+/** Case- and whitespace-insensitive, so "Office" tags a photo an LLM calls "office". */
+function normalizeSubject(subject: string): string {
+  return subject.trim().toLowerCase();
 }
 
 /**
@@ -35,8 +41,16 @@ export class ArtDirectionService {
   /**
    * @param groupId the brand being published for. Its own library wins; a brand
    * with none falls back to the shared pool.
+   * @param assetIds brand asset sets picked by hand for this post — the same
+   * ids the asset selector's checkboxes carry. When given, they replace the
+   * group's library as the pool every slide draws from.
    */
-  async assignPhotos(copy: PostCopy, userId: string, groupId?: string): Promise<PhotoAssignment> {
+  async assignPhotos(
+    copy: PostCopy,
+    userId: string,
+    groupId?: string,
+    assetIds?: string[]
+  ): Promise<PhotoAssignment> {
     // A one-frame post has no proof slide, so the single frame is the photo
     // slide. A pair opens on azure and closes on a photograph, so only its
     // second frame wants one.
@@ -52,16 +66,25 @@ export class ArtDirectionService {
     }
 
     // Resolved once: asking per slide would hit the database for every frame.
+    // An explicit selection already is the pool, so the group lookup is skipped.
     const library =
-      groupId && (await this.assets.countForGroup(groupId, userId)) > 0 ? groupId : undefined;
+      !assetIds?.length && groupId && (await this.assets.countForGroup(groupId, userId)) > 0
+        ? groupId
+        : undefined;
 
     const photosByIndex: Record<number, string> = {};
-    const assetIds: string[] = [];
+    const chosenIds: string[] = [];
     const taken = new Set<string>();
     let reused = 0;
 
     for (const { slide, index } of photoSlides) {
-      const chosen = await this.pickPhoto(slide.photoSubjects ?? [], taken, userId, library);
+      const chosen = await this.pickPhoto(
+        slide.photoSubjects ?? [],
+        taken,
+        userId,
+        library,
+        assetIds
+      );
 
       if (!chosen) {
         // A single post reads perfectly well on azure, so a bare library is not fatal.
@@ -78,7 +101,7 @@ export class ArtDirectionService {
         reused += 1;
       } else {
         taken.add(chosen.id);
-        assetIds.push(chosen.id);
+        chosenIds.push(chosen.id);
       }
 
       photosByIndex[index] = photoReference(chosen);
@@ -86,12 +109,12 @@ export class ArtDirectionService {
 
     if (reused > 0) {
       logger.info(
-        { reused, distinct: assetIds.length, slides: photoSlides.length },
+        { reused, distinct: chosenIds.length, slides: photoSlides.length },
         'Brand asset library too small for a distinct photograph per slide'
       );
     }
 
-    return { photosByIndex, assetIds, reused };
+    return { photosByIndex, assetIds: chosenIds, reused };
   }
 
   /**
@@ -101,26 +124,40 @@ export class ArtDirectionService {
    * Neither an off-subject photograph nor a repeated one is worth failing a post
    * over — a library with two photo slides and one approved image is the normal
    * state of a young workspace, not an error. Only a genuinely empty library is.
+   *
+   * The subject match happens here, in application code, rather than as a
+   * database filter: tags are typed by hand and the LLM invents its own nouns
+   * per slide, so comparing them case- and whitespace-insensitively catches
+   * "Office" against "office" that an exact array-overlap filter would miss.
    */
   private async pickPhoto(
     subjects: string[],
     taken: Set<string>,
     userId: string,
-    groupId?: string
+    groupId?: string,
+    assetIds?: string[]
   ): Promise<CandidatePhoto | null> {
-    const onSubject = subjects.length
-      ? await this.assets.findCandidates(subjects, userId, groupId)
-      : [];
+    const pool = await this.assets.findCandidates([], userId, groupId, assetIds);
+    const available = pool.filter(asset => !taken.has(asset.id));
 
-    const freshOnSubject = onSubject.find(asset => !taken.has(asset.id));
-    if (freshOnSubject) {
-      return freshOnSubject;
+    if (subjects.length) {
+      const wanted = new Set(subjects.map(normalizeSubject));
+      const onSubject = available.find(asset =>
+        asset.subjects.some(tag => wanted.has(normalizeSubject(tag)))
+      );
+      if (onSubject) {
+        return onSubject;
+      }
+
+      if (pool.length) {
+        logger.info(
+          { subjects, userId, groupId },
+          'No brand asset photograph matched these subjects — using any approved photo instead'
+        );
+      }
     }
 
-    const anyApproved = await this.assets.findCandidates([], userId, groupId);
-    return (
-      anyApproved.find(asset => !taken.has(asset.id)) ?? onSubject[0] ?? anyApproved[0] ?? null
-    );
+    return available[0] ?? pool[0] ?? null;
   }
 
   async recordUse(assetIds: string[]): Promise<void> {
