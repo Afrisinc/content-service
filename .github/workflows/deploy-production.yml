@@ -78,15 +78,30 @@ jobs:
             #   content_service_production \
             #   npm run db:deploy
 
-            # --wait-timeout fails fast with a real exit code once the stack's
-            # healthchecks settle, instead of hanging until the SSH action's own
-            # 10-minute command_timeout kills the job with no explanation.
-            if ! docker compose up -d --wait --wait-timeout 120; then
-              echo "::error::Stack did not report healthy in time — dumping logs"
-              docker compose ps
-              docker compose logs --tail=100
-              exit 1
-            fi
+            # content_service_production depends_on render's healthcheck, so
+            # `docker compose up -d` for the whole stack blocks on it regardless
+            # of --wait. Starting render on its own and polling it ourselves —
+            # with real output every few seconds — keeps the SSH connection from
+            # going quiet long enough to be dropped as idle, which is what was
+            # silently killing this step before any of our own timeouts fired.
+            docker compose up -d --no-deps render_service_production
 
+            RENDER_WAIT_SECONDS=180
+            elapsed=0
+            echo "Waiting for render_service_production to report healthy..."
+            while [ "$(docker inspect -f '{{.State.Health.Status}}' render_service_production 2>/dev/null)" != "healthy" ]; do
+              if [ "$elapsed" -ge "$RENDER_WAIT_SECONDS" ]; then
+                echo "::error::render_service_production did not report healthy within ${RENDER_WAIT_SECONDS}s"
+                docker compose ps
+                docker compose logs --tail=100 render_service_production
+                exit 1
+              fi
+              sleep 10
+              elapsed=$((elapsed + 10))
+              echo "  ...still waiting (${elapsed}s elapsed)"
+            done
+            echo "render_service_production is healthy after ${elapsed}s"
+
+            docker compose up -d
             docker compose ps content_service_production
             docker image prune -af
