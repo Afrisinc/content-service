@@ -49,15 +49,24 @@ jobs:
           docker push ghcr.io/${{ secrets.GHCR_OWNER }}/render-service:${{ steps.meta.outputs.short_sha }}
           docker push ghcr.io/${{ secrets.GHCR_OWNER }}/render-service:${{ steps.meta.outputs.env_tag }}
 
-      - name: Deploy to Server
-        uses: appleboy/ssh-action@master
+      # A prior version of this job ran the whole deploy — including the wait for
+      # render's healthcheck — inside one long SSH session. That kept dying at a
+      # fixed ~70-100s regardless of activity (it happened even with real output
+      # printed every 10s, which rules out an idle-connection drop), well short
+      # of any timeout this workflow configures. Something about this session —
+      # the action's own keepalive, or the network path to the VPS — cannot be
+      # trusted to survive past about a minute. So the long-running part now
+      # runs detached on the server, and a separate step polls it with short,
+      # independent connections instead of one held-open session.
+      - name: Kick off deployment on server
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
           timeout: 30s
-          command_timeout: 10m
+          command_timeout: 2m
 
           # PASS DEPLOY CREDS TO VPS
           envs: DEPLOY_GHCR_USERNAME,DEPLOY_GHCR_TOKEN
@@ -78,30 +87,68 @@ jobs:
             #   content_service_production \
             #   npm run db:deploy
 
+            rm -f deploy-status.txt deploy.log
+
             # content_service_production depends_on render's healthcheck, so
-            # `docker compose up -d` for the whole stack blocks on it regardless
-            # of --wait. Starting render on its own and polling it ourselves —
-            # with real output every few seconds — keeps the SSH connection from
-            # going quiet long enough to be dropped as idle, which is what was
-            # silently killing this step before any of our own timeouts fired.
-            docker compose up -d --no-deps render_service_production
+            # `docker compose up -d` for the whole stack would block on it here
+            # too. Backgrounded, detached from this SSH session entirely: this
+            # step only has to survive long enough to start it.
+            nohup bash -c '
+              set -e
+              docker compose up -d --no-deps render_service_production
 
-            RENDER_WAIT_SECONDS=180
-            elapsed=0
-            echo "Waiting for render_service_production to report healthy..."
-            while [ "$(docker inspect -f '{{.State.Health.Status}}' render_service_production 2>/dev/null)" != "healthy" ]; do
-              if [ "$elapsed" -ge "$RENDER_WAIT_SECONDS" ]; then
-                echo "::error::render_service_production did not report healthy within ${RENDER_WAIT_SECONDS}s"
-                docker compose ps
-                docker compose logs --tail=100 render_service_production
-                exit 1
-              fi
-              sleep 10
-              elapsed=$((elapsed + 10))
-              echo "  ...still waiting (${elapsed}s elapsed)"
-            done
-            echo "render_service_production is healthy after ${elapsed}s"
+              elapsed=0
+              while [ "$(docker inspect -f "{{.State.Health.Status}}" render_service_production 2>/dev/null)" != "healthy" ]; do
+                if [ "$elapsed" -ge 180 ]; then
+                  echo FAILED > deploy-status.txt
+                  docker compose logs --tail=100 render_service_production >> deploy.log 2>&1
+                  exit 1
+                fi
+                sleep 10
+                elapsed=$((elapsed + 10))
+              done
 
-            docker compose up -d
-            docker compose ps content_service_production
-            docker image prune -af
+              docker compose up -d
+              docker image prune -af
+              echo DONE > deploy-status.txt
+            ' > deploy.log 2>&1 &
+            disown
+
+            echo "Deploy kicked off in the background — polling for it next"
+
+      - name: Load deploy SSH key for polling
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Wait for deployment to finish
+        run: |
+          set -e
+          REMOTE="${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}"
+          APP_PATH="${{ secrets.VPS_APP_PATH }}/content-service/production"
+          SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
+
+          # Each check is its own short connection — nothing here holds one SSH
+          # session open across the whole wait, which is exactly what the
+          # previous approach couldn't survive.
+          for i in $(seq 1 40); do
+            STATUS=$(ssh $SSH_OPTS "$REMOTE" "cd $APP_PATH && cat deploy-status.txt 2>/dev/null || true")
+
+            if [ "$STATUS" = "DONE" ]; then
+              echo "Deploy finished successfully"
+              ssh $SSH_OPTS "$REMOTE" "cd $APP_PATH && docker compose ps content_service_production && rm -f deploy-status.txt deploy.log"
+              exit 0
+            fi
+
+            if [ "$STATUS" = "FAILED" ]; then
+              echo "::error::Deploy failed on the server — dumping its log"
+              ssh $SSH_OPTS "$REMOTE" "cd $APP_PATH && cat deploy.log && rm -f deploy-status.txt deploy.log"
+              exit 1
+            fi
+
+            echo "Still deploying... ($((i * 15))s elapsed)"
+            sleep 15
+          done
+
+          echo "::error::Deploy did not finish within 10 minutes"
+          exit 1
