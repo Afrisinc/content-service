@@ -1,7 +1,12 @@
 import Fastify from 'fastify';
 import { registerRoutes } from './routes';
 import { errorHandler } from './middlewares/errorHandler';
-import { registerCors, registerSwagger, registerGatewayGuard } from './plugins';
+import {
+  registerCors,
+  registerSwagger,
+  registerGatewayGuard,
+  registerEmptyJsonBodyParser,
+} from './plugins';
 
 const createApp = async () => {
   const app = Fastify({
@@ -15,6 +20,7 @@ const createApp = async () => {
   await registerCors(app);
   await registerSwagger(app);
   await registerGatewayGuard(app);
+  await registerEmptyJsonBodyParser(app);
 
   app.setErrorHandler(errorHandler);
 

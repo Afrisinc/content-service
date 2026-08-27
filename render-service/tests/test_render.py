@@ -72,6 +72,19 @@ def test_impossible_content_raises_rather_than_colliding():
         slide.fit_stack(impossible, POST_GEO)
 
 
+def test_a_headline_line_too_wide_for_any_size_raises_rather_than_overflowing():
+    # A single unbroken line: headline lines are pre-split by the caller, so
+    # there is no word-wrap to fall back on if it is too wide even at the
+    # smallest size on the scale.
+    too_wide = SlideSpec(
+        surface="white",
+        eyebrow=Eyebrow(text="How we build", kind="label"),
+        headline=["Supercalifragilisticexpialidocioussupercalifragilisticexpialidocious"],
+    )
+    with pytest.raises(LayoutOverflowError):
+        slide.fit_stack(too_wide, POST_GEO)
+
+
 def test_coral_stays_inside_budget(cta_slide):
     image = _render(cta_slide)
     assert audit.coral_coverage(image) <= T.MAX_CORAL_COVERAGE

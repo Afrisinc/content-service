@@ -93,11 +93,21 @@ def build_stack(spec: SlideSpec, headline_size: int) -> C.Stack:
 
 
 def fit_stack(spec: SlideSpec, geo: Geometry) -> tuple[C.Stack, int]:
-    """Shrink the headline through the scale until the whole stack clears the contact rail."""
+    """Shrink the headline through the scale until every line clears the content
+    width and the whole stack clears the contact rail.
+
+    `ty.headline_size` falls back to the smallest size on the scale when no size
+    makes every line fit width-wise — it never invents a size off-scale, so that
+    fallback is not a real fit. Re-checking width here (not just stack height)
+    means that case raises below instead of silently drawing a line past the
+    right margin.
+    """
     natural = ty.headline_size(spec.headline, geo.content_width)
     candidates = [size for size in T.HEADLINE_SIZES if size <= natural]
 
     for size in candidates:
+        if not all(ty.fits(line, ty.BOLD, size, geo.content_width) for line in spec.headline):
+            continue
         stack = build_stack(spec, size)
         if stack.height(geo) <= geo.band_height:
             return stack, size
