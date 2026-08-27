@@ -4,7 +4,7 @@ import { env } from '@/config/env';
 import { logger } from '@/utils/logger.js';
 
 const TIMESTAMP_TOLERANCE = 300;
-const PUBLIC_PATHS = ['/health', '/docs', '/uploads', '/favicon.ico'];
+const PUBLIC_PATHS = ['/health', '/live', '/ready', '/docs', '/uploads', '/favicon.ico'];
 
 const isPublicPath = (url: string): boolean => {
   const path = url.split('?')[0];
