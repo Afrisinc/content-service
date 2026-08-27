@@ -49,13 +49,13 @@ jobs:
           docker push ghcr.io/${{ secrets.GHCR_OWNER }}/render-service:${{ steps.meta.outputs.short_sha }}
           docker push ghcr.io/${{ secrets.GHCR_OWNER }}/render-service:${{ steps.meta.outputs.env_tag }}
 
-      # A prior version of this job ran the whole deploy — including the wait for
-      # render's healthcheck — inside one long SSH session. That kept dying at a
-      # fixed ~70-100s regardless of activity (it happened even with real output
-      # printed every 10s, which rules out an idle-connection drop), well short
-      # of any timeout this workflow configures. Something about this session —
-      # the action's own keepalive, or the network path to the VPS — cannot be
-      # trusted to survive past about a minute. So the long-running part now
+      # A prior version of this job ran the whole deploy — including `docker
+      # compose pull` and the wait for render's healthcheck — inside one long
+      # SSH session. That kept dying well short of any timeout this workflow
+      # configures. The VPS runs this deploy alongside ~20 other services on
+      # 4 vCPUs and is routinely overloaded (load average in the double
+      # digits), so neither the pull nor the session itself can be trusted to
+      # finish quickly or survive a held-open connection. So everything slow
       # runs detached on the server, and a separate step polls it with short,
       # independent connections instead of one held-open session.
       - name: Kick off deployment on server
@@ -77,24 +77,30 @@ jobs:
 
             echo "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u "$DEPLOY_GHCR_USERNAME" --password-stdin
 
-            docker compose pull
-
-            # Migrations run before the new image serves traffic, as a one-off
-            # container: a failed migration stops the deploy instead of leaving
-            # the app up against a schema it cannot read. --no-deps keeps it from
-            # starting the render service just to run prisma.
-            # docker compose run --rm --no-deps --entrypoint "" \
-            #   content_service_production \
-            #   npm run db:deploy
-
             rm -f deploy-status.txt deploy.log
 
+            # docker compose pull used to run here, synchronously. On this host
+            # a pull for both images can take longer than this step's
+            # command_timeout on its own — nothing to do with the healthcheck
+            # wait below. It's now inside the same backgrounded block so the
+            # foreground SSH step never has to survive it.
+            #
             # content_service_production depends_on render's healthcheck, so
             # `docker compose up -d` for the whole stack would block on it here
             # too. Backgrounded, detached from this SSH session entirely: this
             # step only has to survive long enough to start it.
             nohup bash -c '
               set -e
+              docker compose pull
+
+              # Migrations run before the new image serves traffic, as a one-off
+              # container: a failed migration stops the deploy instead of leaving
+              # the app up against a schema it cannot read. --no-deps keeps it from
+              # starting the render service just to run prisma.
+              # docker compose run --rm --no-deps --entrypoint "" \
+              #   content_service_production \
+              #   npm run db:deploy
+
               docker compose up -d --no-deps render_service_production
 
               elapsed=0
@@ -130,8 +136,10 @@ jobs:
 
           # Each check is its own short connection — nothing here holds one SSH
           # session open across the whole wait, which is exactly what the
-          # previous approach couldn't survive.
-          for i in $(seq 1 40); do
+          # previous approach couldn't survive. The budget below (15 minutes)
+          # has to cover docker compose pull too now, and pulls on this host
+          # have been observed to run past 2 minutes on their own.
+          for i in $(seq 1 60); do
             STATUS=$(ssh $SSH_OPTS "$REMOTE" "cd $APP_PATH && cat deploy-status.txt 2>/dev/null || true")
 
             if [ "$STATUS" = "DONE" ]; then
@@ -150,5 +158,5 @@ jobs:
             sleep 15
           done
 
-          echo "::error::Deploy did not finish within 10 minutes"
+          echo "::error::Deploy did not finish within 15 minutes"
           exit 1
