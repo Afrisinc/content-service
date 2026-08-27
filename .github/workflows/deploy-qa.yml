@@ -30,24 +30,40 @@ jobs:
           username: ${{ secrets.GHCR_OWNER }}
           password: ${{ secrets.GHCR_TOKEN }}
 
+      # Plain `docker build` on a fresh ubuntu-latest VM has no cache to draw
+      # on, so `yarn install` / `pip install` reran from scratch and produced a
+      # brand-new layer digest on every single deploy, even when dependencies
+      # hadn't changed. That forced a full re-download of both fat dependency
+      # layers on every deploy, not just the first — this is the actual reason
+      # deploys have kept timing out. GHA-backed Buildx cache makes those
+      # layers reproducible across runs, so the VPS pull below only fetches
+      # what actually changed.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push content-service
-        run: |
-          docker build \
-            -t ghcr.io/${{ secrets.GHCR_OWNER }}/content-service:${{ steps.meta.outputs.short_sha }} \
-            -t ghcr.io/${{ secrets.GHCR_OWNER }}/content-service:${{ steps.meta.outputs.env_tag }} .
-          docker push ghcr.io/${{ secrets.GHCR_OWNER }}/content-service:${{ steps.meta.outputs.short_sha }}
-          docker push ghcr.io/${{ secrets.GHCR_OWNER }}/content-service:${{ steps.meta.outputs.env_tag }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ secrets.GHCR_OWNER }}/content-service:${{ steps.meta.outputs.short_sha }}
+            ghcr.io/${{ secrets.GHCR_OWNER }}/content-service:${{ steps.meta.outputs.env_tag }}
+          cache-from: type=gha,scope=content-service-qa
+          cache-to: type=gha,mode=max,scope=content-service-qa
 
       # Built from ./render-service: its Dockerfile copies requirements.txt and
       # afrisinc_render relative to that directory, not to the repo root.
       - name: Build and push render-service
-        run: |
-          docker build \
-            -t ghcr.io/${{ secrets.GHCR_OWNER }}/render-service:${{ steps.meta.outputs.short_sha }} \
-            -t ghcr.io/${{ secrets.GHCR_OWNER }}/render-service:${{ steps.meta.outputs.env_tag }} \
-            ./render-service
-          docker push ghcr.io/${{ secrets.GHCR_OWNER }}/render-service:${{ steps.meta.outputs.short_sha }}
-          docker push ghcr.io/${{ secrets.GHCR_OWNER }}/render-service:${{ steps.meta.outputs.env_tag }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ./render-service
+          push: true
+          tags: |
+            ghcr.io/${{ secrets.GHCR_OWNER }}/render-service:${{ steps.meta.outputs.short_sha }}
+            ghcr.io/${{ secrets.GHCR_OWNER }}/render-service:${{ steps.meta.outputs.env_tag }}
+          cache-from: type=gha,scope=render-service-qa
+          cache-to: type=gha,mode=max,scope=render-service-qa
 
       - name: Deploy to Server
         uses: appleboy/ssh-action@master
