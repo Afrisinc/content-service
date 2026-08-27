@@ -259,6 +259,23 @@ describe('an unusable response', () => {
     ).rejects.toThrow(/could not produce usable copy in 3 attempts.*did not return JSON/s);
   });
 
+  it('retries a headline line too long for render, instead of reaching render at all', async () => {
+    // This is the bug from the "content does not fit the post band even at
+    // 69px" render failure: a run-on headline line validated here and only
+    // blew up after a full render+audit cycle. It should be caught here.
+    const tooLong = JSON.parse(VALID);
+    tooLong.slides[0].headline = [
+      'It handles stock checks, hours, and specs before ringing anyone',
+    ];
+    const { service, spy } = serviceReturning(JSON.stringify(tooLong), VALID);
+
+    const result = await service.generate({ topic: 'Board level laptop repair for schools' });
+
+    expect(result.attempts).toBe(2);
+    const [, complaint] = spy.mock.calls[1] as unknown as [unknown, string];
+    expect(complaint).toMatch(/headline/);
+  });
+
   it('does not swallow a genuine outage', async () => {
     const service = new PostCopyService();
     vi.spyOn(service as never, 'callModel' as never).mockRejectedValue(

@@ -1,3 +1,4 @@
+import { nodeServices } from '@/adapters/nodes/nodeServices';
 import {
   BANNED_CONSTRUCTIONS,
   BANNED_WORDS,
@@ -9,9 +10,8 @@ import {
   STORY_BRIEF_NOTE,
   VOICE_PROMPT,
 } from '@/brand/afrisinc.brand';
-import { nodeServices } from '@/adapters/nodes/nodeServices';
 import { env } from '@/config/env';
-import { ClaudeNode, claudeCredentialsFromEnv, runClaude } from '@/nodes';
+import { claudeCredentialsFromEnv, ClaudeNode, runClaude } from '@/nodes';
 import { PostBriefPayload, PostCopy, PostFormatName } from '@/types/post.types';
 import { BadRequestError, ServerError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
@@ -26,7 +26,7 @@ const slideSchema = z.object({
   role: z.enum(['hook', 'proof', 'method', 'differentiator', 'cta']),
   eyebrow: z.string().min(2).max(48),
   eyebrowKind: z.enum(['label', 'claim']),
-  headline: z.array(z.string().min(1)).min(1).max(4),
+  headline: z.array(z.string().min(1).max(34)).min(1).max(4),
   subs: z.array(z.string().min(2)).max(2).optional(),
   rows: z.array(rowSchema).optional(),
   closing: z.string().max(90).optional(),
