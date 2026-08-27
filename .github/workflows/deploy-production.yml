@@ -89,7 +89,19 @@ jobs:
             # `docker compose up -d` for the whole stack would block on it here
             # too. Backgrounded, detached from this SSH session entirely: this
             # step only has to survive long enough to start it.
-            nohup bash -c '
+            #
+            # `nohup ... &` alone does NOT detach this from the SSH session: it
+            # only redirects stdout/stderr and ignores SIGHUP, but the child still
+            # inherits fd 0 (stdin) from the session's pty. sshd can keep the
+            # channel open until every process holding that pty has exited, so
+            # this step's own command_timeout was racing the backgrounded pull —
+            # which is exactly what showed up live in this step's log instead of
+            # staying invisible in deploy.log. `setsid` starts a real new session,
+            # fully detached from the controlling terminal, and `</dev/null`
+            # closes the last tie to the pty (stdin) — together these guarantee
+            # this step returns as soon as the script below is launched, instead
+            # of depending on timing.
+            setsid nohup bash -c '
               set -e
               docker compose pull
 
@@ -133,7 +145,7 @@ jobs:
                   | grep -v ":${{ steps.meta.outputs.short_sha }}$" \
                   | xargs -r docker rmi -f
               done || true
-            ' > deploy.log 2>&1 &
+            ' < /dev/null > deploy.log 2>&1 &
             disown
 
             echo "Deploy kicked off in the background — polling for it next"
