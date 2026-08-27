@@ -80,4 +80,15 @@ jobs:
 
             docker compose up -d
             docker compose ps
-            docker image prune -af
+
+            # Scoped to this project's own two repos rather than `-af`, which scans
+            # every image on the host — this VPS runs ~20 other services, so a global
+            # prune can both take unpredictably long and reap an unrelated service's
+            # image mid-restart. `|| true` so a cleanup hiccup never reports the
+            # deploy itself as failed.
+            for repo in content-service render-service; do
+              docker images "ghcr.io/${{ secrets.GHCR_OWNER }}/$repo" --format "{{.Repository}}:{{.Tag}}" \
+                | grep -v ":qa$" \
+                | grep -v ":${{ steps.meta.outputs.short_sha }}$" \
+                | xargs -r docker rmi -f
+            done || true

@@ -115,8 +115,24 @@ jobs:
               done
 
               docker compose up -d
-              docker image prune -af
               echo DONE > deploy-status.txt
+
+              # Cleanup runs after DONE is already written. `docker image prune -af`
+              # used to gate this status file, and on a host running ~20 other
+              # services under double-digit load it has been observed to run long
+              # enough on its own to blow through the polling budget below even
+              # after the deploy itself had already finished — bumping that budget
+              # once already didn't fix it, because prune's runtime is unbounded,
+              # not a one-off slow step like the pull or healthcheck above. `-a`
+              # also scans every image on the host, not just ours, risking an
+              # unrelated service's image mid-restart. Scoped here to just these
+              # two repos' old tags, and never allowed to affect the reported result.
+              for repo in content-service render-service; do
+                docker images "ghcr.io/${{ secrets.GHCR_OWNER }}/$repo" --format "{{.Repository}}:{{.Tag}}" \
+                  | grep -v ":production$" \
+                  | grep -v ":${{ steps.meta.outputs.short_sha }}$" \
+                  | xargs -r docker rmi -f
+              done || true
             ' > deploy.log 2>&1 &
             disown
 
