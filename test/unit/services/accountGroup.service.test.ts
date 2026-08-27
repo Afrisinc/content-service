@@ -230,6 +230,71 @@ describe('create', () => {
   });
 });
 
+describe('duplicate', () => {
+  it('clones config and photo library, leaving pages out', async () => {
+    const { service, assets } = build();
+
+    const dto = await service.duplicate('user-1', 'group-1');
+
+    const created = await vi.mocked(prisma.$transaction).mock.results[0].value;
+    expect(created.name).toBe('AFRISINC copy');
+    expect(assets.assignToGroup).toHaveBeenCalledWith('group-1', ['asset-1'], expect.anything());
+    expect(dto.id).toBe('group-1');
+  });
+
+  it('never makes the clone the default, even when the source was', async () => {
+    const { service } = build({ isDefault: true });
+
+    await service.duplicate('user-1', 'group-1');
+
+    const created = await vi.mocked(prisma.$transaction).mock.results[0].value;
+    expect(created.isDefault).toBe(false);
+  });
+
+  it('carries the cadence forward unchanged', async () => {
+    const { service } = build({
+      autopilotEnabled: true,
+      slotWeekdays: '1,3',
+      slotHour: 7,
+      postsPerRun: 2,
+    });
+
+    await service.duplicate('user-1', 'group-1');
+
+    const created = await vi.mocked(prisma.$transaction).mock.results[0].value;
+    expect(created.autopilotEnabled).toBe(true);
+    expect(created.slotWeekdays).toBe('1,3');
+    expect(created.slotHour).toBe(7);
+    expect(created.postsPerRun).toBe(2);
+  });
+
+  it('skips asset assignment when the source has no photographs', async () => {
+    const { service, assets } = build();
+    assets.findByGroup.mockResolvedValueOnce([]);
+
+    await service.duplicate('user-1', 'group-1');
+
+    expect(assets.assignToGroup).not.toHaveBeenCalled();
+  });
+
+  it('refuses to duplicate past the per-workspace group cap', async () => {
+    const { service, groups } = build();
+    groups.countByUser.mockResolvedValueOnce(50 as never);
+
+    await expect(service.duplicate('user-1', 'group-1')).rejects.toThrow(ConflictError);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('404s when duplicating a group the caller does not own', async () => {
+    const { service, groups, assets } = build();
+    groups.findByIdForUser.mockResolvedValueOnce(null as never);
+
+    await expect(service.duplicate('user-1', 'group-1')).rejects.toThrow(NotFoundError);
+    expect(assets.findByGroup).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
 describe('update', () => {
   it('reslugs only when the name actually changed', async () => {
     const { service, groups } = build();

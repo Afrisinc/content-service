@@ -44,6 +44,12 @@ export async function updateAccountGroup(request: FastifyRequest, reply: Fastify
   return success(reply, 200, `${group.name} updated`, 1002, group);
 }
 
+export async function duplicateAccountGroup(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as GroupParams;
+  const group = await accountGroupService.duplicate(requireUserId(request), id);
+  return success(reply, 201, `${group.name} created`, 1001, group);
+}
+
 export async function deleteAccountGroup(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as GroupParams;
   await accountGroupService.remove(requireUserId(request), id);

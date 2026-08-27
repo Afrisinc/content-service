@@ -5,6 +5,7 @@ import {
   unassignGroupAsset,
   createAccountGroup,
   deleteAccountGroup,
+  duplicateAccountGroup,
   getAccountGroup,
   getGroupTargets,
   listAccountGroups,
@@ -21,6 +22,7 @@ import {
   UnassignGroupAssetSchema,
   CreateAccountGroupSchema,
   DeleteAccountGroupSchema,
+  DuplicateAccountGroupSchema,
   GetAccountGroupSchema,
   GetGroupTargetsSchema,
   ListAccountGroupsSchema,
@@ -61,6 +63,12 @@ export async function accountGroupRoutes(app: FastifyInstance) {
     '/account-groups/:id',
     { schema: { ...DeleteAccountGroupSchema, tags: TAGS }, onRequest: [authGuard] },
     asyncWrapper(deleteAccountGroup)
+  );
+
+  app.post(
+    '/account-groups/:id/duplicate',
+    { schema: { ...DuplicateAccountGroupSchema, tags: TAGS }, onRequest: [authGuard] },
+    asyncWrapper(duplicateAccountGroup)
   );
 
   app.post(

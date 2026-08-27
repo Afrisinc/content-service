@@ -142,6 +142,56 @@ export class AccountGroupService {
     return toAccountGroupDTO(await this.requireGroup(userId, group.id));
   }
 
+  /**
+   * A quick start for a new brand: clone an existing one's config and photo
+   * library. Pages are real connected accounts, so a clone leaves them out —
+   * the same page publishing under two brands would double its cadence.
+   */
+  async duplicate(userId: string, groupId: string): Promise<AccountGroupDTO> {
+    const source = await this.requireGroup(userId, groupId);
+
+    const existingCount = await this.groups.countByUser(userId);
+    if (existingCount >= MAX_GROUPS_PER_USER) {
+      throw new ConflictError(`a workspace can hold at most ${MAX_GROUPS_PER_USER} groups`);
+    }
+
+    const name = `${source.name} copy`;
+    const slug = await this.uniqueSlug(userId, name);
+    const assetIds = (await this.assets.findByGroup(groupId, userId)).map(asset => asset.id);
+
+    const clone = await prisma.$transaction(async tx => {
+      const created = await tx.accountGroup.create({
+        data: {
+          userId,
+          slug,
+          name,
+          description: source.description,
+          color: source.color ?? 'azure',
+          isDefault: false,
+          topics: source.topics,
+          serviceLine: source.serviceLine,
+          audience: source.audience,
+          defaultFormat: source.defaultFormat,
+          slideCount: source.slideCount,
+          autopilotEnabled: source.autopilotEnabled,
+          slotWeekdays: source.slotWeekdays,
+          slotHour: source.slotHour,
+          timezone: source.timezone,
+          postsPerRun: source.postsPerRun,
+        },
+      });
+
+      if (assetIds.length) {
+        await this.assets.assignToGroup(created.id, assetIds, tx);
+      }
+
+      return created;
+    });
+
+    logger.info({ userId, sourceGroupId: groupId, groupId: clone.id }, 'Account group duplicated');
+    return toAccountGroupDTO(await this.requireGroup(userId, clone.id));
+  }
+
   async update(
     userId: string,
     groupId: string,

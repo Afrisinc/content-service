@@ -84,6 +84,13 @@ export const UpdateAccountGroupSchema = {
   },
 };
 
+export const DuplicateAccountGroupSchema = {
+  description:
+    'Clone a brand’s configuration and photo library into a new brand, ready to rename ' +
+    'and adjust. Connected pages are left out of the copy.',
+  params: idParams,
+};
+
 export const DeleteAccountGroupSchema = {
   description: 'Delete a brand group. The connected accounts themselves are left installed.',
   params: idParams,
