@@ -71,6 +71,33 @@ function readyClient(): Redis | null {
   return client?.status === 'ready' ? client : null;
 }
 
+export interface CacheCheckResult {
+  status: 'up' | 'down';
+  latencyMs?: number;
+  error?: string;
+}
+
+export async function checkCacheHealth(): Promise<CacheCheckResult> {
+  const redis = readyClient();
+  if (!redis) {
+    return { status: 'down', error: 'Redis not connected' };
+  }
+
+  const start = Date.now();
+  try {
+    const pong = await withTimeout(redis.ping());
+    if (pong === null) {
+      return { status: 'down', error: 'Redis ping timed out' };
+    }
+    return { status: 'up', latencyMs: Date.now() - start };
+  } catch (error) {
+    return {
+      status: 'down',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
 async function withTimeout<T>(operation: Promise<T>): Promise<T | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
 

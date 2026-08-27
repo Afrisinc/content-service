@@ -1,4 +1,5 @@
-import { HealthRouteSchema } from '@/schemas';
+import { HealthRouteSchema, LiveRouteSchema, ReadyRouteSchema } from '@/schemas';
+import { checkDBHealth, checkRedisHealth } from '@/utils/health.check';
 import { FastifyInstance } from 'fastify';
 import { accountGroupRoutes } from './accountGroup.routes';
 import { analyticsRoutes } from './analytics.routes';
@@ -23,6 +24,33 @@ export async function registerRoutes(app: FastifyInstance) {
     },
     async () => {
       return { status: 'ok', message: 'Server is running' };
+    }
+  );
+
+  app.get(
+    '/live',
+    {
+      schema: LiveRouteSchema,
+    },
+    async () => {
+      return { status: 'up' };
+    }
+  );
+
+  app.get(
+    '/ready',
+    {
+      schema: ReadyRouteSchema,
+    },
+    async (_request, reply) => {
+      const [dbResult, redisResult] = await Promise.all([checkDBHealth(), checkRedisHealth()]);
+      const allUp = dbResult.statusCode === 200;
+
+      reply.code(allUp ? 200 : 503).send({
+        status: allUp ? 'healthy' : 'degraded',
+        ...dbResult,
+        redis: redisResult.redis,
+      });
     }
   );
 

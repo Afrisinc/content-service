@@ -48,3 +48,40 @@ export const HealthResponseSchema = {
   },
   required: ['status', 'message'],
 } as const;
+
+export const LiveResponseSchema = {
+  type: 'object',
+  properties: {
+    status: {
+      type: 'string',
+      example: 'up',
+      description: 'Process liveness indicator',
+    },
+  },
+  required: ['status'],
+} as const;
+
+const CheckResultSchema = {
+  type: 'object',
+  properties: {
+    status: { type: 'string', enum: ['up', 'down'] },
+    latencyMs: { type: 'number' },
+    error: { type: 'string' },
+  },
+  required: ['status'],
+} as const;
+
+export const ReadyResponseSchema = {
+  type: 'object',
+  properties: {
+    status: {
+      type: 'string',
+      example: 'healthy',
+      description: 'Overall readiness indicator',
+    },
+    statusCode: { type: 'number' },
+    db: CheckResultSchema,
+    redis: CheckResultSchema,
+  },
+  required: ['status', 'db', 'redis'],
+} as const;
