@@ -3,7 +3,7 @@
  * Database operations for social media posts
  */
 
-import { PostFormat, PrismaClient } from '@prisma/client';
+import { PostFormat, Prisma, PrismaClient } from '@prisma/client';
 import { prisma } from '@/database/prismaClient';
 
 export class SocialMediaPostRepository {
@@ -122,9 +122,25 @@ export class SocialMediaPostRepository {
   /**
    * Get all posts with optional filters
    */
+  private applySearch(where: Prisma.SocialMediaPostWhereInput, search?: string): void {
+    const term = search?.trim();
+    if (!term) {
+      return;
+    }
+
+    where.OR = [
+      { message: { contains: term, mode: 'insensitive' } },
+      { caption: { contains: term, mode: 'insensitive' } },
+      { description: { contains: term, mode: 'insensitive' } },
+      { name: { contains: term, mode: 'insensitive' } },
+      { link: { contains: term, mode: 'insensitive' } },
+    ];
+  }
+
   async getAllPosts(options?: {
     platform?: string;
     status?: string;
+    search?: string;
     limit?: number;
     offset?: number;
   }) {
@@ -137,6 +153,8 @@ export class SocialMediaPostRepository {
     if (options?.status) {
       where.status = options.status;
     }
+
+    this.applySearch(where, options?.search);
 
     const [posts, total] = await Promise.all([
       this.prisma.socialMediaPost.findMany({
@@ -157,13 +175,6 @@ export class SocialMediaPostRepository {
       this.prisma.socialMediaPost.count({ where }),
     ]);
 
-    // Log raw Prisma response
-    console.log('🔍 PRISMA RAW RESPONSE:', {
-      postsCount: posts.length,
-      firstPostRaw: posts[0],
-      firstPostKeys: posts[0] ? Object.keys(posts[0]) : [],
-    });
-
     return {
       posts,
       total,
@@ -180,6 +191,7 @@ export class SocialMediaPostRepository {
     options?: {
       platform?: string;
       status?: string;
+      search?: string;
       limit?: number;
       offset?: number;
     }
@@ -193,6 +205,8 @@ export class SocialMediaPostRepository {
     if (options?.status) {
       where.status = options.status;
     }
+
+    this.applySearch(where, options?.search);
 
     const [posts, total] = await Promise.all([
       this.prisma.socialMediaPost.findMany({

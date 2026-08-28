@@ -744,6 +744,7 @@ export class SocialMediaService {
   async getAllPosts(filters?: {
     platform?: string;
     status?: string;
+    search?: string;
     limit?: number;
     offset?: number;
   }) {
@@ -758,6 +759,7 @@ export class SocialMediaService {
     filters?: {
       platform?: string;
       status?: string;
+      search?: string;
       limit?: number;
       offset?: number;
     }
@@ -981,6 +983,98 @@ export class SocialMediaService {
         message: `Unexpected error: ${errorMsg}`,
       };
     }
+  }
+
+  /**
+   * Reschedule a published post for reposting.
+   *
+   * Clones the published post's content into a new pending post rather than
+   * mutating the original, so the publish history and engagement metrics on
+   * the original stay intact. The cron job that publishes pending posts picks
+   * it up the same way it does any other scheduled post.
+   */
+  async repostPost(
+    postId: string,
+    userId: string,
+    scheduledAt?: number
+  ): Promise<SocialMediaPostResult> {
+    const existingPost = await socialMediaPostRepository.getPostById(postId);
+
+    if (!existingPost) {
+      return {
+        platform: SocialMediaPlatform.FACEBOOK,
+        postId,
+        status: 'failed',
+        message: 'Post not found',
+      };
+    }
+
+    if (existingPost.userId !== userId) {
+      return {
+        platform: existingPost.platform as SocialMediaPlatform,
+        postId,
+        status: 'failed',
+        message: "Unauthorized: Cannot repost another user's post",
+      };
+    }
+
+    if (existingPost.status !== 'published') {
+      return {
+        platform: existingPost.platform as SocialMediaPlatform,
+        postId,
+        status: 'failed',
+        message:
+          `Cannot repost a post with status '${existingPost.status}'. ` +
+          'Only published posts can be reposted.',
+      };
+    }
+
+    const dbPost = await socialMediaPostRepository.createPost({
+      userId,
+      platform: existingPost.platform,
+      pageId: existingPost.pageId,
+      message: existingPost.message ?? undefined,
+      link: existingPost.link ?? undefined,
+      description: existingPost.description ?? undefined,
+      picture: existingPost.picture ?? undefined,
+      name: existingPost.name ?? undefined,
+      caption: existingPost.caption ?? undefined,
+      tags: existingPost.tags,
+      postFormat: existingPost.postFormat ?? undefined,
+      mediaType: existingPost.mediaType ?? undefined,
+      mediaUrls: existingPost.mediaUrls,
+      altText: existingPost.altText ?? undefined,
+      scheduledAt: scheduledAt ? new Date(scheduledAt * 1000) : undefined,
+      ageMin: existingPost.ageMin ?? undefined,
+      ageMax: existingPost.ageMax ?? undefined,
+      genders: existingPost.genders,
+      countries: existingPost.countries,
+      regions: existingPost.regions,
+      cities: existingPost.cities,
+      interests: existingPost.interests,
+      keywords: existingPost.keywords,
+      aiGenerated: existingPost.aiGenerated,
+      aiProvider: existingPost.aiProvider ?? undefined,
+      aiModel: existingPost.aiModel ?? undefined,
+      aiPrompt: existingPost.aiPrompt ?? undefined,
+      status: 'pending',
+      accessTokenEnc: existingPost.accessTokenEnc ?? undefined,
+      metadata: existingPost.metadata ?? undefined,
+    });
+
+    logger.info(
+      { originalPostId: postId, dbPostId: dbPost.id, scheduledAt: dbPost.scheduledAt },
+      'Post rescheduled for repost'
+    );
+
+    return {
+      platform: dbPost.platform as SocialMediaPlatform,
+      postId: dbPost.id,
+      status: 'pending',
+      message: scheduledAt
+        ? 'Post scheduled for repost.'
+        : 'Post queued for repost. Will be published by the next scheduled run.',
+    };
   }
 }
 

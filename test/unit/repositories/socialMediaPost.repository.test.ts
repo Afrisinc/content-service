@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const findMany = vi.fn();
 const update = vi.fn();
+const count = vi.fn();
 
 vi.mock('@/database/prismaClient', () => ({
-  prisma: { socialMediaPost: { findMany, update } },
+  prisma: { socialMediaPost: { findMany, update, count } },
 }));
 
 const { SocialMediaPostRepository } = await import('@/repositories/socialMediaPost.repository');
@@ -86,5 +87,67 @@ describe('updatePost scheduling', () => {
     await repository.updatePost('post-1', { message: 'edited' });
 
     expect(update.mock.calls[0][0].data.scheduledAt).toBeUndefined();
+  });
+});
+
+describe('getAllPosts search and filters', () => {
+  const repository = new SocialMediaPostRepository();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    findMany.mockResolvedValue([]);
+    count.mockResolvedValue(0);
+  });
+
+  it('searches message, caption, description, name and link case-insensitively', async () => {
+    await repository.getAllPosts({ search: 'launch' });
+
+    const where = findMany.mock.calls[0][0].where;
+    expect(where.OR).toEqual([
+      { message: { contains: 'launch', mode: 'insensitive' } },
+      { caption: { contains: 'launch', mode: 'insensitive' } },
+      { description: { contains: 'launch', mode: 'insensitive' } },
+      { name: { contains: 'launch', mode: 'insensitive' } },
+      { link: { contains: 'launch', mode: 'insensitive' } },
+    ]);
+  });
+
+  it('combines search with platform and status filters rather than replacing them', async () => {
+    await repository.getAllPosts({ search: 'launch', platform: 'facebook', status: 'published' });
+
+    const where = findMany.mock.calls[0][0].where;
+    expect(where.platform).toBe('facebook');
+    expect(where.status).toBe('published');
+    expect(where.OR).toBeDefined();
+  });
+
+  it('omits the OR clause when no search term is given', async () => {
+    await repository.getAllPosts({ platform: 'facebook' });
+
+    expect(findMany.mock.calls[0][0].where.OR).toBeUndefined();
+  });
+
+  it('ignores a blank search term instead of matching everything', async () => {
+    await repository.getAllPosts({ search: '   ' });
+
+    expect(findMany.mock.calls[0][0].where.OR).toBeUndefined();
+  });
+});
+
+describe('getPostsByUser search', () => {
+  const repository = new SocialMediaPostRepository();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    findMany.mockResolvedValue([]);
+    count.mockResolvedValue(0);
+  });
+
+  it('scopes search to the given user as well as the search term', async () => {
+    await repository.getPostsByUser('user-1', { search: 'launch' });
+
+    const where = findMany.mock.calls[0][0].where;
+    expect(where.userId).toBe('user-1');
+    expect(where.OR).toBeDefined();
   });
 });

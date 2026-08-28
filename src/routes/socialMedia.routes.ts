@@ -8,7 +8,9 @@ import {
   PostToSocialMediaSchema,
   BatchPostToSocialMediaSchema,
   ListSocialMediaPostsSchema,
+  ListUserSocialMediaPostsSchema,
   PublishScheduledPostSchema,
+  RepostSocialMediaPostSchema,
 } from '@/schemas/requests/socialMedia.schema';
 import { FastifyInstance } from 'fastify';
 import {
@@ -19,6 +21,7 @@ import {
   getUserSocialMediaPosts,
   postToSocialMedia,
   publishScheduledPostNow,
+  repostSocialMediaPost,
   updateSocialMediaPost,
   validateSocialMediaPayload,
 } from '../controllers/socialMedia.controller';
@@ -70,7 +73,7 @@ export async function socialMediaRoutes(app: FastifyInstance) {
 
   app.get(
     '/social-media/user/posts',
-    { schema: GetSocialMediaPostSchema, onRequest: [authGuard] },
+    { schema: ListUserSocialMediaPostsSchema, onRequest: [authGuard] },
     asyncWrapper(getUserSocialMediaPosts)
   );
 
@@ -84,5 +87,11 @@ export async function socialMediaRoutes(app: FastifyInstance) {
       onRequest: [authGuard],
     },
     asyncWrapper(publishScheduledPostNow)
+  );
+
+  app.post(
+    '/social-media/posts/:postId/repost',
+    { schema: RepostSocialMediaPostSchema, onRequest: [authGuard] },
+    asyncWrapper(repostSocialMediaPost)
   );
 }

@@ -372,8 +372,12 @@ export const ListSocialMediaPostsSchema = {
       },
       status: {
         type: 'string',
-        enum: ['pending', 'published', 'failed', 'deleted'],
+        enum: ['pending', 'in_review', 'published', 'failed', 'deleted'],
         description: 'Filter by status',
+      },
+      search: {
+        type: 'string',
+        description: 'Search across message, caption, description, name and link',
       },
       limit: {
         type: 'number',
@@ -472,6 +476,98 @@ export const ListSocialMediaPostsSchema = {
             },
             offset: {
               type: 'number',
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
+export const ListUserSocialMediaPostsSchema = {
+  description: "List the authenticated user's social media posts with filtering",
+  tags: ['social-media'],
+  querystring: ListSocialMediaPostsSchema.querystring,
+  response: ListSocialMediaPostsSchema.response,
+};
+
+export const RepostSocialMediaPostSchema = {
+  description: 'Reschedule a published post as a new post so it can be reposted',
+  tags: ['social-media'],
+  params: {
+    type: 'object',
+    required: ['postId'],
+    properties: {
+      postId: {
+        type: 'string',
+        description: 'ID of the published post to repost',
+      },
+    },
+  },
+  body: {
+    type: 'object',
+    properties: {
+      scheduledAt: {
+        type: 'number',
+        description: 'Unix timestamp to schedule the repost for; omit to queue it for the next run',
+      },
+    },
+    additionalProperties: false,
+  },
+  response: {
+    201: {
+      type: 'object',
+      properties: {
+        success: {
+          type: 'boolean',
+        },
+        resp_msg: {
+          type: 'string',
+        },
+        resp_code: {
+          type: 'integer',
+        },
+        data: {
+          type: 'object',
+          properties: {
+            platform: {
+              type: 'string',
+            },
+            postId: {
+              type: 'string',
+            },
+            status: {
+              type: 'string',
+              enum: ['success', 'pending', 'failed'],
+            },
+            message: {
+              type: 'string',
+            },
+          },
+        },
+      },
+    },
+    400: {
+      type: 'object',
+      properties: {
+        success: {
+          type: 'boolean',
+        },
+        resp_msg: {
+          type: 'string',
+        },
+        resp_code: {
+          type: 'integer',
+        },
+        data: {
+          type: 'object',
+          properties: {
+            status: {
+              type: 'string',
+              enum: ['failed'],
+            },
+            message: {
+              type: 'string',
             },
           },
         },

@@ -116,11 +116,13 @@ export async function getAllSocialMediaPosts(req: FastifyRequest, reply: Fastify
   const {
     platform,
     status,
+    search,
     limit = 20,
     offset = 0,
   } = req.query as {
     platform?: string;
     status?: string;
+    search?: string;
     limit?: number;
     offset?: number;
   };
@@ -128,12 +130,10 @@ export async function getAllSocialMediaPosts(req: FastifyRequest, reply: Fastify
   const result = await service.getAllPosts({
     platform,
     status,
+    search,
     limit: Math.min(Number(limit), 100),
     offset: Number(offset),
   });
-
-  // Debug log to check what's in the data
-  logger.info({ postsCount: result.posts.length, firstPost: result.posts[0] }, 'Posts data');
 
   const msg = 'Posts retrieved successfully';
   return ApiResponseHelper.success(reply, msg, result, ResponseCode.SUCCESS, 200);
@@ -145,11 +145,13 @@ export async function getUserSocialMediaPosts(req: FastifyRequest, reply: Fastif
   const {
     platform,
     status,
+    search,
     limit = 20,
     offset = 0,
   } = req.query as {
     platform?: string;
     status?: string;
+    search?: string;
     limit?: number;
     offset?: number;
   };
@@ -157,6 +159,7 @@ export async function getUserSocialMediaPosts(req: FastifyRequest, reply: Fastif
   const result = await service.getUserPosts(userId, {
     platform,
     status,
+    search,
     limit: Math.min(Number(limit), 100),
     offset: Number(offset),
   });
@@ -237,4 +240,15 @@ export async function publishScheduledPostNow(req: FastifyRequest, reply: Fastif
 
   const statusCode = result.status === 'success' ? 200 : 400;
   return ApiResponseHelper.success(reply, result.message, result, ResponseCode.SUCCESS, statusCode);
+}
+
+export async function repostSocialMediaPost(req: FastifyRequest, reply: FastifyReply) {
+  const { postId } = req.params as { postId: string };
+  const userId = req.user?.userId;
+  const { scheduledAt } = (req.body as { scheduledAt?: number }) ?? {};
+
+  const result = await service.repostPost(postId, userId || '', scheduledAt);
+
+  const statusCode = result.status === 'failed' ? 400 : 201;
+  return ApiResponseHelper.success(reply, result.message, result, ResponseCode.CREATED, statusCode);
 }
