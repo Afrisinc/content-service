@@ -119,12 +119,16 @@ export async function getAllSocialMediaPosts(req: FastifyRequest, reply: Fastify
     search,
     limit = 20,
     offset = 0,
+    sort_by,
+    sort_order,
   } = req.query as {
     platform?: string;
     status?: string;
     search?: string;
     limit?: number;
     offset?: number;
+    sort_by?: 'createdAt' | 'scheduledAt' | 'publishedAt';
+    sort_order?: 'asc' | 'desc';
   };
 
   const result = await service.getAllPosts({
@@ -133,6 +137,8 @@ export async function getAllSocialMediaPosts(req: FastifyRequest, reply: Fastify
     search,
     limit: Math.min(Number(limit), 100),
     offset: Number(offset),
+    sortBy: sort_by,
+    sortOrder: sort_order,
   });
 
   const msg = 'Posts retrieved successfully';

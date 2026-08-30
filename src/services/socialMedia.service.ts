@@ -12,7 +12,10 @@ import {
 import { socialMediaHelper } from '@/helpers/socialMedia.helper';
 import { buildSocialMediaPayloadFromPost } from '@/helpers/socialMediaPayload.helper';
 import { selectPublishingAccount } from '@/helpers/socialMediaAccount.helper';
-import { socialMediaPostRepository } from '@/repositories/socialMediaPost.repository';
+import {
+  socialMediaPostRepository,
+  SocialMediaPostSortField,
+} from '@/repositories/socialMediaPost.repository';
 import { socialMediaAccountRepository } from '@/repositories/socialMediaAccount.repository';
 import { decryptToken, encryptToken } from '@/utils/oauthToken';
 import { logger } from '@/utils/logger';
@@ -747,6 +750,8 @@ export class SocialMediaService {
     search?: string;
     limit?: number;
     offset?: number;
+    sortBy?: SocialMediaPostSortField;
+    sortOrder?: 'asc' | 'desc';
   }) {
     return socialMediaPostRepository.getAllPosts(filters);
   }

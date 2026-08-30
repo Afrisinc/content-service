@@ -392,6 +392,16 @@ export const ListSocialMediaPostsSchema = {
         default: 0,
         description: 'Number of posts to skip',
       },
+      sort_by: {
+        type: 'string',
+        enum: ['createdAt', 'scheduledAt', 'publishedAt'],
+        description: 'Column to sort by',
+      },
+      sort_order: {
+        type: 'string',
+        enum: ['asc', 'desc'],
+        description: 'Sort direction',
+      },
     },
   },
   response: {

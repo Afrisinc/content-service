@@ -134,6 +134,44 @@ describe('getAllPosts search and filters', () => {
   });
 });
 
+describe('getAllPosts sorting', () => {
+  const repository = new SocialMediaPostRepository();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    findMany.mockResolvedValue([]);
+    count.mockResolvedValue(0);
+  });
+
+  it('defaults to newest-created-first when no sort is requested', async () => {
+    await repository.getAllPosts({});
+
+    expect(findMany.mock.calls[0][0].orderBy).toEqual({ createdAt: 'desc' });
+  });
+
+  it('sorts by createdAt ascending without a nulls clause, since createdAt is never null', async () => {
+    await repository.getAllPosts({ sortBy: 'createdAt', sortOrder: 'asc' });
+
+    expect(findMany.mock.calls[0][0].orderBy).toEqual({ createdAt: 'asc' });
+  });
+
+  it('sorts by scheduledAt, pushing posts with no schedule to the end', async () => {
+    await repository.getAllPosts({ sortBy: 'scheduledAt', sortOrder: 'asc' });
+
+    expect(findMany.mock.calls[0][0].orderBy).toEqual({
+      scheduledAt: { sort: 'asc', nulls: 'last' },
+    });
+  });
+
+  it('sorts by publishedAt, defaulting to descending when no order is given', async () => {
+    await repository.getAllPosts({ sortBy: 'publishedAt' });
+
+    expect(findMany.mock.calls[0][0].orderBy).toEqual({
+      publishedAt: { sort: 'desc', nulls: 'last' },
+    });
+  });
+});
+
 describe('getPostsByUser search', () => {
   const repository = new SocialMediaPostRepository();
 

@@ -6,6 +6,8 @@
 import { PostFormat, Prisma, PrismaClient } from '@prisma/client';
 import { prisma } from '@/database/prismaClient';
 
+export type SocialMediaPostSortField = 'createdAt' | 'scheduledAt' | 'publishedAt';
+
 export class SocialMediaPostRepository {
   private prisma: PrismaClient;
 
@@ -137,12 +139,27 @@ export class SocialMediaPostRepository {
     ];
   }
 
+  private buildOrderBy(
+    sortBy?: SocialMediaPostSortField,
+    sortOrder?: 'asc' | 'desc'
+  ): Prisma.SocialMediaPostOrderByWithRelationInput {
+    const order = sortOrder || 'desc';
+
+    if (!sortBy || sortBy === 'createdAt') {
+      return { createdAt: order };
+    }
+
+    return { [sortBy]: { sort: order, nulls: 'last' } };
+  }
+
   async getAllPosts(options?: {
     platform?: string;
     status?: string;
     search?: string;
     limit?: number;
     offset?: number;
+    sortBy?: SocialMediaPostSortField;
+    sortOrder?: 'asc' | 'desc';
   }) {
     const where: any = {};
 
@@ -161,7 +178,7 @@ export class SocialMediaPostRepository {
         where,
         skip: options?.offset || 0,
         take: options?.limit || 50,
-        orderBy: { createdAt: 'desc' },
+        orderBy: this.buildOrderBy(options?.sortBy, options?.sortOrder),
         include: {
           user: {
             select: {
