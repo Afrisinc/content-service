@@ -793,7 +793,8 @@ export class SocialMediaService {
     // Only allow updating pending posts
     if (existingPost.status !== 'pending') {
       throw new Error(
-        `Cannot update post with status '${existingPost.status}'. Only pending posts can be updated.`
+        `Cannot update post with status '${existingPost.status}'. ` +
+          'Only pending posts can be updated.'
       );
     }
 

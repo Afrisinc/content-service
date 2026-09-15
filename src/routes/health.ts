@@ -146,8 +146,6 @@ function checkDisk(): {
   status: 'healthy' | 'warning' | 'critical';
   usage?: { used: number; total: number; percentage: number };
 } {
-  // Simplified disk check - in a real application, you might want to use a library like 'node-disk-info'
-  // For now, we'll just return healthy as we don't have disk usage info
   return {
     status: 'healthy',
   };

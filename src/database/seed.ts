@@ -167,7 +167,8 @@ async function main() {
         postId: 'facebook_post_2',
         postUrl: 'https://facebook.com/123456789/posts/facebook_post_2',
         message:
-          'Join us for a live Q&A session tomorrow at 2 PM EST! Ask our team anything about our latest features.',
+          'Join us for a live Q&A session tomorrow at 2 PM EST! ' +
+          'Ask our team anything about our latest features.',
         link: 'https://example.com/live-qa',
         status: 'published',
         publishedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),

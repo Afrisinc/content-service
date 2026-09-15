@@ -1,3 +1,4 @@
+import { env } from '@/config/env';
 import { isRunCancellable, resetRunCancellations } from '@/helpers/runCancellation.helper';
 import { PostAgentService } from '@/services/postAgent.service';
 import { PostCopy, RenderResult } from '@/types/post.types';
@@ -478,7 +479,7 @@ describe('asking for a review', () => {
     expect(sendNotification).toHaveBeenCalledOnce();
     expect(sendNotification).toHaveBeenCalledWith(
       expect.objectContaining({
-        template: 'post-review-requested',
+        template: env.POST_REVIEW_TEMPLATE,
         priority: 'high',
         dedupeKey: 'notify:post-review:draft-1',
         data: expect.objectContaining({

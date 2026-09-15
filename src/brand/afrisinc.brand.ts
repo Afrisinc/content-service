@@ -120,8 +120,8 @@ SLIDE ROLES
 Return only JSON matching the schema you are given. No preamble, no markdown
 fence.`;
 
-export const SINGLE_BRIEF_NOTE = `This is a SINGLE POST, not a carousel — one square frame that carries the
-whole message with nothing after it. Use the "cta" role for it: a coral offer
+export const SINGLE_BRIEF_NOTE = `This is a SINGLE POST, not a carousel — one square frame that
+carries the whole message with nothing after it. Use the "cta" role for it: a coral offer
 eyebrow, a headline of four to eight words that states the competitive
 difference, one or two sub-lines naming what is on offer, and cta text
 "${CONTACT.site}". There is no swipe, so nothing may depend on a following

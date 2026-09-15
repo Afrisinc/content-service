@@ -6,7 +6,52 @@ on:
       - main
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: content_service
+          POSTGRES_PASSWORD: content_service
+          POSTGRES_DB: content_service_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://content_service:content_service@localhost:5432/content_service_ci
+      SERVICE_SECRET: ci-service-secret
+      NODE_ENV: test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Apply database migrations
+        run: npx prisma migrate deploy
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Test
+        run: yarn test
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     env:
       DEPLOY_GHCR_USERNAME: ${{ secrets.DEPLOY_GHCR_USERNAME }}
@@ -127,9 +172,9 @@ jobs:
               # container: a failed migration stops the deploy instead of leaving
               # the app up against a schema it cannot read. --no-deps keeps it from
               # starting the render service just to run prisma.
-              # docker compose run --rm --no-deps --entrypoint "" \
-              #   content_service_production \
-              #   npm run db:deploy
+              docker compose run --rm --no-deps --entrypoint "" \
+                content_service_production \
+                npm run db:deploy
 
               docker compose up -d --no-deps render_service_production
 

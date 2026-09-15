@@ -171,7 +171,9 @@ class AIGenerationService {
 
       return {
         success: true,
-        message: `Successfully generated and ${request.scheduleFor ? 'scheduled' : 'created'} posts for ${validPlatforms.length} platform(s)`,
+        message:
+          `Successfully generated and ${request.scheduleFor ? 'scheduled' : 'created'} ` +
+          `posts for ${validPlatforms.length} platform(s)`,
         data: {
           postIds,
           platforms: validPlatforms,

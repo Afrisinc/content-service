@@ -1,14 +1,22 @@
 import 'dotenv/config';
 
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} environment variable is not configured`);
+  }
+  return value;
+}
+
 export const env = {
   PORT: process.env.PORT || '3000',
   DATABASE_URL: process.env.DATABASE_URL || '',
-  JWT_SECRET: process.env.JWT_SECRET || 'fallback-secret',
   CONTENT_ENCRYPTION_KEY: process.env.CONTENT_ENCRYPTION_KEY || '',
-  SERVICE_SECRET: process.env.SERVICE_SECRET || 'gateway-service-secret-change-in-production',
+  SERVICE_SECRET: requireEnv('SERVICE_SECRET'),
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
   OPENAI_TEXT_MODEL: process.env.OPENAI_TEXT_MODEL || 'gpt-4',
   OPENAI_IMAGE_MODEL: process.env.OPENAI_IMAGE_MODEL || 'dall-e-3',
+  OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
   CORS_ORIGIN: process.env.CORS_ORIGIN || '*',
   SM_AI_AGENT_URL: process.env.SM_AI_AGENT_URL || '',
   API_BASE_URL: process.env.API_BASE_URL || `localhost:${process.env.PORT || 3000}`,
@@ -107,4 +115,93 @@ export const env = {
     .filter(Boolean),
   NEWSLETTER_SEND_DELAY_MINUTES: Number(process.env.NEWSLETTER_SEND_DELAY_MINUTES) || 60,
   NEWSLETTER_SITE_URL: process.env.NEWSLETTER_SITE_URL || 'https://afrisinc.com',
+
+  STORY_LLM_CHATGPT_MODEL: process.env.STORY_LLM_CHATGPT_MODEL || 'gpt-4o',
+  STORY_LLM_CLAUDE_MODEL: process.env.STORY_LLM_CLAUDE_MODEL || 'claude-sonnet-5',
+  STORY_LLM_MAX_TOKENS: Number(process.env.STORY_LLM_MAX_TOKENS) || 4096,
+  STORY_LLM_TEMPERATURE: Number(process.env.STORY_LLM_TEMPERATURE ?? 0.85),
+  STORY_LLM_MAX_ATTEMPTS: Number(process.env.STORY_LLM_MAX_ATTEMPTS) || 2,
+  STORY_PUBLIC_BASE_URL: process.env.STORY_PUBLIC_BASE_URL || 'https://afrisinc.com/media/stories',
+
+  STUDIO_ENABLED: process.env.STUDIO_ENABLED === 'true',
+  STUDIO_WORKER_ROLE: process.env.STUDIO_WORKER_ROLE || 'all',
+  STUDIO_PROMPTS_DIR: process.env.STUDIO_PROMPTS_DIR || '',
+  STUDIO_REMOTION_DIR: process.env.STUDIO_REMOTION_DIR || 'remotion',
+  STUDIO_REMOTION_CONCURRENCY: Number(process.env.STUDIO_REMOTION_CONCURRENCY) || 2,
+
+  STUDIO_DEFAULT_LANGUAGE: process.env.STUDIO_DEFAULT_LANGUAGE || 'en',
+  STUDIO_DEFAULT_VISUAL_STYLE:
+    process.env.STUDIO_DEFAULT_VISUAL_STYLE || 'cinematic stylized 3D animation',
+  STUDIO_DEFAULT_DURATION_SECONDS: Number(process.env.STUDIO_DEFAULT_DURATION_SECONDS) || 60,
+  STUDIO_AUTO_APPROVE: process.env.STUDIO_AUTO_APPROVE === 'true',
+
+  RABBITMQ_URL: process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672',
+  RABBITMQ_HEARTBEAT_SECONDS: Number(process.env.RABBITMQ_HEARTBEAT_SECONDS) || 60,
+
+  STUDIO_S3_ENDPOINT: process.env.STUDIO_S3_ENDPOINT || 'http://localhost:9000',
+  STUDIO_S3_PUBLIC_URL: process.env.STUDIO_S3_PUBLIC_URL || '',
+  STUDIO_S3_BUCKET: process.env.STUDIO_S3_BUCKET || 'animation-platform',
+  STUDIO_S3_REGION: process.env.STUDIO_S3_REGION || 'us-east-1',
+  STUDIO_S3_ACCESS_KEY: process.env.STUDIO_S3_ACCESS_KEY || '',
+  STUDIO_S3_SECRET_KEY: process.env.STUDIO_S3_SECRET_KEY || '',
+  STUDIO_S3_FORCE_PATH_STYLE: process.env.STUDIO_S3_FORCE_PATH_STYLE !== 'false',
+  STUDIO_S3_SIGNED_URL_TTL_SECONDS: Number(process.env.STUDIO_S3_SIGNED_URL_TTL_SECONDS) || 21600,
+
+  STUDIO_LLM_PROVIDER: process.env.STUDIO_LLM_PROVIDER || 'ollama',
+  STUDIO_LLM_MODEL: process.env.STUDIO_LLM_MODEL || 'qwen2.5:14b-instruct',
+  STUDIO_LLM_FALLBACK_MODEL: process.env.STUDIO_LLM_FALLBACK_MODEL || 'gpt-4o-mini',
+  STUDIO_LLM_FALLBACK_BASE_URL: process.env.STUDIO_LLM_FALLBACK_BASE_URL || '',
+  STUDIO_LLM_TIMEOUT_MS: Number(process.env.STUDIO_LLM_TIMEOUT_MS) || 300000,
+  STUDIO_LLM_TEMPERATURE: Number(process.env.STUDIO_LLM_TEMPERATURE ?? 0.7),
+  STUDIO_LLM_MAX_TOKENS: Number(process.env.STUDIO_LLM_MAX_TOKENS) || 8192,
+  STUDIO_STRUCTURED_MAX_ATTEMPTS: Number(process.env.STUDIO_STRUCTURED_MAX_ATTEMPTS) || 3,
+  OLLAMA_BASE_URL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
+
+  COMFYUI_BASE_URL: process.env.COMFYUI_BASE_URL || 'http://localhost:8188',
+  STUDIO_COMFY_WORKFLOW_DIR: process.env.STUDIO_COMFY_WORKFLOW_DIR || 'infra/comfyui/workflows',
+  STUDIO_COMFY_DEFAULT_WORKFLOW: process.env.STUDIO_COMFY_DEFAULT_WORKFLOW || 'sdxl_character',
+  STUDIO_IMAGE_STEPS: Number(process.env.STUDIO_IMAGE_STEPS) || 28,
+  STUDIO_IMAGE_CFG: Number(process.env.STUDIO_IMAGE_CFG) || 6.5,
+  STUDIO_IMAGE_TIMEOUT_MS: Number(process.env.STUDIO_IMAGE_TIMEOUT_MS) || 600000,
+  STUDIO_IMAGE_POLL_MS: Number(process.env.STUDIO_IMAGE_POLL_MS) || 1500,
+  STUDIO_CHARACTER_WIDTH: Number(process.env.STUDIO_CHARACTER_WIDTH) || 1024,
+  STUDIO_CHARACTER_HEIGHT: Number(process.env.STUDIO_CHARACTER_HEIGHT) || 1536,
+  STUDIO_ENVIRONMENT_WIDTH: Number(process.env.STUDIO_ENVIRONMENT_WIDTH) || 1920,
+  STUDIO_ENVIRONMENT_HEIGHT: Number(process.env.STUDIO_ENVIRONMENT_HEIGHT) || 1088,
+
+  MEDIA_WORKER_URL: process.env.MEDIA_WORKER_URL || 'http://localhost:8095',
+  MEDIA_WORKER_API_KEY: process.env.MEDIA_WORKER_API_KEY || '',
+  MEDIA_WORKER_TIMEOUT_MS: Number(process.env.MEDIA_WORKER_TIMEOUT_MS) || 1800000,
+  STUDIO_TTS_TIMEOUT_MS: Number(process.env.STUDIO_TTS_TIMEOUT_MS) || 300000,
+  STUDIO_STT_TIMEOUT_MS: Number(process.env.STUDIO_STT_TIMEOUT_MS) || 600000,
+  STUDIO_DEFAULT_VOICE: process.env.STUDIO_DEFAULT_VOICE || 'af_heart',
+  STUDIO_LINE_GAP_SECONDS: Number(process.env.STUDIO_LINE_GAP_SECONDS ?? 0.35),
+
+  STUDIO_MASTER_FPS: Number(process.env.STUDIO_MASTER_FPS) || 30,
+  STUDIO_TARGET_LUFS: Number(process.env.STUDIO_TARGET_LUFS ?? -14),
+  STUDIO_SCENE_RENDER_TIMEOUT_SECONDS:
+    Number(process.env.STUDIO_SCENE_RENDER_TIMEOUT_SECONDS) || 5400,
+  STUDIO_THUMBNAIL_CANDIDATES: Number(process.env.STUDIO_THUMBNAIL_CANDIDATES) || 5,
+  STUDIO_WATERMARK_KEY: process.env.STUDIO_WATERMARK_KEY || '',
+  STUDIO_QA_MAX_BLACK_RATIO: Number(process.env.STUDIO_QA_MAX_BLACK_RATIO ?? 0.02),
+  STUDIO_QA_MAX_SILENCE_RATIO: Number(process.env.STUDIO_QA_MAX_SILENCE_RATIO ?? 0.35),
+
+  STUDIO_VIDEO_PROVIDER: process.env.STUDIO_VIDEO_PROVIDER || 'comfyui-wan',
+  STUDIO_VIDEO_MODEL: process.env.STUDIO_VIDEO_MODEL || 'wan2.2-t2v-a14b',
+  STUDIO_WAN_T2V_WORKFLOW: process.env.STUDIO_WAN_T2V_WORKFLOW || 'wan22_t2v',
+  STUDIO_WAN_I2V_WORKFLOW: process.env.STUDIO_WAN_I2V_WORKFLOW || 'wan22_i2v',
+  STUDIO_VIDEO_WIDTH: Number(process.env.STUDIO_VIDEO_WIDTH) || 1280,
+  STUDIO_VIDEO_HEIGHT: Number(process.env.STUDIO_VIDEO_HEIGHT) || 720,
+  STUDIO_VIDEO_FPS: Number(process.env.STUDIO_VIDEO_FPS) || 16,
+  STUDIO_VIDEO_STEPS: Number(process.env.STUDIO_VIDEO_STEPS) || 20,
+  STUDIO_VIDEO_CFG: Number(process.env.STUDIO_VIDEO_CFG ?? 3.5),
+  STUDIO_VIDEO_MAX_FRAMES: Number(process.env.STUDIO_VIDEO_MAX_FRAMES) || 81,
+  STUDIO_VIDEO_TIMEOUT_MS: Number(process.env.STUDIO_VIDEO_TIMEOUT_MS) || 1800000,
+  STUDIO_VIDEO_POLL_MS: Number(process.env.STUDIO_VIDEO_POLL_MS) || 3000,
+  STUDIO_VIDEO_CONTINUITY: process.env.STUDIO_VIDEO_CONTINUITY !== 'false',
+  STUDIO_VIDEO_PREVIEW_ENABLED: process.env.STUDIO_VIDEO_PREVIEW_ENABLED === 'true',
+
+  YOUTUBE_CLIENT_ID: process.env.YOUTUBE_CLIENT_ID || '',
+  YOUTUBE_CLIENT_SECRET: process.env.YOUTUBE_CLIENT_SECRET || '',
+  YOUTUBE_DEFAULT_CATEGORY_ID: process.env.YOUTUBE_DEFAULT_CATEGORY_ID || '1',
 } as const;

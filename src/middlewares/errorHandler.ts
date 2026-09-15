@@ -75,25 +75,11 @@ export class RateLimitError extends AppError {
   }
 }
 
-// Error response interface
-interface ErrorResponse {
-  error: string;
-  message: string;
-  statusCode: number;
-  code?: string;
-  details?: any;
-  timestamp: string;
-  path: string;
-  requestId?: string;
-}
-
-// Helper function to determine if error should be logged
 const shouldLogError = (statusCode: number): boolean => {
   return statusCode >= 500;
 };
 
-// Helper function to sanitize error for client
-const sanitizeError = (error: any, statusCode: number) => {
+const sanitizeError = (error: any) => {
   const isDevelopment = process.env.NODE_ENV !== 'production';
 
   // Always show error message (helpful for debugging)
@@ -185,7 +171,7 @@ export const errorHandler = (
   }
 
   // Sanitize error for client
-  const sanitized = sanitizeError({ message, details }, statusCode);
+  const sanitized = sanitizeError({ message, details });
 
   // Log error if it's a server error
   if (shouldLogError(statusCode)) {
@@ -262,36 +248,6 @@ export const errorHandler = (
   // Send error response
   reply.code(statusCode).send(errorResponse);
 };
-
-// Helper function to get error name from status code
-function getErrorName(statusCode: number): string {
-  switch (statusCode) {
-    case 400:
-      return 'Bad Request';
-    case 401:
-      return 'Unauthorized';
-    case 403:
-      return 'Forbidden';
-    case 404:
-      return 'Not Found';
-    case 409:
-      return 'Conflict';
-    case 422:
-      return 'Unprocessable Entity';
-    case 429:
-      return 'Too Many Requests';
-    case 500:
-      return 'Internal Server Error';
-    case 502:
-      return 'Bad Gateway';
-    case 503:
-      return 'Service Unavailable';
-    case 504:
-      return 'Gateway Timeout';
-    default:
-      return 'Error';
-  }
-}
 
 // Helper function to create standardized errors
 export const createError = {

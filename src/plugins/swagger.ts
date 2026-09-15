@@ -14,7 +14,8 @@ export async function registerSwagger(app: FastifyInstance) {
       info: {
         title: 'Afrisinc Media Service API',
         description:
-          'API for managing media posts, articles, N8N-generated content, and news content for the Afrisinc platform',
+          'API for managing media posts, articles, N8N-generated content, ' +
+          'and news content for the Afrisinc platform',
         version: '1.0.0',
       },
       servers: [

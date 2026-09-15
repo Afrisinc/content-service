@@ -135,10 +135,14 @@ class OpenAIHelper {
    */
   private buildUserMessage(request: AIGenerationRequest): string {
     if (request.platform) {
-      return `Create a social media post for ${request.platform} based on this prompt: ${request.prompt}`;
+      return (
+        `Create a social media post for ${request.platform} ` +
+        `based on this prompt: ${request.prompt}`
+      );
     }
 
-    return `Create engaging social media posts for Facebook and Instagram based on this prompt: ${request.prompt}.
+    return `Create engaging social media posts for Facebook and Instagram based on this
+    prompt: ${request.prompt}.
 
     Return the response in JSON format with the following structure:
     {

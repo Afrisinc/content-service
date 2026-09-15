@@ -71,12 +71,20 @@ class HttpRenderClient implements RenderClient {
   }
 
   private describe(payload: unknown): string {
-    if (typeof payload === 'string') return payload;
+    if (typeof payload === 'string') {
+      return payload;
+    }
     if (payload && typeof payload === 'object') {
       const body = payload as { detail?: unknown; resp_msg?: unknown };
-      if (typeof body.resp_msg === 'string') return body.resp_msg;
-      if (typeof body.detail === 'string') return body.detail;
-      if (Array.isArray(body.detail)) return JSON.stringify(body.detail);
+      if (typeof body.resp_msg === 'string') {
+        return body.resp_msg;
+      }
+      if (typeof body.detail === 'string') {
+        return body.detail;
+      }
+      if (Array.isArray(body.detail)) {
+        return JSON.stringify(body.detail);
+      }
     }
     return 'unknown render failure';
   }
