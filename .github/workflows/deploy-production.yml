@@ -76,16 +76,6 @@ jobs:
           username: ${{ secrets.GHCR_OWNER }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      # Plain `docker build` on a fresh ubuntu-latest VM has no cache to draw
-      # on, so `yarn install` / `pip install` reran from scratch and produced a
-      # brand-new layer digest on every single deploy, even when dependencies
-      # hadn't changed. That forced a full re-download of both fat dependency
-      # layers on every deploy, not just the first — this is the actual reason
-      # deploys have kept timing out, and it lines up with this starting when
-      # render-service (a second always-cold, uncached image) was added on top
-      # of content-service's own always-cold build. GHA-backed Buildx cache
-      # makes those layers reproducible across runs, so the VPS pull below
-      # only fetches what actually changed.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -100,8 +90,6 @@ jobs:
           cache-from: type=gha,scope=content-service-production
           cache-to: type=gha,mode=max,scope=content-service-production
 
-      # Built from ./render-service: its Dockerfile copies requirements.txt and
-      # afrisinc_render relative to that directory, not to the repo root.
       - name: Build and push render-service
         uses: docker/build-push-action@v6
         with:
@@ -113,15 +101,6 @@ jobs:
           cache-from: type=gha,scope=render-service-production
           cache-to: type=gha,mode=max,scope=render-service-production
 
-      # A prior version of this job ran the whole deploy — including `docker
-      # compose pull` and the wait for render's healthcheck — inside one long
-      # SSH session. That kept dying well short of any timeout this workflow
-      # configures. The VPS runs this deploy alongside ~20 other services on
-      # 4 vCPUs and is routinely overloaded (load average in the double
-      # digits), so neither the pull nor the session itself can be trusted to
-      # finish quickly or survive a held-open connection. So everything slow
-      # runs detached on the server, and a separate step polls it with short,
-      # independent connections instead of one held-open session.
       - name: Kick off deployment on server
         uses: appleboy/ssh-action@v1.2.5
         with:
@@ -130,9 +109,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
           timeout: 30s
-          command_timeout: 2m
-
-          # PASS DEPLOY CREDS TO VPS
+          command_timeout: 10m
           envs: DEPLOY_GHCR_USERNAME,DEPLOY_GHCR_TOKEN
           script: |
             set -e
@@ -141,37 +118,11 @@ jobs:
 
             rm -f deploy-status.txt deploy.log
 
-            # content_service_production depends_on render's healthcheck, so
-            # `docker compose up -d` for the whole stack would block on it here
-            # too. Backgrounded, detached from this SSH session entirely: this
-            # step only has to survive long enough to start it.
-            #
-            # `nohup ... &` alone does NOT detach this from the SSH session: it
-            # only redirects stdout/stderr and ignores SIGHUP, but the child still
-            # inherits fd 0 (stdin) from the session's pty. sshd can keep the
-            # channel open until every process holding that pty has exited, so
-            # this step's own command_timeout was racing the backgrounded pull —
-            # `setsid` starts a real new session, fully detached from the
-            # controlling terminal, and `</dev/null` closes the last tie to the
-            # pty (stdin), so this step returns as soon as the script below is
-            # launched.
-            #
-            # That alone still wasn't enough: Compose v2's pull progress
-            # renderer opens /dev/tty directly for its live-updating display,
-            # bypassing this shell's own stdout redirection entirely — so pull
-            # output kept reaching the live SSH channel and racing the
-            # foreground command_timeout anyway. `--quiet` skips that renderer.
-            # `docker login` moved in here too, so the only thing the foreground
-            # step does is launch this block.
             setsid nohup bash -c '
               set -e
               echo "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u "$DEPLOY_GHCR_USERNAME" --password-stdin
               docker compose pull --quiet
 
-              # Migrations run before the new image serves traffic, as a one-off
-              # container: a failed migration stops the deploy instead of leaving
-              # the app up against a schema it cannot read. --no-deps keeps it from
-              # starting the render service just to run prisma.
               docker compose run --rm --no-deps --entrypoint "" \
                 content_service_production \
                 npm run db:deploy
@@ -192,16 +143,6 @@ jobs:
               docker compose up -d
               echo DONE > deploy-status.txt
 
-              # Cleanup runs after DONE is already written. `docker image prune -af`
-              # used to gate this status file, and on a host running ~20 other
-              # services under double-digit load it has been observed to run long
-              # enough on its own to blow through the polling budget below even
-              # after the deploy itself had already finished — bumping that budget
-              # once already didn't fix it, because prune's runtime is unbounded,
-              # not a one-off slow step like the pull or healthcheck above. `-a`
-              # also scans every image on the host, not just ours, risking an
-              # unrelated service's image mid-restart. Scoped here to just these
-              # two repos' old tags, and never allowed to affect the reported result.
               for repo in content-service render-service; do
                 docker images "ghcr.io/${{ secrets.GHCR_OWNER }}/$repo" --format "{{.Repository}}:{{.Tag}}" \
                   | grep -v ":production$" \
@@ -225,11 +166,6 @@ jobs:
           APP_PATH="${{ secrets.VPS_APP_PATH }}/content-service/production"
           SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
 
-          # Each check is its own short connection — nothing here holds one SSH
-          # session open across the whole wait, which is exactly what the
-          # previous approach couldn't survive. The budget below (15 minutes)
-          # has to cover docker compose pull too now, and pulls on this host
-          # have been observed to run past 2 minutes on their own.
           for i in $(seq 1 60); do
             STATUS=$(ssh $SSH_OPTS "$REMOTE" "cd $APP_PATH && cat deploy-status.txt 2>/dev/null || true")
 
