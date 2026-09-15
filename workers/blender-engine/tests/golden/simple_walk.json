@@ -1,0 +1,93 @@
+{
+  "job_id": "golden_simple_walk",
+  "production_id": "golden",
+  "profile": "draft",
+  "output_key": "projects/golden/renders/scene_000.draft.mp4",
+  "timeout_seconds": 600,
+  "asset_manifest": { "david_v1": "characters/david.png", "village_v1": "environments/village.png" },
+  "audio_manifest": {},
+  "settings": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "samples": 24,
+    "engine": "EEVEE",
+    "video_codec": "h264",
+    "audio_codec": "aac",
+    "crf": 20,
+    "transparent": false
+  },
+  "scene": {
+    "scene_id": "scene_000",
+    "index": 0,
+    "duration_seconds": 6.0,
+    "environment_id": "village_v1",
+    "animation_mode": "3d",
+    "background_layers": [],
+    "lighting": { "preset": "golden_hour", "intensity": 4.0, "colour_kelvin": 4200, "shadows": true },
+    "shots": [
+      {
+        "shot_id": "shot_000",
+        "index": 0,
+        "duration_seconds": 3.5,
+        "camera": {
+          "shot_size": "wide",
+          "lens_mm": 35,
+          "depth_of_field": false,
+          "movement": { "type": "dolly", "direction": "forward", "amount": 2.0, "easing": "ease_in_out" }
+        },
+        "characters": [
+          {
+            "character_id": "david_v1",
+            "emotion": "curious",
+            "facing": "forward",
+            "animations": [
+              {
+                "character_id": "david_v1",
+                "action": "walk",
+                "start_time": 0.0,
+                "duration": 3.0,
+                "direction": "forward",
+                "speed": 0.8,
+                "loop": false
+              }
+            ]
+          }
+        ],
+        "props": [],
+        "audio": { "narration_track_ids": [], "dialogue_track_ids": [], "sfx": [] },
+        "transition_out": "cut"
+      },
+      {
+        "shot_id": "shot_001",
+        "index": 1,
+        "duration_seconds": 2.5,
+        "camera": {
+          "shot_size": "close_up",
+          "lens_mm": 85,
+          "depth_of_field": true,
+          "movement": { "type": "static", "amount": 0, "easing": "linear" }
+        },
+        "characters": [
+          {
+            "character_id": "david_v1",
+            "emotion": "surprised",
+            "animations": [
+              {
+                "character_id": "david_v1",
+                "action": "look",
+                "start_time": 0.0,
+                "duration": 2.5,
+                "speed": 1.0,
+                "loop": false
+              }
+            ]
+          }
+        ],
+        "props": [],
+        "audio": { "narration_track_ids": [], "dialogue_track_ids": [], "sfx": [] },
+        "transition_out": "dissolve"
+      }
+    ]
+  }
+}
