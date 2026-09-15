@@ -296,9 +296,14 @@ model N8nArticle {
   tags         String[] @default([])
   read_time    Int      @default(1)
 
+  /// Denormalized from ArticleReadEvent — unique devices, not raw pings.
+  viewCount Int @default(0)
+  readCount Int @default(0)
+
   // Relations
   mediaPosts     MediaPost[]
   generatedPosts N8nGeneratedPost[]
+  readEvents     ArticleReadEvent[]
 
   created_at DateTime @default(now()) @db.Timestamptz()
   updated_at DateTime @updatedAt @db.Timestamptz()
@@ -850,6 +855,7 @@ model AccountGroup {
   members   AccountGroupMember[]
   agentRuns AgentRun[]
   assets    AccountGroupAsset[]
+  stories   Story[]
 
   createdAt DateTime @default(now()) @db.Timestamptz()
   updatedAt DateTime @updatedAt @db.Timestamptz()
@@ -982,4 +988,992 @@ model SocialAccountSnapshot {
   @@index([accountId, date])
   @@index([platform])
   @@map("social_account_snapshots")
+}
+
+// ─────────────────────────────────────────────
+// STUDIO — ANIMATION PRODUCTION
+// ─────────────────────────────────────────────
+
+enum ProductionStatus {
+  DRAFT
+  PLANNING
+  SCRIPT_READY
+  ASSETS_GENERATING
+  ASSETS_READY
+  AUDIO_GENERATING
+  AUDIO_READY
+  ANIMATION_READY
+  RENDERING
+  POST_PROCESSING
+  QUALITY_CHECK
+  APPROVED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  RETRYING
+  CANCELLED
+}
+
+enum AnimationMode {
+  TWO_D
+  HYBRID
+  THREE_D
+  AI_VIDEO
+}
+
+enum StudioJobStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  DEAD_LETTER
+}
+
+enum StudioAssetKind {
+  CHARACTER
+  ENVIRONMENT
+  PROP
+  EFFECT
+  TEXTURE
+  IMAGE
+  AUDIO
+  MUSIC
+  SFX
+  VIDEO
+}
+
+enum RenderProfile {
+  PREVIEW
+  DRAFT
+  PRODUCTION
+  PREMIUM
+}
+
+enum VariantFormat {
+  LANDSCAPE_16_9
+  VERTICAL_9_16
+  PORTRAIT_4_5
+  SQUARE_1_1
+}
+
+enum QualityVerdict {
+  PASSED
+  WARNING
+  FAILED
+}
+
+enum ApprovalStage {
+  STORY
+  ASSETS
+  FINAL_VIDEO
+  PUBLISHING
+}
+
+enum ApprovalDecision {
+  PENDING
+  APPROVED
+  REJECTED
+  SKIPPED
+}
+
+enum AudioTrackKind {
+  VO
+  DIALOGUE
+  SFX
+  AMBIENCE
+  MUSIC
+  MASTER
+}
+
+enum SubtitleFormat {
+  SRT
+  ASS
+  VTT
+}
+
+/// One end-to-end animated production: an idea in, platform-ready videos out.
+/// Every stage writes back here; nothing about a production is inferred from logs.
+model Production {
+  id     String @id @default(uuid())
+  userId String
+
+  title                 String?
+  idea                  String
+  genre                 String?
+  language              String           @default("en")
+  audience              String?
+  visualStyle           String           @default("cinematic stylized 3D")
+  narrationStyle        String?
+  animationMode         AnimationMode    @default(TWO_D)
+  targetDurationSeconds Int              @default(60)
+  platforms             SocialPlatform[] @default([])
+  formats               VariantFormat[]  @default([])
+  contentRestrictions   String[]         @default([])
+  renderProfile         RenderProfile    @default(PRODUCTION)
+
+  autoApprove Boolean @default(false)
+
+  status  ProductionStatus @default(DRAFT)
+  version Int              @default(1)
+
+  /// Set by the caller for externally triggered creates so a retried request
+  /// resumes the same production instead of starting a second one.
+  idempotencyKey String? @unique
+
+  /// Model names, versions, seeds, prompt template versions and engine versions
+  /// captured at each stage. A production is only reproducible if this is complete.
+  reproducibility Json?
+  metadata        Json?
+
+  errorMessage String?
+  failedStage  String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  story          StudioStory?
+  characters     StudioCharacter[]
+  environments   StudioEnvironment[]
+  props          StudioProp[]
+  assets         StudioAsset[]
+  scenes         StudioScene[]
+  audioTracks    StudioAudioTrack[]
+  audioJobs      StudioAudioJob[]
+  animationJobs  StudioAnimationJob[]
+  renderJobs     StudioRenderJob[]
+  renderOutputs  StudioRenderOutput[]
+  subtitles      StudioSubtitle[]
+  thumbnails     StudioThumbnail[]
+  variants       StudioPlatformVariant[]
+  publishingJobs StudioPublishingJob[]
+  qualityChecks  StudioQualityCheck[]
+  approvals      StudioApproval[]
+  events         StudioWorkflowEvent[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("studio_productions")
+}
+
+model StudioStory {
+  id           String     @id @default(uuid())
+  productionId String     @unique
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  title    String
+  logline  String
+  synopsis String?
+
+  /// The validated Story contract exactly as the director agent produced it.
+  spec       Json
+  screenplay Json?
+
+  targetDurationSeconds Int @default(60)
+  version               Int @default(1)
+
+  moderationVerdict String?
+  moderationReport  Json?
+
+  metadata  Json?
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@map("studio_stories")
+}
+
+/// A character's stable identity. Scenes reference the character, never a
+/// per-scene redescription — that is what keeps a face the same across shots.
+model StudioCharacter {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  slug String
+  name String
+
+  activeVersion Int      @default(1)
+  status        String   @default("active")
+  metadata      Json?
+
+  versions StudioCharacterVersion[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([productionId, slug])
+  @@map("studio_characters")
+}
+
+model StudioCharacterVersion {
+  id          String          @id @default(uuid())
+  characterId String
+  character   StudioCharacter @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  version Int
+
+  /// The validated CharacterBible contract.
+  spec       Json
+  appearance Json?
+
+  /// Object storage keys for the model, rig, materials, expressions.
+  assetKeys String[] @default([])
+  checksum  String?
+
+  /// Generator model, version, seed, prompt and parameters for reproducibility.
+  generator Json?
+
+  status    String   @default("ready")
+  metadata  Json?
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([characterId, version])
+  @@map("studio_character_versions")
+}
+
+model StudioEnvironment {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  slug String
+  name String
+
+  activeVersion Int    @default(1)
+  status        String @default("active")
+  metadata      Json?
+
+  versions StudioEnvironmentVersion[]
+  scenes   StudioScene[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([productionId, slug])
+  @@map("studio_environments")
+}
+
+model StudioEnvironmentVersion {
+  id            String            @id @default(uuid())
+  environmentId String
+  environment   StudioEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  version Int
+
+  spec      Json
+  assetKeys String[] @default([])
+  checksum  String?
+  generator Json?
+
+  status    String   @default("ready")
+  metadata  Json?
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([environmentId, version])
+  @@map("studio_environment_versions")
+}
+
+model StudioProp {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  slug String
+  name String
+
+  spec      Json
+  assetKeys String[] @default([])
+  version   Int      @default(1)
+  status    String   @default("ready")
+  metadata  Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([productionId, slug])
+  @@map("studio_props")
+}
+
+/// Any generated or library file the pipeline produced. Deduplicated by content
+/// hash so the same prompt and seed never pays for a second generation.
+model StudioAsset {
+  id           String      @id @default(uuid())
+  productionId String?
+  production   Production? @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  kind StudioAssetKind
+  slug String
+
+  storageKey String
+  mimeType   String
+  bytes      Int     @default(0)
+  checksum   String
+  width      Int?
+  height     Int?
+
+  /// Model, model version, prompt, negative prompt, seed and parameters.
+  generator Json?
+
+  licenseId String?
+  license   StudioModelLicense? @relation(fields: [licenseId], references: [id])
+
+  activeVersion Int    @default(1)
+  status        String @default("ready")
+  metadata      Json?
+
+  versions StudioAssetVersion[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([checksum, kind])
+  @@index([productionId, kind])
+  @@map("studio_assets")
+}
+
+model StudioAssetVersion {
+  id      String      @id @default(uuid())
+  assetId String
+  asset   StudioAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  version    Int
+  storageKey String
+  checksum   String
+  bytes      Int    @default(0)
+  generator  Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+
+  @@unique([assetId, version])
+  @@map("studio_asset_versions")
+}
+
+model StudioScene {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  index   Int
+  sceneId String
+
+  durationSeconds Float @default(0)
+
+  environmentId String?
+  environment   StudioEnvironment? @relation(fields: [environmentId], references: [id])
+
+  /// The validated Scene contract — the contract between the agents and the engine.
+  spec Json
+
+  /// hash(scene spec + asset versions + engine version + render profile).
+  /// An unchanged key means the previous render is reused instead of re-rendered.
+  cacheKey String?
+
+  status  StudioJobStatus @default(PENDING)
+  version Int             @default(1)
+
+  metadata Json?
+
+  shots         StudioShot[]
+  audioTracks   StudioAudioTrack[]
+  audioJobs     StudioAudioJob[]
+  animationJobs StudioAnimationJob[]
+  renderJobs    StudioRenderJob[]
+  renderOutputs StudioRenderOutput[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([productionId, sceneId])
+  @@index([productionId, index])
+  @@map("studio_scenes")
+}
+
+model StudioShot {
+  id      String      @id @default(uuid())
+  sceneId String
+  scene   StudioScene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+
+  index  Int
+  shotId String
+
+  durationSeconds Float @default(0)
+
+  camera     Json
+  characters Json?
+  audio      Json?
+  spec       Json
+
+  status   StudioJobStatus @default(PENDING)
+  metadata Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([sceneId, shotId])
+  @@index([sceneId, index])
+  @@map("studio_shots")
+}
+
+/// Audio stays on separate stems until final mastering, so a music change never
+/// forces the narration to be regenerated.
+model StudioAudioTrack {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  sceneId String?
+  scene   StudioScene? @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+
+  kind AudioTrackKind
+
+  storageKey      String
+  durationSeconds Float   @default(0)
+  loudnessLufs    Float?
+  peakDb          Float?
+  bytes           Int     @default(0)
+  checksum        String?
+
+  speaker String?
+  voice   Json?
+
+  /// Word and segment timestamps from transcription, used for subtitles and lip sync.
+  transcript Json?
+  visemes    Json?
+
+  generator Json?
+
+  status   StudioJobStatus @default(PENDING)
+  version  Int             @default(1)
+  metadata Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@index([productionId, kind])
+  @@map("studio_audio_tracks")
+}
+
+model StudioAudioJob {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  sceneId String?
+  scene   StudioScene? @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+
+  kind String
+
+  status   StudioJobStatus @default(PENDING)
+  attempts Int             @default(0)
+
+  idempotencyKey String? @unique
+
+  payload Json
+  result  Json?
+
+  worker     String?
+  errorCode  String?
+  error      String?
+  durationMs Int?
+
+  startedAt   DateTime? @db.Timestamptz()
+  completedAt DateTime? @db.Timestamptz()
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@index([productionId, status])
+  @@map("studio_audio_jobs")
+}
+
+model StudioAnimationJob {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  sceneId String
+  scene   StudioScene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+
+  mode   AnimationMode
+  engine String
+
+  status   StudioJobStatus @default(PENDING)
+  attempts Int             @default(0)
+
+  idempotencyKey String? @unique
+
+  payload Json
+  result  Json?
+
+  worker     String?
+  errorCode  String?
+  error      String?
+  durationMs Int?
+
+  startedAt   DateTime? @db.Timestamptz()
+  completedAt DateTime? @db.Timestamptz()
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@index([productionId, status])
+  @@map("studio_animation_jobs")
+}
+
+model StudioRenderJob {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  sceneId String?
+  scene   StudioScene? @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+
+  engine  String
+  profile RenderProfile @default(PRODUCTION)
+
+  status   StudioJobStatus @default(PENDING)
+  attempts Int             @default(0)
+
+  idempotencyKey String? @unique
+  cacheKey       String?
+
+  payload Json
+  result  Json?
+
+  worker     String?
+  errorCode  String?
+  error      String?
+  durationMs Int?
+
+  startedAt   DateTime? @db.Timestamptz()
+  completedAt DateTime? @db.Timestamptz()
+
+  outputs StudioRenderOutput[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@index([productionId, status])
+  @@index([cacheKey])
+  @@map("studio_render_jobs")
+}
+
+model StudioRenderOutput {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  sceneId String?
+  scene   StudioScene? @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+
+  jobId String?
+  job   StudioRenderJob? @relation(fields: [jobId], references: [id])
+
+  kind String @default("scene")
+
+  storageKey      String
+  container       String  @default("mp4")
+  videoCodec      String?
+  audioCodec      String?
+  width           Int
+  height          Int
+  fps             Float
+  durationSeconds Float
+  bytes           Int     @default(0)
+  checksum        String?
+  hasAudio        Boolean @default(false)
+
+  profile  RenderProfile @default(PRODUCTION)
+  status   String        @default("ready")
+  metadata Json?
+
+  variants StudioPlatformVariant[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@index([productionId, kind])
+  @@map("studio_render_outputs")
+}
+
+/// Timings come from the generated audio, never from an estimate on script length.
+model StudioSubtitle {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  format   SubtitleFormat
+  language String         @default("en")
+
+  storageKey String
+  cues       Json?
+
+  sourceTrackId String?
+  burnedIn      Boolean @default(false)
+
+  metadata Json?
+
+  variants StudioPlatformVariant[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@index([productionId, format])
+  @@map("studio_subtitles")
+}
+
+model StudioThumbnail {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  storageKey String
+  width      Int
+  height     Int
+  bytes      Int    @default(0)
+
+  candidateIndex Int     @default(0)
+  score          Float?
+  scoreReport    Json?
+  selected       Boolean @default(false)
+
+  prompt    String?
+  generator Json?
+
+  variants StudioPlatformVariant[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@index([productionId, selected])
+  @@map("studio_thumbnails")
+}
+
+model StudioPlatformVariant {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  platform SocialPlatform
+  format   VariantFormat
+
+  renderOutputId String?
+  renderOutput   StudioRenderOutput? @relation(fields: [renderOutputId], references: [id])
+
+  subtitleId String?
+  subtitle   StudioSubtitle? @relation(fields: [subtitleId], references: [id])
+
+  thumbnailId String?
+  thumbnail   StudioThumbnail? @relation(fields: [thumbnailId], references: [id])
+
+  storageKey String?
+
+  title       String?
+  description String?
+  tags        String[] @default([])
+  hashtags    String[] @default([])
+
+  status   StudioJobStatus @default(PENDING)
+  metadata Json?
+
+  publishingJobs StudioPublishingJob[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([productionId, platform, format])
+  @@map("studio_platform_variants")
+}
+
+/// Publishing never blocks an HTTP request and never runs twice for one variant —
+/// the idempotency key is what a worker retry checks before it uploads again.
+model StudioPublishingJob {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  variantId String
+  variant   StudioPlatformVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  platform      SocialPlatform
+  integrationId String?
+  accountRef    String?
+
+  status   StudioJobStatus @default(PENDING)
+  attempts Int             @default(0)
+
+  idempotencyKey String @unique
+
+  externalId  String?
+  externalUrl String?
+
+  scheduledFor DateTime? @db.Timestamptz()
+  publishedAt  DateTime? @db.Timestamptz()
+
+  errorCode String?
+  error     String?
+  response  Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@index([productionId, status])
+  @@index([status, scheduledFor])
+  @@map("studio_publishing_jobs")
+}
+
+/// The quality worker can reject a production outright; an APPROVED production
+/// is one that passed here, not one that merely finished rendering.
+model StudioQualityCheck {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  target   String
+  targetId String?
+
+  verdict QualityVerdict
+
+  checks   Json
+  failures String[] @default([])
+  warnings String[] @default([])
+
+  metadata Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+
+  @@index([productionId, target])
+  @@map("studio_quality_checks")
+}
+
+model StudioApproval {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  stage    ApprovalStage
+  decision ApprovalDecision @default(PENDING)
+
+  decidedBy String?
+  reason    String?
+  decidedAt DateTime? @db.Timestamptz()
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([productionId, stage])
+  @@map("studio_approvals")
+}
+
+model StudioWorkflowEvent {
+  id           String     @id @default(uuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+
+  event      String
+  fromStatus ProductionStatus?
+  toStatus   ProductionStatus?
+
+  jobId   String?
+  worker  String?
+  attempt Int     @default(0)
+
+  durationMs Int?
+  errorCode  String?
+  payload    Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+
+  @@index([productionId, createdAt])
+  @@map("studio_workflow_events")
+}
+
+/// "Open source" is not the same as "cleared for commercial use", so every model
+/// and library asset carries its licence terms into the production record.
+model StudioModelLicense {
+  id String @id @default(uuid())
+
+  name    String
+  kind    String
+  source  String?
+  version String?
+
+  license             String
+  commercialUse       Boolean @default(false)
+  attributionRequired Boolean @default(false)
+  url                 String?
+  notes               String?
+
+  assets StudioAsset[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([name, version])
+  @@map("studio_model_licenses")
+}
+
+// ─────────────────────────────────────────────
+// STORY AGENT — EPISODIC WRITTEN STORIES
+// ─────────────────────────────────────────────
+
+enum StoryStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum StoryEpisodeStatus {
+  DRAFT
+  GENERATING
+  READY_FOR_REVIEW
+  APPROVED
+  PUBLISHED
+  FAILED
+}
+
+/// A series brief: the premise, voice, and promotion rules every episode is generated from.
+model Story {
+  id     String @id @default(uuid())
+  userId String
+
+  title    String
+  premise  String
+  genre    String?
+  language String  @default("en")
+  audience String?
+  tone     String?
+
+  coverImageUrl String?
+
+  /// The connected brand a published episode is advertised through, via the
+  /// existing post agent — the same group a Post Studio brief would target.
+  /// Null falls back to the post agent's own default-brand resolution.
+  groupId String?
+  group   AccountGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  autoPromote          Boolean @default(false)
+  autoApprovePromotion Boolean @default(false)
+
+  status   StoryStatus @default(DRAFT)
+  metadata Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  episodes StoryEpisode[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("stories")
+}
+
+/// One episode of a Story: generated prose, its review state, and the promo post it produced.
+model StoryEpisode {
+  id      String @id @default(uuid())
+  storyId String
+  story   Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  episodeNumber Int
+
+  /// Set by the caller so a retried generate request returns the same episode
+  /// instead of writing a second one and paying for a second LLM call.
+  idempotencyKey String?
+
+  title       String
+  hook        String
+  body        String
+  cliffhanger String?
+
+  themes          String[] @default([])
+  contentWarnings String[] @default([])
+  wordCount       Int      @default(0)
+
+  /// Denormalized from StoryReadEvent — unique devices, not raw pings.
+  viewCount      Int @default(0)
+  completedReads Int @default(0)
+
+  readEvents StoryReadEvent[]
+
+  /// The caption an approved episode was (or will be) advertised with.
+  promotionCaption  String?
+  promotionHashtags String[] @default([])
+  /// Id of the PostDraft the existing post agent created to advertise this episode.
+  promotionDraftId String?
+  promotionStatus  String?
+  promotionError   String?
+
+  llmProvider String?
+  llmAttempts Int     @default(1)
+
+  status      StoryEpisodeStatus @default(DRAFT)
+  publishedAt DateTime?
+  metadata    Json?
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([storyId, episodeNumber])
+  @@unique([storyId, idempotencyKey])
+  @@index([storyId, episodeNumber])
+  @@index([status])
+  @@map("story_episodes")
+}
+
+/// An anonymous reader, identified by a random id the frontend generates and
+/// keeps in localStorage. No login involved — this is what lets "have I read
+/// this" survive a page reload without an account.
+model ReaderDevice {
+  id         String   @id @default(uuid())
+  createdAt  DateTime @default(now()) @db.Timestamptz()
+  lastSeenAt DateTime @updatedAt @db.Timestamptz()
+
+  storyReads   StoryReadEvent[]
+  articleReads ArticleReadEvent[]
+
+  @@map("reader_devices")
+}
+
+/// One device's relationship to one episode: has it been opened, has it been
+/// finished. `completedAt` set once and never cleared, so re-reading an
+/// already-finished episode doesn't lose the original completion time.
+model StoryReadEvent {
+  id       String       @id @default(uuid())
+  deviceId String
+  device   ReaderDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  episodeId String
+  episode   StoryEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  completed   Boolean   @default(false)
+  viewedAt    DateTime  @default(now()) @db.Timestamptz()
+  completedAt DateTime?
+
+  @@unique([deviceId, episodeId])
+  @@index([episodeId])
+  @@map("story_read_events")
+}
+
+/// Same idea as StoryReadEvent, for a single-page article rather than a
+/// story episode — there is no "next episode", so this only ever answers
+/// "has this device read this article", not a reading-progress sequence.
+model ArticleReadEvent {
+  id       String       @id @default(uuid())
+  deviceId String
+  device   ReaderDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  articleId BigInt
+  article   N8nArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  completed   Boolean   @default(false)
+  viewedAt    DateTime  @default(now()) @db.Timestamptz()
+  completedAt DateTime?
+
+  @@unique([deviceId, articleId])
+  @@index([articleId])
+  @@map("article_read_events")
 }

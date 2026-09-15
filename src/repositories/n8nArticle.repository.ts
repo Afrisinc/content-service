@@ -128,6 +128,52 @@ export class N8nArticleRepository {
   }
 
   /**
+   * First view by this device: creates the event and bumps the denormalized
+   * viewCount in one transaction. A repeat view from the same device hits the
+   * event table's unique constraint and is treated as a no-op, not an error.
+   */
+  async recordView(deviceId: string, articleId: bigint): Promise<void> {
+    try {
+      await prisma.$transaction([
+        prisma.articleReadEvent.create({ data: { deviceId, articleId } }),
+        prisma.n8nArticle.update({
+          where: { id: articleId },
+          data: { viewCount: { increment: 1 } },
+        }),
+      ]);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        return;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * First completion by this device: upserts the event as completed and bumps
+   * the denormalized readCount. Same benign check-then-write race as the story
+   * episode equivalent — acceptable for a read-analytics counter.
+   */
+  async recordCompletion(deviceId: string, articleId: bigint): Promise<void> {
+    const existing = await prisma.articleReadEvent.findUnique({
+      where: { deviceId_articleId: { deviceId, articleId } },
+    });
+
+    if (existing?.completed) {
+      return;
+    }
+
+    await prisma.$transaction([
+      prisma.articleReadEvent.upsert({
+        where: { deviceId_articleId: { deviceId, articleId } },
+        create: { deviceId, articleId, completed: true, completedAt: new Date() },
+        update: { completed: true, completedAt: new Date() },
+      }),
+      prisma.n8nArticle.update({ where: { id: articleId }, data: { readCount: { increment: 1 } } }),
+    ]);
+  }
+
+  /**
    * Get all unique categories
    */
   async getCategories() {

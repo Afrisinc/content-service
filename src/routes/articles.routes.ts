@@ -10,6 +10,8 @@ import {
   getArticleById,
   getArticleBySlug,
   getArticlesByCategory,
+  recordArticleRead,
+  recordArticleView,
   updateArticle,
   getTopArticles,
 } from '@/controllers/n8nArticles.controller';
@@ -20,6 +22,8 @@ import {
   GetArticleByIdSchema,
   GetArticleBySlugSchema,
   GetArticlesByCategorySchema,
+  RecordArticleReadSchema,
+  RecordArticleViewSchema,
   UpdateArticleSchema,
   GetTopArticlesSchema,
 } from '@/schemas/requests/n8nArticles.schema';
@@ -98,6 +102,24 @@ export async function ArticlesRoutes(fastify: FastifyInstance) {
       schema: GetArticleBySlugSchema,
     },
     getArticleBySlug
+  );
+
+  // Record that an anonymous device viewed this article
+  fastify.post<{ Params: { slug: string } }>(
+    '/articles/slug/:slug/view',
+    {
+      schema: RecordArticleViewSchema,
+    },
+    recordArticleView
+  );
+
+  // Record that an anonymous device finished reading this article
+  fastify.post<{ Params: { slug: string } }>(
+    '/articles/slug/:slug/read',
+    {
+      schema: RecordArticleReadSchema,
+    },
+    recordArticleRead
   );
 
   // Get article by ID
