@@ -173,10 +173,6 @@ async function generateWithOllama(prompt: string): Promise<string> {
   return response.text;
 }
 
-/**
- * chatgpt is the primary writer; claude is the cloud fallback if it errors or refuses;
- * ollama is the final, always-available fallback so generation degrades instead of failing.
- */
 async function attemptProvider(
   provider: 'chatgpt' | 'claude' | 'ollama',
   brief: EpisodeBrief,
@@ -212,7 +208,7 @@ export class StoryLlmService {
     requestId: string,
     userId: string
   ): Promise<EpisodeGenerationResult> {
-    const chain: Array<'chatgpt' | 'claude' | 'ollama'> = ['chatgpt', 'claude', 'ollama'];
+    const chain: Array<'chatgpt' | 'claude' | 'ollama'> = ['claude', 'chatgpt', 'ollama'];
     const failures: string[] = [];
 
     for (const provider of chain) {

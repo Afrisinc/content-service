@@ -58,31 +58,31 @@ beforeEach(() => {
 });
 
 describe('storyLlmService.generateEpisode', () => {
-  it('uses chatgpt as the primary writer', async () => {
-    mocks.runChatGpt.mockResolvedValue([{ json: { content: validEpisodeJson() } }]);
+  it('uses claude as the primary writer', async () => {
+    mocks.runClaude.mockResolvedValue([{ json: { content: validEpisodeJson() } }]);
 
     const result = await storyLlmService.generateEpisode(brief, 'req-1', 'user-1');
 
-    expect(result.provider).toBe('chatgpt');
+    expect(result.provider).toBe('claude');
     expect(result.attempts).toBe(1);
     expect(result.content.title).toBe('The Signal in the Static');
-    expect(mocks.runClaude).not.toHaveBeenCalled();
+    expect(mocks.runChatGpt).not.toHaveBeenCalled();
     expect(mocks.ollamaComplete).not.toHaveBeenCalled();
   });
 
-  it('falls back to claude when chatgpt fails', async () => {
-    mocks.runChatGpt.mockRejectedValue(new Error('rate limited'));
-    mocks.runClaude.mockResolvedValue([{ json: { content: validEpisodeJson() } }]);
+  it('falls back to chatgpt when claude fails', async () => {
+    mocks.runClaude.mockRejectedValue(new Error('rate limited'));
+    mocks.runChatGpt.mockResolvedValue([{ json: { content: validEpisodeJson() } }]);
 
     const result = await storyLlmService.generateEpisode(brief, 'req-2', 'user-1');
 
-    expect(result.provider).toBe('claude');
+    expect(result.provider).toBe('chatgpt');
     expect(mocks.ollamaComplete).not.toHaveBeenCalled();
   });
 
-  it('falls back to ollama when chatgpt and claude both fail', async () => {
-    mocks.runChatGpt.mockRejectedValue(new Error('down'));
+  it('falls back to ollama when claude and chatgpt both fail', async () => {
     mocks.runClaude.mockRejectedValue(new Error('down'));
+    mocks.runChatGpt.mockRejectedValue(new Error('down'));
     mocks.ollamaComplete.mockResolvedValue({ text: validEpisodeJson() });
 
     const result = await storyLlmService.generateEpisode(brief, 'req-3', 'user-1');
@@ -91,30 +91,30 @@ describe('storyLlmService.generateEpisode', () => {
   });
 
   it('retries a provider once with the parsing complaint before giving up on it', async () => {
-    mocks.runChatGpt
+    mocks.runClaude
       .mockResolvedValueOnce([{ json: { content: '{"nonsense": true}' } }])
       .mockResolvedValueOnce([{ json: { content: validEpisodeJson() } }]);
 
     const result = await storyLlmService.generateEpisode(brief, 'req-4', 'user-1');
 
-    expect(result.provider).toBe('chatgpt');
+    expect(result.provider).toBe('claude');
     expect(result.attempts).toBe(2);
-    expect(mocks.runChatGpt).toHaveBeenCalledTimes(2);
-    const secondPrompt = mocks.runChatGpt.mock.calls[1][0].parameters.prompt;
+    expect(mocks.runClaude).toHaveBeenCalledTimes(2);
+    const secondPrompt = mocks.runClaude.mock.calls[1][0].parameters.prompt;
     expect(secondPrompt).toContain('Your previous attempt was rejected');
   });
 
-  it('falls back to claude when chatgpt comes back with empty content', async () => {
-    mocks.runChatGpt.mockResolvedValue([{ json: { content: '' } }]);
-    mocks.runClaude.mockResolvedValue([{ json: { content: validEpisodeJson() } }]);
+  it('falls back to chatgpt when claude comes back with empty content', async () => {
+    mocks.runClaude.mockResolvedValue([{ json: { content: '' } }]);
+    mocks.runChatGpt.mockResolvedValue([{ json: { content: validEpisodeJson() } }]);
 
-    const result = await storyLlmService.generateEpisode(brief, 'req-empty-chatgpt', 'user-1');
+    const result = await storyLlmService.generateEpisode(brief, 'req-empty-claude', 'user-1');
 
-    expect(result.provider).toBe('claude');
+    expect(result.provider).toBe('chatgpt');
   });
 
   it('treats a reply with no JSON at all as an unusable attempt and retries', async () => {
-    mocks.runChatGpt
+    mocks.runClaude
       .mockResolvedValueOnce([{ json: { content: 'sorry, I cannot help with that' } }])
       .mockResolvedValueOnce([{ json: { content: validEpisodeJson() } }]);
 
@@ -124,7 +124,7 @@ describe('storyLlmService.generateEpisode', () => {
   });
 
   it('builds the opening-episode prompt when a cliffhanger to continue from exists', async () => {
-    mocks.runChatGpt.mockResolvedValue([{ json: { content: validEpisodeJson() } }]);
+    mocks.runClaude.mockResolvedValue([{ json: { content: validEpisodeJson() } }]);
 
     await storyLlmService.generateEpisode(
       { ...brief, priorCliffhanger: 'A door creaks open in the dark.' },
@@ -132,43 +132,43 @@ describe('storyLlmService.generateEpisode', () => {
       'user-1'
     );
 
-    const prompt = mocks.runChatGpt.mock.calls[0][0].parameters.prompt;
+    const prompt = mocks.runClaude.mock.calls[0][0].parameters.prompt;
     expect(prompt).toContain('Pick up from this cliffhanger: A door creaks open in the dark.');
   });
 
   it('passes the userId through so the per-user budget guard can enforce a cap', async () => {
-    mocks.runChatGpt.mockResolvedValue([{ json: { content: validEpisodeJson() } }]);
+    mocks.runClaude.mockResolvedValue([{ json: { content: validEpisodeJson() } }]);
 
     await storyLlmService.generateEpisode(brief, 'req-budget', 'user-42');
 
-    expect(mocks.runChatGpt.mock.calls[0][0].usageContext).toEqual({
+    expect(mocks.runClaude.mock.calls[0][0].usageContext).toEqual({
       requestId: 'req-budget',
       userId: 'user-42',
     });
   });
 
-  it('falls back to ollama when claude comes back with empty content', async () => {
-    mocks.runChatGpt.mockRejectedValue(new Error('down'));
-    mocks.runClaude.mockResolvedValue([{ json: { content: '' } }]);
+  it('falls back to ollama when chatgpt comes back with empty content', async () => {
+    mocks.runClaude.mockRejectedValue(new Error('down'));
+    mocks.runChatGpt.mockResolvedValue([{ json: { content: '' } }]);
     mocks.ollamaComplete.mockResolvedValue({ text: validEpisodeJson() });
 
-    const result = await storyLlmService.generateEpisode(brief, 'req-empty-claude', 'user-1');
+    const result = await storyLlmService.generateEpisode(brief, 'req-empty-chatgpt', 'user-1');
 
     expect(result.provider).toBe('ollama');
   });
 
   it('moves to the next provider once a provider exhausts every attempt on bad JSON', async () => {
-    mocks.runChatGpt.mockResolvedValue([{ json: { content: '{"nonsense": true}' } }]);
-    mocks.runClaude.mockResolvedValue([{ json: { content: validEpisodeJson() } }]);
+    mocks.runClaude.mockResolvedValue([{ json: { content: '{"nonsense": true}' } }]);
+    mocks.runChatGpt.mockResolvedValue([{ json: { content: validEpisodeJson() } }]);
 
     const result = await storyLlmService.generateEpisode(brief, 'req-exhaust', 'user-1');
 
-    expect(result.provider).toBe('claude');
-    expect(mocks.runChatGpt).toHaveBeenCalledTimes(envMock.STORY_LLM_MAX_ATTEMPTS);
+    expect(result.provider).toBe('chatgpt');
+    expect(mocks.runClaude).toHaveBeenCalledTimes(envMock.STORY_LLM_MAX_ATTEMPTS);
   });
 
   it('unwraps a markdown-fenced JSON reply', async () => {
-    mocks.runChatGpt.mockResolvedValue([
+    mocks.runClaude.mockResolvedValue([
       { json: { content: `Here you go:\n\`\`\`json\n${validEpisodeJson()}\n\`\`\`` } },
     ]);
 
@@ -178,12 +178,12 @@ describe('storyLlmService.generateEpisode', () => {
   });
 
   it('throws once every provider has failed, naming each failure', async () => {
-    mocks.runChatGpt.mockRejectedValue(new Error('chatgpt down'));
     mocks.runClaude.mockRejectedValue(new Error('claude down'));
+    mocks.runChatGpt.mockRejectedValue(new Error('chatgpt down'));
     mocks.ollamaComplete.mockRejectedValue(new Error('ollama down'));
 
     await expect(storyLlmService.generateEpisode(brief, 'req-6', 'user-1')).rejects.toThrow(
-      /chatgpt.*claude.*ollama/s
+      /claude.*chatgpt.*ollama/s
     );
   });
 });
