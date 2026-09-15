@@ -101,7 +101,7 @@ jobs:
           cache-from: type=gha,scope=render-service-production
           cache-to: type=gha,mode=max,scope=render-service-production
 
-      - name: Kick off deployment on server
+      - name: Deploy to server
         uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -116,74 +116,19 @@ jobs:
             APP_PATH="${{ secrets.VPS_APP_PATH }}/content-service/production"
             cd $APP_PATH
 
-            rm -f deploy-status.txt deploy.log
+            echo "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u "$DEPLOY_GHCR_USERNAME" --password-stdin
+            docker compose pull --quiet
 
-            setsid nohup bash -c '
-              set -e
-              echo "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u "$DEPLOY_GHCR_USERNAME" --password-stdin
-              docker compose pull --quiet
+            docker compose run --rm --no-deps --entrypoint "" \
+              content_service_production \
+              npm run db:deploy
 
-              docker compose run --rm --no-deps --entrypoint "" \
-                content_service_production \
-                npm run db:deploy
+            docker compose up -d
+            docker compose ps
 
-              docker compose up -d --no-deps render_service_production
-
-              elapsed=0
-              while [ "$(docker inspect -f "{{.State.Health.Status}}" render_service_production 2>/dev/null)" != "healthy" ]; do
-                if [ "$elapsed" -ge 180 ]; then
-                  echo FAILED > deploy-status.txt
-                  docker compose logs --tail=100 render_service_production >> deploy.log 2>&1
-                  exit 1
-                fi
-                sleep 10
-                elapsed=$((elapsed + 10))
-              done
-
-              docker compose up -d
-              echo DONE > deploy-status.txt
-
-              for repo in content-service render-service; do
-                docker images "ghcr.io/${{ secrets.GHCR_OWNER }}/$repo" --format "{{.Repository}}:{{.Tag}}" \
-                  | grep -v ":production$" \
-                  | grep -v ":${{ steps.meta.outputs.short_sha }}$" \
-                  | xargs -r docker rmi -f
-              done || true
-            ' < /dev/null > deploy.log 2>&1 &
-            disown
-
-            echo "Deploy kicked off in the background — polling for it next"
-
-      - name: Load deploy SSH key for polling
-        uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
-
-      - name: Wait for deployment to finish
-        run: |
-          set -e
-          REMOTE="${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}"
-          APP_PATH="${{ secrets.VPS_APP_PATH }}/content-service/production"
-          SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
-
-          for i in $(seq 1 60); do
-            STATUS=$(ssh $SSH_OPTS "$REMOTE" "cd $APP_PATH && cat deploy-status.txt 2>/dev/null || true")
-
-            if [ "$STATUS" = "DONE" ]; then
-              echo "Deploy finished successfully"
-              ssh $SSH_OPTS "$REMOTE" "cd $APP_PATH && docker compose ps content_service_production && rm -f deploy-status.txt deploy.log"
-              exit 0
-            fi
-
-            if [ "$STATUS" = "FAILED" ]; then
-              echo "::error::Deploy failed on the server — dumping its log"
-              ssh $SSH_OPTS "$REMOTE" "cd $APP_PATH && cat deploy.log && rm -f deploy-status.txt deploy.log"
-              exit 1
-            fi
-
-            echo "Still deploying... ($((i * 15))s elapsed)"
-            sleep 15
-          done
-
-          echo "::error::Deploy did not finish within 15 minutes"
-          exit 1
+            for repo in content-service render-service; do
+              docker images "ghcr.io/${{ secrets.GHCR_OWNER }}/$repo" --format "{{.Repository}}:{{.Tag}}" \
+                | grep -v ":production$" \
+                | grep -v ":${{ steps.meta.outputs.short_sha }}$" \
+                | xargs -r docker rmi -f
+            done || true
