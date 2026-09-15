@@ -117,3 +117,9 @@ export async function publishStoryEpisode(request: FastifyRequest, reply: Fastif
   const episode = await storyEpisodeService.publish(id, episodeId);
   return success(reply, 200, 'Episode published', 1104, episode);
 }
+
+export async function retryEpisodePromotion(request: FastifyRequest, reply: FastifyReply) {
+  const { id, episodeId } = request.params as EpisodeParams;
+  const episode = await storyEpisodeService.retryPromotion(id, episodeId);
+  return success(reply, 200, 'Promotion retried', 1108, episode);
+}

@@ -237,6 +237,22 @@ export class StoryEpisodeService {
     return storyEpisodeRepository.findById(episodeId);
   }
 
+  async retryPromotion(storyId: string, episodeId: string) {
+    const episode = await this.require(storyId, episodeId);
+    if (episode.status !== 'PUBLISHED') {
+      throw new ConflictError('only a published episode can be promoted');
+    }
+    if (episode.promotionStatus !== 'failed') {
+      throw new ConflictError('this episode does not have a failed promotion to retry');
+    }
+
+    const story = await storyService.require(storyId);
+    await storyPromotionService.promote(story, episode);
+
+    logger.info({ storyId, episodeId }, 'story.episode.promotion_retried');
+    return storyEpisodeRepository.findById(episodeId);
+  }
+
   private async require(storyId: string, episodeId: string) {
     const episode = await storyEpisodeRepository.findByIdInStory(storyId, episodeId);
     if (!episode) {

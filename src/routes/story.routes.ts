@@ -13,6 +13,7 @@ import {
   recordEpisodeRead,
   recordEpisodeView,
   regenerateEpisode,
+  retryEpisodePromotion,
 } from '@/controllers/story.controller';
 import { asyncWrapper } from '@/middlewares/async_wrapper.middleware';
 import { authGuard } from '@/middlewares/authGuard';
@@ -32,6 +33,7 @@ import {
   RecordEpisodeReadSchema,
   RecordEpisodeViewSchema,
   RegenerateEpisodeSchema,
+  RetryPromotionSchema,
 } from '@/schemas/requests/story.schema';
 import { FastifyInstance } from 'fastify';
 
@@ -43,6 +45,13 @@ const EPISODE_GENERATION_RATE_LIMIT = {
   windowMs: 15 * 60 * 1000,
   maxRequests: 10,
   keyPrefix: 'story:generate',
+};
+
+/** Also a paid LLM call (the post agent writes fresh copy) — same budget as generation. */
+const PROMOTION_RETRY_RATE_LIMIT = {
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 10,
+  keyPrefix: 'story:retry-promotion',
 };
 
 export async function storyRoutes(app: FastifyInstance) {
@@ -138,5 +147,14 @@ export async function storyRoutes(app: FastifyInstance) {
     '/stories/:id/episodes/:episodeId/publish',
     { schema: { ...PublishStoryEpisodeSchema, tags: TAGS }, onRequest: [authGuard] },
     asyncWrapper(publishStoryEpisode)
+  );
+
+  app.post(
+    '/stories/:id/episodes/:episodeId/retry-promotion',
+    {
+      schema: { ...RetryPromotionSchema, tags: TAGS },
+      onRequest: [authGuard, rateLimitGuard(PROMOTION_RETRY_RATE_LIMIT)],
+    },
+    asyncWrapper(retryEpisodePromotion)
   );
 }

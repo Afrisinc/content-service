@@ -57,6 +57,7 @@ describe('storyPromotionService.promote', () => {
     expect(mocks.setPromotionResult).toHaveBeenCalledWith('episode-1', {
       promotionDraftId: 'draft-1',
       promotionStatus: 'awaiting_review',
+      promotionError: null,
     });
   });
 
@@ -71,6 +72,7 @@ describe('storyPromotionService.promote', () => {
     expect(mocks.setPromotionResult).toHaveBeenCalledWith('episode-1', {
       promotionDraftId: 'draft-2',
       promotionStatus: 'queued',
+      promotionError: null,
     });
   });
 

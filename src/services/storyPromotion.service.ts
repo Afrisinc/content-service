@@ -31,6 +31,7 @@ export class StoryPromotionService {
       await storyEpisodeRepository.setPromotionResult(episode.id, {
         promotionDraftId: draft.id,
         promotionStatus: story.autoApprovePromotion ? 'queued' : 'awaiting_review',
+        promotionError: null,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

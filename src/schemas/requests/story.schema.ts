@@ -112,3 +112,4 @@ export const RegenerateEpisodeSchema = {
 
 export const ApproveStoryEpisodeSchema = { params: storyEpisodeParams };
 export const PublishStoryEpisodeSchema = { params: storyEpisodeParams };
+export const RetryPromotionSchema = { params: storyEpisodeParams };

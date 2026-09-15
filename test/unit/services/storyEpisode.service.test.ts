@@ -291,6 +291,41 @@ describe('storyEpisodeService.publish', () => {
   });
 });
 
+describe('storyEpisodeService.retryPromotion', () => {
+  it('rejects retrying promotion on an episode that is not published', async () => {
+    mocks.findByIdInStory.mockResolvedValue({ id: 'episode-1', status: 'APPROVED' });
+
+    await expect(storyEpisodeService.retryPromotion('story-1', 'episode-1')).rejects.toThrow(
+      /only a published episode/
+    );
+    expect(mocks.promote).not.toHaveBeenCalled();
+  });
+
+  it('rejects retrying promotion that did not actually fail', async () => {
+    mocks.findByIdInStory.mockResolvedValue({
+      id: 'episode-1',
+      status: 'PUBLISHED',
+      promotionStatus: 'queued',
+    });
+
+    await expect(storyEpisodeService.retryPromotion('story-1', 'episode-1')).rejects.toThrow(
+      /does not have a failed promotion/
+    );
+    expect(mocks.promote).not.toHaveBeenCalled();
+  });
+
+  it('re-promotes a published episode whose promotion failed', async () => {
+    const episode = { id: 'episode-1', status: 'PUBLISHED', promotionStatus: 'failed' };
+    mocks.findByIdInStory.mockResolvedValue(episode);
+    mocks.findById.mockResolvedValue({ ...episode, promotionStatus: 'queued' });
+
+    const result = await storyEpisodeService.retryPromotion('story-1', 'episode-1');
+
+    expect(mocks.promote).toHaveBeenCalledWith(story, episode);
+    expect(result).toEqual({ ...episode, promotionStatus: 'queued' });
+  });
+});
+
 describe('storyEpisodeService.get/list', () => {
   it('throws NotFoundError when the episode does not exist', async () => {
     mocks.findByIdInStory.mockResolvedValue(null);

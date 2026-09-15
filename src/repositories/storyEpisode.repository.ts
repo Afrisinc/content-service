@@ -119,7 +119,11 @@ export class StoryEpisodeRepository {
 
   async setPromotionResult(
     id: string,
-    result: { promotionDraftId?: string; promotionStatus: string; promotionError?: string }
+    result: {
+      promotionDraftId?: string;
+      promotionStatus: string;
+      promotionError?: string | null;
+    }
   ) {
     return this.prisma.storyEpisode.update({ where: { id }, data: result });
   }
