@@ -130,7 +130,7 @@ jobs:
 
             echo "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u "$DEPLOY_GHCR_USERNAME" --password-stdin
 
-            docker compose pull
+            docker compose pull --quiet
 
             # Migrations run before the new image serves traffic, as a one-off
             # container: a failed migration stops the deploy instead of leaving
