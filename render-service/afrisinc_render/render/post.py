@@ -32,7 +32,11 @@ def render_post(spec: PostSpec) -> RenderResult:
         path = target / filename
         image.save(path, format="PNG", optimize=True)
 
-        findings.extend(audit_slide(index, slide_spec, image, geo, frame.bounds, frame.contrast))
+        findings.extend(
+            audit_slide(
+                index, slide_spec, image, geo, frame.bounds, frame.contrast, frame.headline_size
+            )
+        )
         rendered.append(
             RenderedSlide(
                 index=index,

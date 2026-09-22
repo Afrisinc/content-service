@@ -295,6 +295,17 @@ class Rows(FilledBlock):
             y += row_height + self.gap
         return rects
 
+    def measure(self, geo: Geometry) -> list[tuple[str, str, float, float]]:
+        limit = self._measure(geo)
+        title_font = ty.font(ty.BOLD, T.SIZE_ROW_TITLE)
+        body_font = ty.font(ty.REGULAR, self._body_size(geo))
+        measured: list[tuple[str, str, float, float]] = []
+        for title, body in self.items:
+            title_width = ty.text_width(title, title_font, T.SIZE_ROW_TITLE * 0.02)
+            measured.append(("row title", title, title_width, limit))
+            measured.append(("row body", body, ty.text_width(body, body_font, 0.0), limit))
+        return measured
+
     def draw(
         self, draw: ImageDraw.ImageDraw, overlay: Image.Image, top: float, geo: Geometry
     ) -> None:

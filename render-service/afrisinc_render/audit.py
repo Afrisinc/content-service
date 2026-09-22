@@ -74,6 +74,7 @@ def audit_slide(
     geo: Geometry,
     bounds: list[tuple[float, float, float, float]] | None = None,
     contrast: list[tuple[tuple[float, float, float, float], float]] | None = None,
+    headline_size: int | None = None,
 ) -> list[AuditFinding]:
     findings: list[AuditFinding] = []
 
@@ -92,6 +93,25 @@ def audit_slide(
 
     if not (T.MIN_HEADLINE_LINES <= len(spec.headline) <= T.MAX_HEADLINE_LINES):
         add("headline_lines", f"{len(spec.headline)} lines, allowed 1–{T.MAX_HEADLINE_LINES}")
+
+    if spec.rows:
+        from .render.components import Rows
+
+        for role, text, width, limit in Rows([(r.title, r.body) for r in spec.rows]).measure(geo):
+            if width > limit:
+                add(
+                    "row_overflow",
+                    f'{role} "{text}" is drawn {width - limit:.0f}px past its {limit:.0f}px '
+                    "measure — a row shrinks to fit but never wraps",
+                )
+
+    if headline_size is not None and headline_size < T.HEADLINE_BRAND_FLOOR:
+        add(
+            "headline_size",
+            f"set at {headline_size}px, below the {T.HEADLINE_BRAND_FLOOR}px brand floor — "
+            "the copy is too long for the measure",
+            severity="warning",
+        )
 
     pixels = np.asarray(image.convert("RGB"))
     foreground_is_white = R.is_dark(spec.surface)

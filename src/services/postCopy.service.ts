@@ -1,4 +1,5 @@
 import { nodeServices } from '@/adapters/nodes/nodeServices';
+import { getRenderClient, RenderClient } from '@/adapters/render/render.client';
 import {
   BANNED_CONSTRUCTIONS,
   BANNED_WORDS,
@@ -12,7 +13,7 @@ import {
 } from '@/brand/afrisinc.brand';
 import { env } from '@/config/env';
 import { claudeCredentialsFromEnv, ClaudeNode, runClaude } from '@/nodes';
-import { PostBriefPayload, PostCopy, PostFormatName } from '@/types/post.types';
+import { HeadlineFitResult, PostBriefPayload, PostCopy, PostFormatName } from '@/types/post.types';
 import { BadRequestError, ServerError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
 import { z } from 'zod';
@@ -156,7 +157,26 @@ export function briefPrompt(brief: PostBriefPayload, complaint?: string): string
   return lines.filter(Boolean).join('\n');
 }
 
+export function describeFitFailure(fit: HeadlineFitResult): string {
+  const over = fit.slides.flatMap(slide =>
+    slide.lines
+      .filter(line => !line.fits)
+      .map(
+        line =>
+          `slide ${slide.index + 1} ${line.role} "${line.text}" measures ` +
+          `${Math.round(line.width)}px, ${Math.round(line.overflow)}px too wide`
+      )
+  );
+  return (
+    `${over.join('; ')}. Rewrite those lines shorter so each one holds its measure ` +
+    `and every headline sets at ${fit.min_headline_size}px. Cut words — the type ` +
+    'size is fixed.'
+  );
+}
+
 export class PostCopyService {
+  constructor(private readonly render: RenderClient = getRenderClient()) {}
+
   async generate(
     brief: PostBriefPayload,
     signal?: AbortSignal
@@ -205,6 +225,16 @@ export class PostCopyService {
       if (violations.length) {
         complaint = violations.join('; ');
         logger.warn({ attempt, complaint }, 'Copy agent breached the voice rules');
+        continue;
+      }
+
+      const fit = await this.render.fitHeadlines(
+        parsed.data.slides.map(slide => ({ headline: slide.headline, rows: slide.rows })),
+        format
+      );
+      if (fit && !fit.fits) {
+        complaint = describeFitFailure(fit);
+        logger.warn({ attempt, complaint }, 'Copy agent wrote a headline past the measure');
         continue;
       }
 

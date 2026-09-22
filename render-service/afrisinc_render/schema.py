@@ -164,3 +164,35 @@ class RenderResult(BaseModel):
     slides: list[RenderedSlide]
     findings: list[AuditFinding]
     passed: bool
+
+
+class HeadlineFitSlide(BaseModel):
+    headline: list[str] = Field(min_length=1, max_length=T.MAX_HEADLINE_LINES)
+    rows: list[Row] = Field(default_factory=list)
+
+
+class HeadlineFitRequest(BaseModel):
+    format: FormatName = POST
+    slides: list[HeadlineFitSlide] = Field(min_length=1, max_length=R.MAX_FRAMES)
+
+
+class FittedLine(BaseModel):
+    role: str = "headline line"
+    text: str
+    width: float
+    overflow: float
+    fits: bool
+
+
+class FittedSlide(BaseModel):
+    index: int
+    headline_size: int
+    fits: bool
+    lines: list[FittedLine]
+
+
+class HeadlineFitResult(BaseModel):
+    measure: int
+    min_headline_size: int
+    fits: bool
+    slides: list[FittedSlide]

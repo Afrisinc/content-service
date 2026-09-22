@@ -10,8 +10,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from .brand.geometry import FORMATS
 from .config import settings
 from .errors import RenderError
+from .fit import fit_headlines
 from .render import marks, post, typography
-from .schema import PostSpec, RenderResult
+from .schema import HeadlineFitRequest, HeadlineFitResult, PostSpec, RenderResult
 
 TAG = "render"
 
@@ -64,6 +65,16 @@ async def health() -> dict[str, str]:
     except RenderError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"status": "ok"}
+
+
+@app.post(
+    "/fit/headlines",
+    response_model=HeadlineFitResult,
+    tags=[TAG],
+    dependencies=[Depends(require_api_key)],
+)
+async def fit(request: HeadlineFitRequest) -> HeadlineFitResult:
+    return fit_headlines(request)
 
 
 @app.post(

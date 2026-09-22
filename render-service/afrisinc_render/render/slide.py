@@ -112,9 +112,17 @@ def fit_stack(spec: SlideSpec, geo: Geometry) -> tuple[C.Stack, int]:
         if stack.height(geo) <= geo.band_height:
             return stack, size
 
+    fit = ty.headline_fit(spec.headline, geo.content_width)
+    if not fit.fits:
+        worst = fit.worst
+        raise LayoutOverflowError(
+            f'headline line "{worst.text}" measures {worst.width:.0f}px at '
+            f"{T.MIN_HEADLINE_SIZE}px against a {geo.content_width}px measure — "
+            f"{worst.overflow:.0f}px over. Cut words, not points."
+        )
     raise LayoutOverflowError(
-        f"content does not fit the {geo.name} band even at {T.MIN_HEADLINE_SIZE}px — "
-        "cut words, not points"
+        f"the stack is taller than the {geo.name} band ({geo.band_height}px) at "
+        f"{T.MIN_HEADLINE_SIZE}px — drop a sub-line or a row, not the type size."
     )
 
 

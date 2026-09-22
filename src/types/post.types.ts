@@ -119,6 +119,33 @@ export interface RenderResult {
   passed: boolean;
 }
 
+export interface HeadlineFitInput {
+  headline: string[];
+  rows?: PostRow[];
+}
+
+export interface HeadlineFitLine {
+  role: string;
+  text: string;
+  width: number;
+  overflow: number;
+  fits: boolean;
+}
+
+export interface HeadlineFitSlide {
+  index: number;
+  headline_size: number;
+  fits: boolean;
+  lines: HeadlineFitLine[];
+}
+
+export interface HeadlineFitResult {
+  measure: number;
+  min_headline_size: number;
+  fits: boolean;
+  slides: HeadlineFitSlide[];
+}
+
 export interface SchedulePostPayload {
   platform?: string;
   pageId?: string;

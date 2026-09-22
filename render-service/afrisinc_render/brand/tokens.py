@@ -30,6 +30,8 @@ MIN_TEXT_CONTRAST: Final[float] = 3.0
 TYPE_SCALE: Final[tuple[int, ...]] = (135, 108, 86, 69, 55, 44, 35, 28, 22, 18)
 HEADLINE_SIZES: Final[tuple[int, ...]] = (135, 108, 86, 69)
 MIN_HEADLINE_SIZE: Final[int] = 69
+HEADLINE_BRAND_FLOOR: Final[int] = 86
+BRAND_HEADLINE_SIZES: Final[tuple[int, ...]] = (135, 108, 86)
 MAX_HEADLINE_LINES: Final[int] = 4
 MIN_HEADLINE_LINES: Final[int] = 1
 

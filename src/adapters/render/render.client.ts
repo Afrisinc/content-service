@@ -1,11 +1,21 @@
 import { env } from '@/config/env';
-import { PostSpec, RenderResult } from '@/types/post.types';
+import {
+  HeadlineFitInput,
+  HeadlineFitResult,
+  PostFormatName,
+  PostSpec,
+  RenderResult,
+} from '@/types/post.types';
 import { ServerError, BadRequestError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
 import axios, { AxiosInstance, isAxiosError } from 'axios';
 
 export interface RenderClient {
   render(spec: PostSpec): Promise<RenderResult>;
+  fitHeadlines(
+    slides: HeadlineFitInput[],
+    format: PostFormatName
+  ): Promise<HeadlineFitResult | null>;
   fetchSlide(slug: string, filename: string): Promise<Buffer>;
   slideUrl(slug: string, filename: string): string;
   healthy(): Promise<boolean>;
@@ -41,6 +51,25 @@ class HttpRenderClient implements RenderClient {
         'Render service unreachable'
       );
       throw new ServerError('render service unreachable');
+    }
+  }
+
+  async fitHeadlines(
+    slides: HeadlineFitInput[],
+    format: PostFormatName
+  ): Promise<HeadlineFitResult | null> {
+    try {
+      const response = await this.client.post<HeadlineFitResult>('/fit/headlines', {
+        format,
+        slides: slides.map(slide => ({ headline: slide.headline, rows: slide.rows ?? [] })),
+      });
+      return response.data;
+    } catch (err) {
+      logger.warn(
+        { error: err instanceof Error ? err.message : String(err) },
+        'Could not preflight headline fit; letting the copy through to render'
+      );
+      return null;
     }
   }
 

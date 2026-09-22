@@ -1,11 +1,13 @@
+import { RenderClient } from '@/adapters/render/render.client';
 import { env } from '@/config/env';
 import {
   CopyUnusableError,
   PostCopyService,
   briefPrompt,
+  describeFitFailure,
   findVoiceViolations,
 } from '@/services/postCopy.service';
-import { PostCopy } from '@/types/post.types';
+import { HeadlineFitResult, PostCopy } from '@/types/post.types';
 import { describe, expect, it, vi } from 'vitest';
 
 function copy(overrides: Partial<PostCopy> = {}): PostCopy {
@@ -49,6 +51,82 @@ function copy(overrides: Partial<PostCopy> = {}): PostCopy {
     ...overrides,
   };
 }
+
+function fitPasses(): Pick<RenderClient, 'fitHeadlines'> {
+  return { fitHeadlines: vi.fn(async () => ({ ...FIT_OK, fits: true })) };
+}
+
+const FIT_OK: HeadlineFitResult = {
+  measure: 888,
+  min_headline_size: 86,
+  fits: true,
+  slides: [],
+};
+
+function fitRejecting(text: string, overflow = 113, role = 'headline line'): HeadlineFitResult {
+  return {
+    ...FIT_OK,
+    fits: false,
+    slides: [
+      {
+        index: 1,
+        headline_size: 86,
+        fits: false,
+        lines: [{ role, text, width: 888 + overflow, overflow, fits: false }],
+      },
+    ],
+  };
+}
+
+describe('describeFitFailure', () => {
+  it('names the slide, the line and the pixels so the rewrite is actionable', () => {
+    const complaint = describeFitFailure(fitRejecting('WE BUILD WHAT WORKS', 113));
+
+    expect(complaint).toContain('slide 2');
+    expect(complaint).toContain('headline line "WE BUILD WHAT WORKS"');
+    expect(complaint).toContain('1001px');
+    expect(complaint).toContain('113px too wide');
+    expect(complaint).toMatch(/sets at 86px/);
+  });
+
+  it('names a row body as a row body, since its measure is not the headline measure', () => {
+    const complaint = describeFitFailure(
+      fitRejecting('We map the whole workflow', 152, 'row body')
+    );
+
+    expect(complaint).toContain('row body "We map the whole workflow"');
+    expect(complaint).toContain('152px too wide');
+  });
+
+  it('reports every offending line, not only the first', () => {
+    const fit = fitRejecting('One long line');
+    fit.slides[0].lines.push({
+      role: 'row body',
+      text: 'Another',
+      width: 950,
+      overflow: 62,
+      fits: false,
+    });
+
+    const complaint = describeFitFailure(fit);
+
+    expect(complaint).toContain('One long line');
+    expect(complaint).toContain('Another');
+  });
+
+  it('leaves out the lines that fit', () => {
+    const fit = fitRejecting('Too wide');
+    fit.slides[0].lines.push({
+      role: 'row body',
+      text: 'This one is fine',
+      width: 700,
+      overflow: -188,
+      fits: true,
+    });
+
+    expect(describeFitFailure(fit)).not.toContain('This one is fine');
+  });
+});
 
 describe('findVoiceViolations', () => {
   it('passes clean copy', () => {
@@ -204,7 +282,11 @@ describe('an unusable response', () => {
   });
 
   function serviceReturning(...responses: string[]) {
-    const service = new PostCopyService();
+    return serviceWithFit(fitPasses(), ...responses);
+  }
+
+  function serviceWithFit(render: Pick<RenderClient, 'fitHeadlines'>, ...responses: string[]) {
+    const service = new PostCopyService(render as RenderClient);
     const spy = vi.spyOn(service as never, 'callModel' as never);
     for (const response of responses) {
       spy.mockResolvedValueOnce(response as never);
@@ -259,21 +341,57 @@ describe('an unusable response', () => {
     ).rejects.toThrow(/could not produce usable copy in 3 attempts.*did not return JSON/s);
   });
 
-  it('retries a headline line too long for render, instead of reaching render at all', async () => {
-    // This is the bug from the "content does not fit the post band even at
-    // 69px" render failure: a run-on headline line validated here and only
-    // blew up after a full render+audit cycle. It should be caught here.
-    const tooLong = JSON.parse(VALID);
-    tooLong.slides[0].headline = [
-      'It handles stock checks, hours, and specs before ringing anyone',
-    ];
-    const { service, spy } = serviceReturning(JSON.stringify(tooLong), VALID);
+  it('retries a headline the renderer measured as too wide, instead of reaching render', async () => {
+    const fitHeadlines = vi
+      .fn()
+      .mockResolvedValueOnce(fitRejecting('WE BUILD WHAT WORKS'))
+      .mockResolvedValue({ ...FIT_OK, fits: true });
+    const { service, spy } = serviceWithFit({ fitHeadlines }, VALID, VALID);
 
     const result = await service.generate({ topic: 'Board level laptop repair for schools' });
 
     expect(result.attempts).toBe(2);
     const [, complaint] = spy.mock.calls[1] as unknown as [unknown, string];
-    expect(complaint).toMatch(/headline/);
+    expect(complaint).toMatch(/WE BUILD WHAT WORKS/);
+    expect(complaint).toMatch(/113px too wide/);
+  });
+
+  it('measures every slide, sending the rows so their own measure is checked', async () => {
+    const fitHeadlines = vi.fn().mockResolvedValue({ ...FIT_OK, fits: true });
+    const { service } = serviceWithFit({ fitHeadlines }, VALID);
+
+    await service.generate({ topic: 'Board level laptop repair for schools' });
+
+    const [slides, format] = fitHeadlines.mock.calls[0];
+    expect(format).toBe('post');
+    expect(slides.map((slide: { headline: string[] }) => slide.headline)).toEqual([
+      ['A dead laptop'],
+      ['We fix it'],
+      ['On the bench'],
+      ['Talk to us'],
+    ]);
+    expect(slides[2].rows).toHaveLength(3);
+  });
+
+  it('lets copy through when the renderer cannot be asked, rather than failing the run', async () => {
+    const fitHeadlines = vi.fn().mockResolvedValue(null);
+    const { service, spy } = serviceWithFit({ fitHeadlines }, VALID);
+
+    const result = await service.generate({ topic: 'Board level laptop repair for schools' });
+
+    expect(result.attempts).toBe(1);
+    expect(spy).toHaveBeenCalledOnce();
+  });
+
+  it('does not measure copy that already failed the voice rules', async () => {
+    const banned = JSON.parse(VALID);
+    banned.slides[0].headline = ['Seamless delivery'];
+    const fitHeadlines = vi.fn().mockResolvedValue({ ...FIT_OK, fits: true });
+    const { service } = serviceWithFit({ fitHeadlines }, JSON.stringify(banned), VALID);
+
+    await service.generate({ topic: 'Board level laptop repair for schools' });
+
+    expect(fitHeadlines).toHaveBeenCalledOnce();
   });
 
   it('does not swallow a genuine outage', async () => {

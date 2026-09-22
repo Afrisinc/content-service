@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import NamedTuple
 
 from PIL import ImageDraw, ImageFont
 
@@ -147,13 +148,49 @@ def fit_size(
     return sizes[-1]
 
 
-def headline_size(lines: list[str], width: float) -> int:
-    for size in T.HEADLINE_SIZES:
+def headline_size(lines: list[str], width: float, sizes: tuple[int, ...] | None = None) -> int:
+    for size in sizes or T.HEADLINE_SIZES:
         fnt = font(BOLD, size)
         track = tracking(size)
         if all(text_width(line, fnt, track) <= width for line in lines):
             return size
-    return T.HEADLINE_SIZES[-1]
+    return (sizes or T.HEADLINE_SIZES)[-1]
+
+
+class LineFit(NamedTuple):
+    text: str
+    width: float
+    overflow: float
+
+    @property
+    def fits(self) -> bool:
+        return self.overflow <= 0
+
+
+class HeadlineFit(NamedTuple):
+    size: int
+    lines: list[LineFit]
+
+    @property
+    def fits(self) -> bool:
+        return all(line.fits for line in self.lines)
+
+    @property
+    def worst(self) -> LineFit:
+        return max(self.lines, key=lambda line: line.overflow)
+
+
+def headline_fit(
+    lines: list[str], width: float, sizes: tuple[int, ...] | None = None
+) -> HeadlineFit:
+    size = headline_size(lines, width, sizes)
+    fnt = font(BOLD, size)
+    track = tracking(size)
+    measured = []
+    for line in lines:
+        drawn = text_width(line, fnt, track)
+        measured.append(LineFit(line, drawn, drawn - width))
+    return HeadlineFit(size, measured)
 
 
 def wrap_to_width(text: str, weight: Weight, size: int, width: float) -> list[str]:
