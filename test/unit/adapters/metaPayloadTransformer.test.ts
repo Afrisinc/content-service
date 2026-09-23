@@ -120,6 +120,49 @@ describe('MetaPayloadTransformer story and reel formats', () => {
       expect(result.videoUpload?.scheduledPublishTime).toBeUndefined();
     });
 
+    it('does not repeat hashtags the message already carries', async () => {
+      const result = await transformer.transformForFacebook(
+        payload({
+          media: { type: 'image', url: IMAGE },
+          content: {
+            message: 'Launch day\n\n#AFRISINC #TechRwanda',
+            tags: ['#AFRISINC', '#techrwanda', '#NewTag'],
+          },
+        })
+      );
+
+      const caption = result.photo?.caption ?? '';
+      expect(caption.match(/#AFRISINC/g)).toHaveLength(1);
+      expect(caption.match(/#techrwanda/gi)).toHaveLength(1);
+      expect(caption).toContain('#NewTag');
+    });
+
+    it('omits the tag block when every tag is already in the message', async () => {
+      const message = 'Launch day\n\n#AFRISINC #TechRwanda';
+      const result = await transformer.transformForFacebook(
+        payload({
+          media: { type: 'image', url: IMAGE },
+          content: { message, tags: ['AFRISINC', 'TechRwanda'] },
+        })
+      );
+
+      const caption = result.photo?.caption ?? '';
+      expect(caption.match(/#AFRISINC/g)).toHaveLength(1);
+      expect(caption.match(/#TechRwanda/g)).toHaveLength(1);
+      expect(caption).not.toContain('#TechRwanda\n\n#');
+    });
+
+    it('appends tags when the message has none', async () => {
+      const result = await transformer.transformForFacebook(
+        payload({
+          media: { type: 'image', url: IMAGE },
+          content: { message: 'Launch day', tags: ['afrisinc'] },
+        })
+      );
+
+      expect(result.photo?.caption).toContain('Launch day\n\n#afrisinc');
+    });
+
     it('leaves feed posts on their existing path', async () => {
       const result = await transformer.transformForFacebook(
         payload({ media: { type: 'image', url: IMAGE } })
