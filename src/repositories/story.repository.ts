@@ -24,7 +24,21 @@ export interface ListStoriesParams {
   limit?: number;
 }
 
+export interface StoryEpisodeTotals {
+  episodeCount: number;
+  publishedEpisodeCount: number;
+  totalViews: number;
+  totalReads: number;
+}
+
 const MAX_PAGE_SIZE = 100;
+
+const EMPTY_EPISODE_TOTALS: StoryEpisodeTotals = {
+  episodeCount: 0,
+  publishedEpisodeCount: 0,
+  totalViews: 0,
+  totalReads: 0,
+};
 
 export class StoryRepository {
   private readonly prisma: PrismaClient;
@@ -56,7 +70,7 @@ export class StoryRepository {
       ...(params.status ? { status: params.status } : {}),
     };
 
-    const [items, total] = await Promise.all([
+    const [stories, total] = await Promise.all([
       this.prisma.story.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -66,7 +80,41 @@ export class StoryRepository {
       this.prisma.story.count({ where }),
     ]);
 
+    const totals = await this.episodeTotals(stories.map(story => story.id));
+    const items = stories.map(story => ({
+      ...story,
+      ...(totals.get(story.id) ?? EMPTY_EPISODE_TOTALS),
+    }));
+
     return { items, total, page, limit };
+  }
+
+  /** One grouped query for the whole page, so a list never costs a query per story. */
+  private async episodeTotals(storyIds: string[]) {
+    const totals = new Map<string, StoryEpisodeTotals>();
+    if (storyIds.length === 0) {
+      return totals;
+    }
+
+    const groups = await this.prisma.storyEpisode.groupBy({
+      by: ['storyId', 'status'],
+      where: { storyId: { in: storyIds } },
+      _count: { _all: true },
+      _sum: { viewCount: true, completedReads: true },
+    });
+
+    for (const group of groups) {
+      const current = totals.get(group.storyId) ?? { ...EMPTY_EPISODE_TOTALS };
+      current.episodeCount += group._count._all;
+      current.totalViews += group._sum.viewCount ?? 0;
+      current.totalReads += group._sum.completedReads ?? 0;
+      if (group.status === 'PUBLISHED') {
+        current.publishedEpisodeCount += group._count._all;
+      }
+      totals.set(group.storyId, current);
+    }
+
+    return totals;
   }
 
   async updateStatus(id: string, status: StoryStatus) {
