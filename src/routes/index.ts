@@ -18,6 +18,7 @@ import { mediaPostRoutes } from './mediaPost.routes';
 import { aiUsageRoutes } from './aiUsage.routes';
 import { newsletterDigestRoutes } from './newsletterDigest.routes';
 import { brandAssetRoutes } from './brandAsset.routes';
+import { newsDeskRoutes } from './newsDesk.routes';
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get(
@@ -74,4 +75,5 @@ export async function registerRoutes(app: FastifyInstance) {
   app.register(productionRoutes);
   app.register(studioHealthRoutes);
   app.register(storyRoutes);
+  app.register(newsDeskRoutes);
 }

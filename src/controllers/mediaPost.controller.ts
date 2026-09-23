@@ -12,6 +12,7 @@ import {
   BulkMediaPostAction,
 } from '@/types/mediaPost.types';
 import { success, error } from '../utils/response';
+import { toMediaPostPayload, type N8nMediaPostBody } from '@/helpers/n8nMediaPostIngest.helper';
 
 const service = new MediaPostService();
 
@@ -42,13 +43,7 @@ export async function createMediaPost(req: FastifyRequest, reply: FastifyReply) 
  */
 export async function n8nIngestMediaPost(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const raw = req.body as CreateMediaPostPayload & { n8nArticleId?: string };
-
-    const payload: CreateMediaPostPayload = {
-      ...raw,
-      n8nArticleId: raw.n8nArticleId ? BigInt(raw.n8nArticleId) : undefined,
-      ai_generated: true,
-    };
+    const payload = toMediaPostPayload(req.body as N8nMediaPostBody);
 
     const result = await service.createPost(payload);
 
