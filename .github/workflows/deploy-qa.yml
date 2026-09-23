@@ -125,7 +125,6 @@ jobs:
               npm run db:deploy
 
             docker compose up -d
-            docker compose ps
 
             for repo in content-service render-service; do
               docker images "ghcr.io/${{ secrets.GHCR_OWNER }}/$repo" --format "{{.Repository}}:{{.Tag}}" \
