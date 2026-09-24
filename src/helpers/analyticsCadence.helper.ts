@@ -1,3 +1,5 @@
+import type { MetaFailureKind } from '@/helpers/metaReadFailure.helper';
+
 /** Platforms the pull job has an adapter for. Others publish but do not report back yet. */
 export const METRICS_SUPPORTED_PLATFORMS = ['facebook', 'instagram'];
 
@@ -56,4 +58,47 @@ export function firstPullCutoff(now: Date = new Date()): Date {
  */
 export function staleBefore(now: Date = new Date()): Date {
   return new Date(now.getTime() - DAILY_INTERVAL_MS);
+}
+
+export interface MetricsBackoff {
+  failures: number;
+  retryAt: string;
+  kind: MetaFailureKind;
+}
+
+const RETRY_LADDER_MS = [2 * HOUR_MS, 6 * HOUR_MS, 24 * HOUR_MS, 72 * HOUR_MS];
+const RECONNECT_RETRY_MS = 24 * HOUR_MS;
+const MISSING_RETRY_MS = 7 * DAY_MS;
+
+export const BACKOFF_TTL_SECONDS = (TRACKING_HORIZON_DAYS * DAY_MS) / 1000;
+
+export function retryDelayMs(kind: MetaFailureKind, failures: number): number {
+  switch (kind) {
+    case 'rate_limit':
+      return 0;
+    case 'missing':
+      return MISSING_RETRY_MS;
+    case 'token':
+    case 'permission':
+      return RECONNECT_RETRY_MS;
+    default:
+      return RETRY_LADDER_MS[Math.min(Math.max(failures, 1), RETRY_LADDER_MS.length) - 1];
+  }
+}
+
+export function nextBackoff(
+  previous: MetricsBackoff | null,
+  kind: MetaFailureKind,
+  now: Date
+): MetricsBackoff {
+  const failures = (previous?.failures ?? 0) + 1;
+  return {
+    failures,
+    kind,
+    retryAt: new Date(now.getTime() + retryDelayMs(kind, failures)).toISOString(),
+  };
+}
+
+export function isBackingOff(backoff: MetricsBackoff | null, now: Date): boolean {
+  return backoff !== null && new Date(backoff.retryAt).getTime() > now.getTime();
 }

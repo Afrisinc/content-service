@@ -1,6 +1,11 @@
 /** Instagram publishes in two steps: create a container, poll it, then publish. */
 
 import axios, { AxiosInstance } from 'axios';
+import {
+  classifyMetaError,
+  isFieldLevelFailure,
+  type MetaReadError,
+} from '@/helpers/metaReadFailure.helper';
 import { logger } from '@/utils/logger';
 import {
   MetaAccountMetrics,
@@ -31,6 +36,11 @@ const IG_FIELDS_WITH_INSIGHTS =
 const IG_FIELDS_LEGACY_INSIGHTS =
   'like_count,comments_count,insights.metric(impressions,reach,saved,video_views)';
 const IG_FIELDS_PLAIN = 'like_count,comments_count';
+
+export type MetaReadResult<T> =
+  { ok: true; value: T; requests: number } | { ok: false; error: MetaReadError; requests: number };
+
+type NodeRead = { ok: true; data: Record<string, any> } | { ok: false; error: MetaReadError };
 
 export class MetaClient {
   private client: AxiosInstance;
@@ -465,22 +475,48 @@ export class MetaClient {
     accessToken: string,
     platform: MetaPlatform
   ): Promise<MetaPostMetrics | null> {
+    const result = await this.readPostMetrics(postId, accessToken, platform);
+    if (!result.ok) {
+      logger.warn({ postId, platform }, '[MetaClient] No metrics available for post');
+      return null;
+    }
+    return result.value;
+  }
+
+  async readPostMetrics(
+    postId: string,
+    accessToken: string,
+    platform: MetaPlatform
+  ): Promise<MetaReadResult<MetaPostMetrics>> {
     const attempts =
       platform === MetaPlatform.INSTAGRAM
         ? [IG_FIELDS_WITH_INSIGHTS, IG_FIELDS_LEGACY_INSIGHTS, IG_FIELDS_PLAIN]
         : [FB_FIELDS_WITH_INSIGHTS, FB_FIELDS_PLAIN];
 
+    let requests = 0;
+    let lastError: MetaReadError | null = null;
+
     for (const fields of attempts) {
-      const data = await this.readNode(postId, accessToken, fields);
-      if (data) {
-        return platform === MetaPlatform.INSTAGRAM
-          ? this.instagramMetrics(data)
-          : this.facebookMetrics(data);
+      requests += 1;
+      const read = await this.readNodeResult(postId, accessToken, fields);
+      if (read.ok) {
+        const value =
+          platform === MetaPlatform.INSTAGRAM
+            ? this.instagramMetrics(read.data)
+            : this.facebookMetrics(read.data);
+        return { ok: true, value, requests };
+      }
+      lastError = read.error;
+      if (!isFieldLevelFailure(classifyMetaError(read.error))) {
+        break;
       }
     }
 
-    logger.warn({ postId, platform }, '[MetaClient] No metrics available for post');
-    return null;
+    return {
+      ok: false,
+      error: lastError ?? { status: null, code: null, subcode: null, message: 'No response' },
+      requests,
+    };
   }
 
   /** Follower counts and profile-level reach for one connected account. */
@@ -489,17 +525,30 @@ export class MetaClient {
     accessToken: string,
     platform: MetaPlatform
   ): Promise<MetaAccountMetrics | null> {
+    const result = await this.readAccountMetrics(accountId, accessToken, platform);
+    if (!result.ok) {
+      logger.warn({ accountId, platform }, '[MetaClient] No account metrics available');
+      return null;
+    }
+    return result.value;
+  }
+
+  async readAccountMetrics(
+    accountId: string,
+    accessToken: string,
+    platform: MetaPlatform
+  ): Promise<MetaReadResult<MetaAccountMetrics>> {
     const fields =
       platform === MetaPlatform.INSTAGRAM
         ? 'followers_count,follows_count,media_count'
         : 'fan_count,followers_count';
 
-    const data = await this.readNode(accountId, accessToken, fields);
-    if (!data) {
-      logger.warn({ accountId, platform }, '[MetaClient] No account metrics available');
-      return null;
+    const read = await this.readNodeResult(accountId, accessToken, fields);
+    if (!read.ok) {
+      return { ok: false, error: read.error, requests: 1 };
     }
 
+    const data = read.data;
     const followers = this.num(
       platform === MetaPlatform.INSTAGRAM
         ? data.followers_count
@@ -507,12 +556,16 @@ export class MetaClient {
     );
 
     return {
-      followers,
-      follows: this.num(data.follows_count),
-      postsCount: this.num(data.media_count),
-      reach: 0,
-      impressions: 0,
-      profileViews: 0,
+      ok: true,
+      value: {
+        followers,
+        follows: this.num(data.follows_count),
+        postsCount: this.num(data.media_count),
+        reach: 0,
+        impressions: 0,
+        profileViews: 0,
+      },
+      requests: 1,
     };
   }
 
@@ -526,27 +579,44 @@ export class MetaClient {
     accessToken: string,
     fields: string
   ): Promise<Record<string, any> | null> {
+    const read = await this.readNodeResult(nodeId, accessToken, fields);
+    return read.ok ? read.data : null;
+  }
+
+  private async readNodeResult(
+    nodeId: string,
+    accessToken: string,
+    fields: string
+  ): Promise<NodeRead> {
     try {
       const response = await this.client.get<Record<string, any>>(
         `${this.GRAPH_API_BASE}/${this.API_VERSION}/${nodeId}`,
         { params: { access_token: accessToken, fields } }
       );
       this.recordUsage(response.headers);
-      return response.data ?? null;
+      if (!response.data) {
+        return {
+          ok: false,
+          error: { status: response.status, code: null, subcode: null, message: 'Empty response' },
+        };
+      }
+      return { ok: true, data: response.data };
     } catch (error) {
       // axios does not type its error shape; narrowing stops at this boundary.
       const axiosError = error as any;
       this.recordUsage(axiosError?.response?.headers);
+      const graphError = axiosError?.response?.data?.error;
+      const readError: MetaReadError = {
+        status: this.optionalNum(axiosError?.response?.status),
+        code: this.optionalNum(graphError?.code),
+        subcode: this.optionalNum(graphError?.error_subcode),
+        message: String(graphError?.message ?? (error as Error).message ?? 'Unknown error'),
+      };
       logger.warn(
-        {
-          nodeId,
-          fields,
-          status: axiosError?.response?.status,
-          error: axiosError?.response?.data?.error?.message ?? (error as Error).message,
-        },
+        { nodeId, fields, ...readError, kind: classifyMetaError(readError) },
         '[MetaClient] Node read failed'
       );
-      return null;
+      return { ok: false, error: readError };
     }
   }
 
@@ -566,6 +636,11 @@ export class MetaClient {
     } catch {
       this.usage = null;
     }
+  }
+
+  private optionalNum(value: unknown): number | null {
+    const parsed = Number(value);
+    return value === undefined || value === null || !Number.isFinite(parsed) ? null : parsed;
   }
 
   private num(value: unknown): number {

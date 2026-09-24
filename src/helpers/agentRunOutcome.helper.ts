@@ -1,5 +1,10 @@
 import { AgentRunStatus } from '@prisma/client';
 import { pluralise } from '@/helpers/agentRun.helper';
+import {
+  META_FAILURE_COPY,
+  META_FAILURE_KINDS,
+  type MetaFailureTally,
+} from '@/helpers/metaReadFailure.helper';
 import type { RunOutcome } from '@/services/agentRunRecorder.service';
 import type { PullReport } from '@/services/analyticsPull.service';
 import type { EnhancementResult } from '@/services/newsEnhancement.service';
@@ -69,19 +74,65 @@ export function digestOutcome(result: DigestRunResult): RunOutcome {
   };
 }
 
+function describeFailures(posts: MetaFailureTally, accounts: MetaFailureTally = {}): string {
+  return META_FAILURE_KINDS.flatMap(kind => {
+    const postCount = posts[kind] ?? 0;
+    const accountCount = accounts[kind] ?? 0;
+    if (postCount === 0 && accountCount === 0) {
+      return [];
+    }
+    const affected = [
+      ...(postCount > 0 ? [pluralise(postCount, 'post')] : []),
+      ...(accountCount > 0 ? [pluralise(accountCount, 'account')] : []),
+    ].join(', ');
+    const { label, action } = META_FAILURE_COPY[kind];
+    return [`${label} (${affected})${action ? `, ${action}` : ''}`];
+  }).join('; ');
+}
+
 export function analyticsOutcome(report: PullReport): RunOutcome {
+  const reasons = describeFailures(report.postFailures, report.accountFailures);
+  const rateLimited =
+    (report.postFailures.rate_limit ?? 0) + (report.accountFailures.rate_limit ?? 0) > 0;
+
+  if (
+    report.postsRead === 0 &&
+    report.postsFailed === 0 &&
+    report.accountsFailed === 0 &&
+    report.snapshotsTaken === 0 &&
+    report.postsDeferred > 0
+  ) {
+    const paused = pluralise(report.postsDeferred, 'post');
+    const reasonsPaused = describeFailures(report.deferredReasons);
+    return {
+      status: AgentRunStatus.skipped,
+      detail: `${paused} paused after earlier failures: ${reasonsPaused}`,
+    };
+  }
+
   const detail = [
     `${pluralise(report.postsRead, 'post')} synced`,
     ...(report.postsFailed > 0 ? [`${report.postsFailed} failed`] : []),
+    ...(report.accountsFailed > 0 ? [`${pluralise(report.accountsFailed, 'account')} failed`] : []),
     ...(report.snapshotsTaken > 0 ? [`${pluralise(report.snapshotsTaken, 'snapshot')}`] : []),
-    ...(report.stoppedEarly ? ['stopped at the API budget'] : []),
+    ...(report.postsDeferred > 0 ? [`${report.postsDeferred} paused`] : []),
+    ...(report.stoppedEarly && !rateLimited ? ['stopped at the API budget'] : []),
+    ...(reasons ? [reasons] : []),
   ].join(' · ');
 
   if (report.postsRead === 0 && report.postsFailed > 0) {
     return {
       status: AgentRunStatus.failed,
       detail,
-      errorMessage: `Could not read any of ${pluralise(report.postsFailed, 'post')}`,
+      errorMessage: `Could not read any of ${pluralise(report.postsFailed, 'post')}: ${reasons}`,
+    };
+  }
+
+  if (report.postsRead === 0 && report.snapshotsTaken === 0 && report.accountsFailed > 0) {
+    return {
+      status: AgentRunStatus.failed,
+      detail,
+      errorMessage: `Could not read ${pluralise(report.accountsFailed, 'account')}: ${reasons}`,
     };
   }
 

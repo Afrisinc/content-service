@@ -2,28 +2,56 @@ import { MetaPlatform } from '@/adapters/meta/meta.types';
 import { metaClient } from '@/adapters/meta/metaClient';
 import { env } from '@/config/env';
 import {
+  BACKOFF_TTL_SECONDS,
   METRICS_SUPPORTED_PLATFORMS,
   firstPullCutoff,
   horizonStart,
+  isBackingOff,
   isDueForMetrics,
+  nextBackoff,
   staleBefore,
+  type MetricsBackoff,
 } from '@/helpers/analyticsCadence.helper';
+import {
+  classifyMetaError,
+  tallyFailure,
+  type MetaFailureKind,
+  type MetaFailureTally,
+} from '@/helpers/metaReadFailure.helper';
 import { analyticsRepository } from '@/repositories/analytics.repository';
 import { socialMediaPostRepository } from '@/repositories/socialMediaPost.repository';
-import { cacheIncrementBy } from '@/utils/cache';
+import { cacheDelete, cacheGet, cacheIncrementBy, cacheSet } from '@/utils/cache';
 import { logger } from '@/utils/logger';
 import { decryptToken } from '@/utils/oauthToken';
 
 const META_PLATFORMS = METRICS_SUPPORTED_PLATFORMS;
 const BUDGET_TTL_SECONDS = 3600;
+const CANDIDATE_OVERSCAN = 3;
 
 export interface PullReport {
   postsRead: number;
   postsFailed: number;
+  postsDeferred: number;
+  accountsFailed: number;
   snapshotsTaken: number;
   callsSpent: number;
   stoppedEarly: boolean;
+  postFailures: MetaFailureTally;
+  accountFailures: MetaFailureTally;
+  deferredReasons: MetaFailureTally;
 }
+
+interface Sweep {
+  now: Date;
+  date: Date;
+  budget: number;
+  report: PullReport;
+  brokenPages: Map<string, MetaFailureKind>;
+  halted: boolean;
+}
+
+const pageKey = (platform: string, pageId: string) => `${platform}:${pageId}`;
+const backoffKey = (postId: string) => `analytics:pull:backoff:${postId}`;
 
 function startOfUtcDay(when: Date): Date {
   return new Date(Date.UTC(when.getUTCFullYear(), when.getUTCMonth(), when.getUTCDate()));
@@ -46,9 +74,14 @@ export class AnalyticsPullService {
     const report: PullReport = {
       postsRead: 0,
       postsFailed: 0,
+      postsDeferred: 0,
+      accountsFailed: 0,
       snapshotsTaken: 0,
       callsSpent: 0,
       stoppedEarly: false,
+      postFailures: {},
+      accountFailures: {},
+      deferredReasons: {},
     };
 
     const budget = await this.remainingBudget(now);
@@ -58,8 +91,19 @@ export class AnalyticsPullService {
       return report;
     }
 
-    await this.snapshotAccounts(now, report, budget);
-    await this.refreshPosts(now, report, budget);
+    const sweep: Sweep = {
+      now,
+      date: startOfUtcDay(now),
+      budget,
+      report,
+      brokenPages: new Map(),
+      halted: false,
+    };
+
+    await this.snapshotAccounts(sweep);
+    if (!sweep.halted) {
+      await this.refreshPosts(sweep);
+    }
 
     logger.info({ ...report }, '[analytics-pull] Sweep finished');
     return report;
@@ -83,17 +127,39 @@ export class AnalyticsPullService {
     return Boolean(usage && usage.callCount >= env.ANALYTICS_PULL_USAGE_CEILING);
   }
 
-  private async snapshotAccounts(now: Date, report: PullReport, budget: number): Promise<void> {
-    const date = startOfUtcDay(now);
+  private outOfBudget(sweep: Sweep): boolean {
+    if (sweep.report.callsSpent >= sweep.budget || this.overUsageCeiling()) {
+      sweep.report.stoppedEarly = true;
+      return true;
+    }
+    return false;
+  }
+
+  private async charge(sweep: Sweep, requests: number): Promise<void> {
+    if (requests <= 0) {
+      return;
+    }
+    sweep.report.callsSpent += requests;
+    await this.spend(sweep.now, requests);
+  }
+
+  private haltOnRateLimit(sweep: Sweep, kind: MetaFailureKind): void {
+    if (kind === 'rate_limit') {
+      sweep.halted = true;
+      sweep.report.stoppedEarly = true;
+    }
+  }
+
+  private async snapshotAccounts(sweep: Sweep): Promise<void> {
+    const { report } = sweep;
     const accounts = await analyticsRepository.accountsNeedingSnapshot(
-      date,
+      sweep.date,
       META_PLATFORMS,
       env.ANALYTICS_PULL_ACCOUNT_LIMIT
     );
 
     for (const account of accounts) {
-      if (report.callsSpent >= budget || this.overUsageCeiling()) {
-        report.stoppedEarly = true;
+      if (this.outOfBudget(sweep)) {
         return;
       }
 
@@ -102,42 +168,67 @@ export class AnalyticsPullService {
         continue;
       }
 
-      report.callsSpent += 1;
-      await this.spend(now, 1);
-
-      const metrics = await metaClient.getAccountMetrics(
+      const result = await metaClient.readAccountMetrics(
         account.pageId,
         token,
         metaPlatform(account.platform)
       );
+      await this.charge(sweep, result.requests);
 
-      if (!metrics) {
+      if (!result.ok) {
+        const kind = classifyMetaError(result.error);
+        report.accountsFailed += 1;
+        tallyFailure(report.accountFailures, kind);
+        if (kind === 'token' || kind === 'permission') {
+          sweep.brokenPages.set(pageKey(account.platform, account.pageId), kind);
+        }
+        this.haltOnRateLimit(sweep, kind);
+        if (sweep.halted) {
+          return;
+        }
         continue;
       }
 
-      await analyticsRepository.recordAccountSnapshot(account.id, date, account.platform, metrics);
+      await analyticsRepository.recordAccountSnapshot(
+        account.id,
+        sweep.date,
+        account.platform,
+        result.value
+      );
       report.snapshotsTaken += 1;
     }
   }
 
-  private async refreshPosts(now: Date, report: PullReport, budget: number): Promise<void> {
+  private async refreshPosts(sweep: Sweep): Promise<void> {
+    const { now, report } = sweep;
     const candidates = await analyticsRepository.postsDueForMetrics({
       platforms: META_PLATFORMS,
       publishedFrom: horizonStart(now),
       publishedBefore: firstPullCutoff(now),
       staleBefore: staleBefore(now),
-      limit: env.ANALYTICS_PULL_POST_LIMIT,
+      limit: env.ANALYTICS_PULL_POST_LIMIT * CANDIDATE_OVERSCAN,
     });
 
-    const date = startOfUtcDay(now);
-
+    let attempted = 0;
     for (const post of candidates) {
-      if (report.callsSpent >= budget || this.overUsageCeiling()) {
-        report.stoppedEarly = true;
+      if (attempted >= env.ANALYTICS_PULL_POST_LIMIT || this.outOfBudget(sweep)) {
         return;
       }
 
       if (!isDueForMetrics(post.publishedAt, post.lastMetricsUpdate, now)) {
+        continue;
+      }
+
+      const backoff = await cacheGet<MetricsBackoff>(backoffKey(post.id));
+      if (backoff && isBackingOff(backoff, now)) {
+        report.postsDeferred += 1;
+        tallyFailure(report.deferredReasons, backoff.kind);
+        continue;
+      }
+
+      const brokenKind = sweep.brokenPages.get(pageKey(post.platform, post.pageId));
+      if (brokenKind) {
+        await this.recordPostFailure(sweep, post.id, backoff, brokenKind);
         continue;
       }
 
@@ -146,20 +237,27 @@ export class AnalyticsPullService {
         continue;
       }
 
-      report.callsSpent += 1;
-      await this.spend(now, 1);
-
-      const metrics = await metaClient.getPostMetrics(
+      attempted += 1;
+      const result = await metaClient.readPostMetrics(
         post.postId,
         token,
         metaPlatform(post.platform)
       );
+      await this.charge(sweep, result.requests);
 
-      if (!metrics) {
-        report.postsFailed += 1;
+      if (!result.ok) {
+        const kind = classifyMetaError(result.error);
+        if (kind === 'token') {
+          sweep.brokenPages.set(pageKey(post.platform, post.pageId), kind);
+        }
+        await this.recordPostFailure(sweep, post.id, backoff, kind);
+        if (sweep.halted) {
+          return;
+        }
         continue;
       }
 
+      const metrics = result.value;
       await socialMediaPostRepository.updatePostMetrics(post.id, {
         likes: metrics.likes,
         comments: metrics.comments,
@@ -170,7 +268,7 @@ export class AnalyticsPullService {
       });
 
       await socialMediaPostRepository.upsertAnalytics(post.id, {
-        date,
+        date: sweep.date,
         platform: post.platform,
         impressions: metrics.impressions,
         reaches: metrics.reach,
@@ -183,7 +281,30 @@ export class AnalyticsPullService {
         views: metrics.views,
       });
 
+      if (backoff) {
+        await cacheDelete(backoffKey(post.id));
+      }
+
       report.postsRead += 1;
+    }
+  }
+
+  private async recordPostFailure(
+    sweep: Sweep,
+    postId: string,
+    previous: MetricsBackoff | null,
+    kind: MetaFailureKind
+  ): Promise<void> {
+    sweep.report.postsFailed += 1;
+    tallyFailure(sweep.report.postFailures, kind);
+    this.haltOnRateLimit(sweep, kind);
+
+    if (kind !== 'rate_limit') {
+      await cacheSet(
+        backoffKey(postId),
+        nextBackoff(previous, kind, sweep.now),
+        BACKOFF_TTL_SECONDS
+      );
     }
   }
 

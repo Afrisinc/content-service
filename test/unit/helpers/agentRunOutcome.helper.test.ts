@@ -129,9 +129,14 @@ describe('analyticsOutcome', () => {
   const report = (overrides = {}) => ({
     postsRead: 40,
     postsFailed: 0,
+    postsDeferred: 0,
+    accountsFailed: 0,
     snapshotsTaken: 0,
     callsSpent: 12,
     stoppedEarly: false,
+    postFailures: {},
+    accountFailures: {},
+    deferredReasons: {},
     ...overrides,
   });
 
@@ -145,10 +150,72 @@ describe('analyticsOutcome', () => {
     ).toBe('40 posts synced · 2 failed · 3 snapshots · stopped at the API budget');
   });
 
-  it('fails when nothing could be read', () => {
-    expect(analyticsOutcome(report({ postsRead: 0, postsFailed: 4 }))).toMatchObject({
+  it('fails when nothing could be read, and says why and what to do', () => {
+    expect(
+      analyticsOutcome(report({ postsRead: 0, postsFailed: 20, postFailures: { token: 20 } }))
+    ).toEqual({
       status: 'failed',
-      errorMessage: 'Could not read any of 4 posts',
+      detail:
+        '0 posts synced · 20 failed · Page token expired or revoked (20 posts), ' +
+        'reconnect the page on Brands',
+      errorMessage:
+        'Could not read any of 20 posts: Page token expired or revoked (20 posts), ' +
+        'reconnect the page on Brands',
     });
+  });
+
+  it('groups post and account failures by reason', () => {
+    expect(
+      analyticsOutcome(
+        report({
+          postsFailed: 3,
+          accountsFailed: 1,
+          postFailures: { missing: 2, token: 1 },
+          accountFailures: { token: 1 },
+        })
+      ).detail
+    ).toBe(
+      '40 posts synced · 3 failed · 1 account failed · ' +
+        'Page token expired or revoked (1 post, 1 account), reconnect the page on Brands; ' +
+        'Post no longer on the platform (2 posts)'
+    );
+  });
+
+  it('fails when only accounts were tried and none could be read', () => {
+    expect(
+      analyticsOutcome(
+        report({ postsRead: 0, accountsFailed: 2, accountFailures: { permission: 2 } })
+      )
+    ).toMatchObject({
+      status: 'failed',
+      errorMessage:
+        'Could not read 2 accounts: Meta permission missing (2 accounts), ' +
+        'reconnect the page on Brands and allow insights',
+    });
+  });
+
+  it('names a rate limit instead of the budget', () => {
+    expect(
+      analyticsOutcome(
+        report({ postsFailed: 1, stoppedEarly: true, postFailures: { rate_limit: 1 } })
+      ).detail
+    ).toBe('40 posts synced · 1 failed · Meta rate limit reached (1 post), retrying next hour');
+  });
+
+  it('skips with the remembered reason when every due post is paused', () => {
+    expect(
+      analyticsOutcome(report({ postsRead: 0, postsDeferred: 20, deferredReasons: { token: 20 } }))
+    ).toEqual({
+      status: 'skipped',
+      detail:
+        '20 posts paused after earlier failures: Page token expired or revoked (20 posts), ' +
+        'reconnect the page on Brands',
+    });
+  });
+
+  it('mentions paused posts alongside a normal sync', () => {
+    expect(
+      analyticsOutcome(report({ postsDeferred: 2, deferredReasons: { missing: 2 } })).detail
+    ).toBe('40 posts synced · 2 paused');
   });
 });
