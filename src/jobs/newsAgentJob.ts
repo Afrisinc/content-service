@@ -1,10 +1,25 @@
 import cron, { ScheduledTask } from 'node-cron';
 import { env } from '@/config/env';
+import { agentControlService } from '@/services/agentControl.service';
 import { newsAgentService } from '@/services/newsAgent.service';
 import { logger } from '@/utils/logger';
 
 let ingestJob: ScheduledTask | null = null;
 let enhanceJob: ScheduledTask | null = null;
+
+/** The dashboard switch and autopilot decide each tick whether the stage runs. */
+async function runIfActive(run: () => Promise<unknown>) {
+  try {
+    if (await agentControlService.isActive('news')) {
+      await run();
+    }
+  } catch (error) {
+    logger.error(
+      { error: error instanceof Error ? error.message : String(error) },
+      'News agent tick failed'
+    );
+  }
+}
 
 export function startNewsAgentJobs() {
   if (ingestJob || enhanceJob) {
@@ -13,16 +28,16 @@ export function startNewsAgentJobs() {
   }
 
   if (!env.NEWS_AGENT_ENABLED) {
-    logger.info('News agent disabled (NEWS_AGENT_ENABLED is not true)');
+    logger.info('News agent disabled by the server (NEWS_AGENT_ENABLED is not true)');
     return;
   }
 
-  ingestJob = cron.schedule(env.CRON_SCHEDULE_NEWS_INGEST, () => {
-    void newsAgentService.runIngestion();
-  });
-  enhanceJob = cron.schedule(env.CRON_SCHEDULE_NEWS_ENHANCE, () => {
-    void newsAgentService.runEnhancement();
-  });
+  ingestJob = cron.schedule(env.CRON_SCHEDULE_NEWS_INGEST, () =>
+    runIfActive(() => newsAgentService.runIngestion())
+  );
+  enhanceJob = cron.schedule(env.CRON_SCHEDULE_NEWS_ENHANCE, () =>
+    runIfActive(() => newsAgentService.runEnhancement())
+  );
 
   logger.info(
     { ingest: env.CRON_SCHEDULE_NEWS_INGEST, enhance: env.CRON_SCHEDULE_NEWS_ENHANCE },

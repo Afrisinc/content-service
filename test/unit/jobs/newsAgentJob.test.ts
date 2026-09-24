@@ -7,10 +7,12 @@ const envMock = vi.hoisted(() => ({
 }));
 const schedule = vi.hoisted(() => vi.fn());
 const agent = vi.hoisted(() => ({ runIngestion: vi.fn(), runEnhancement: vi.fn() }));
+const control = vi.hoisted(() => ({ isActive: vi.fn() }));
 
 vi.mock('@/config/env', () => ({ env: envMock }));
 vi.mock('node-cron', () => ({ default: { schedule } }));
 vi.mock('@/services/newsAgent.service', () => ({ newsAgentService: agent }));
+vi.mock('@/services/agentControl.service', () => ({ agentControlService: control }));
 
 const { startNewsAgentJobs, stopNewsAgentJobs } = await import('@/jobs/newsAgentJob');
 
@@ -22,19 +24,39 @@ describe('news agent jobs', () => {
     vi.clearAllMocks();
     envMock.NEWS_AGENT_ENABLED = true;
     schedule.mockImplementation(() => ({ stop }));
+    control.isActive.mockResolvedValue(true);
   });
 
-  it('schedules ingestion and enhancement on their own crons', () => {
+  it('schedules ingestion and enhancement on their own crons', async () => {
     startNewsAgentJobs();
 
     expect(schedule).toHaveBeenCalledTimes(2);
     expect(schedule.mock.calls[0][0]).toBe('*/30 * * * *');
     expect(schedule.mock.calls[1][0]).toBe('*/10 * * * *');
 
-    schedule.mock.calls[0][1]();
-    schedule.mock.calls[1][1]();
+    await schedule.mock.calls[0][1]();
+    await schedule.mock.calls[1][1]();
+    expect(control.isActive).toHaveBeenCalledWith('news');
     expect(agent.runIngestion).toHaveBeenCalledTimes(1);
     expect(agent.runEnhancement).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips a tick while the dashboard switch or autopilot is off', async () => {
+    control.isActive.mockResolvedValue(false);
+    startNewsAgentJobs();
+
+    await schedule.mock.calls[0][1]();
+    await schedule.mock.calls[1][1]();
+
+    expect(agent.runIngestion).not.toHaveBeenCalled();
+    expect(agent.runEnhancement).not.toHaveBeenCalled();
+  });
+
+  it('survives a failing tick', async () => {
+    control.isActive.mockRejectedValue(new Error('db down'));
+    startNewsAgentJobs();
+
+    await expect(schedule.mock.calls[0][1]()).resolves.toBeUndefined();
   });
 
   it('does nothing when the agent is disabled', () => {

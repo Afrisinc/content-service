@@ -12,6 +12,7 @@ const envMock = vi.hoisted(() => ({
 vi.mock('@/config/env', () => ({ env: envMock }));
 vi.mock('@/services/newsIngestion.service', () => ({ newsIngestionService: { run: vi.fn() } }));
 vi.mock('@/services/newsEnhancement.service', () => ({ newsEnhancementService: { run: vi.fn() } }));
+vi.mock('@/services/agentRunRecorder.service', () => ({ agentRunRecorder: { record: vi.fn() } }));
 
 const { NewsAgentService } = await import('@/services/newsAgent.service');
 
@@ -26,11 +27,14 @@ function deferred<T>() {
 describe('NewsAgentService', () => {
   const ingestion = { run: vi.fn() };
   const enhancement = { run: vi.fn() };
+  const recorder = {
+    record: vi.fn(({ execute }: { execute: () => Promise<unknown> }) => execute()),
+  };
   let agent: InstanceType<typeof NewsAgentService>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    agent = new NewsAgentService(ingestion as never, enhancement as never);
+    agent = new NewsAgentService(ingestion as never, enhancement as never, recorder as never);
   });
 
   it('runs a stage and remembers its result', async () => {
@@ -97,12 +101,38 @@ describe('NewsAgentService', () => {
 
   it('reports its configuration', () => {
     expect(agent.status()).toMatchObject({
-      enabled: true,
+      allowedByServer: true,
       sources: 13,
       minScore: 0.6,
       batchSize: 5,
       ingest: { schedule: '*/30 * * * *' },
       enhance: { schedule: '*/10 * * * *' },
     });
+  });
+
+  it('records scheduled runs in the run log with the stage outcome', async () => {
+    ingestion.run.mockResolvedValue({ fetched: 3, created: 1, failedSources: [], sources: 2 });
+
+    await agent.runIngestion();
+
+    expect(recorder.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: 'news',
+        trigger: 'schedule',
+        stepLabel: 'Fetch feeds',
+        outcome: expect.any(Function),
+      })
+    );
+  });
+
+  it('records a hand-started run as manual', async () => {
+    enhancement.run.mockResolvedValue({ claimed: 0, recovered: 0 });
+
+    agent.trigger('enhance');
+    await Promise.resolve();
+
+    expect(recorder.record).toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'manual', stepLabel: 'Write & publish' })
+    );
   });
 });

@@ -1,3 +1,4 @@
+import { AGENT_KEYS } from '@/config/agentRegistry';
 const AGENT_RUN_STATUSES = ['running', 'succeeded', 'failed', 'skipped'] as const;
 
 export const GetAutomationPolicySchema = {
@@ -27,6 +28,7 @@ export const ListAgentRunsSchema = {
     additionalProperties: false,
     properties: {
       groupId: { type: 'string', format: 'uuid' },
+      agent: { type: 'string', enum: [...AGENT_KEYS] },
       status: { type: 'string', enum: AGENT_RUN_STATUSES },
       page: { type: 'integer', minimum: 1, default: 1 },
       limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
@@ -47,6 +49,11 @@ export const GetAgentRunSchema = {
 
 export const GetAutomationSummarySchema = {
   description: 'Today’s agent run counts by status',
+  querystring: {
+    type: 'object',
+    additionalProperties: false,
+    properties: { agent: { type: 'string', enum: [...AGENT_KEYS] } },
+  },
 };
 
 export const ResumeAgentRunSchema = {
@@ -97,5 +104,24 @@ export const RunAutomationNowSchema = {
       // Omit to run every brand whose agents are on; name one to run just it.
       groupId: { type: 'string', format: 'uuid' },
     },
+  },
+};
+
+export const ListAgentsSchema = {
+  description: 'Every agent, whether the server allows it, your switch, and whether it runs now',
+};
+
+export const UpdateAgentSchema = {
+  description: 'Switch one agent on or off for your workspace',
+  params: {
+    type: 'object',
+    required: ['key'],
+    properties: { key: { type: 'string', enum: [...AGENT_KEYS] } },
+  },
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['enabled'],
+    properties: { enabled: { type: 'boolean' } },
   },
 };

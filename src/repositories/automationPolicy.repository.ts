@@ -56,6 +56,35 @@ export class AutomationPolicyRepository {
     return rows.map((row: { userId: string }) => row.userId);
   }
 
+  /** Autopilot policies that are not paused, with their per-agent switches. */
+  async findRunnablePolicies(now: Date = new Date(), limit = 200) {
+    return this.prisma.automationPolicy.findMany({
+      where: {
+        mode: AutomationMode.autopilot,
+        OR: [{ pausedUntil: null }, { pausedUntil: { lte: now } }],
+      },
+      select: { userId: true, mode: true, pausedUntil: true, agents: true },
+      take: limit,
+    });
+  }
+
+  /** Every policy's switches, for deciding whether a workspace-wide agent runs. */
+  async findAgentSnapshots(limit = 1000) {
+    return this.prisma.automationPolicy.findMany({
+      select: { userId: true, mode: true, pausedUntil: true, agents: true },
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+    });
+  }
+
+  async saveAgentChoices(userId: string, agents: Prisma.InputJsonObject) {
+    return this.prisma.automationPolicy.upsert({
+      where: { userId },
+      create: { userId, agents },
+      update: { agents },
+    });
+  }
+
   /** Clears the pointer when the group it names is deleted. */
   async clearDefaultGroup(groupId: string, client?: Prisma.TransactionClient) {
     return (client ?? this.prisma).automationPolicy.updateMany({

@@ -1,4 +1,12 @@
+import {
+  AGENT_REGISTRY,
+  WORKSPACE_RUN_OWNER,
+  agentKeyForRun,
+  runOwnersFor,
+  type AgentKey,
+} from '@/config/agentRegistry';
 import { env } from '@/config/env';
+import { isAgentSwitchedOn } from '@/helpers/agentSettings.helper';
 import { pluralise } from '@/helpers/agentRun.helper';
 import { cancelRun, isRunCancellable } from '@/helpers/runCancellation.helper';
 import {
@@ -124,19 +132,29 @@ export class AutomationService {
   async listRuns(params: {
     userId: string;
     groupId?: string;
+    agent?: AgentKey;
     status?: AgentRunStatus;
     page?: number;
     limit?: number;
   }) {
-    const result = await this.runs.list(params);
+    const { agent, ...rest } = params;
+    const result = await this.runs.list({
+      ...rest,
+      alsoOwnedBy: [WORKSPACE_RUN_OWNER],
+      ...(agent ? { agent: AGENT_REGISTRY[agent].runAgent } : {}),
+    });
     const items = await Promise.all(
       result.items.map(run => this.withResumable(this.withCancellable(this.toRunDTO(run))))
     );
     return { ...result, items };
   }
 
-  async summarise(userId: string, since: Date = startOfToday()) {
-    return this.runs.summariseForUser(userId, since);
+  async summarise(userId: string, since: Date = startOfToday(), agent?: AgentKey) {
+    return this.runs.summariseForOwners(
+      runOwnersFor(userId),
+      since,
+      agent ? AGENT_REGISTRY[agent].runAgent : undefined
+    );
   }
 
   /**
@@ -401,7 +419,10 @@ export class AutomationService {
 
   /** Cron entry point: every workspace whose switch is set to autopilot. */
   async runDueUsers(): Promise<{ users: number; drafted: number }> {
-    const userIds = await this.policies.findRunnableUserIds();
+    const policies = await this.policies.findRunnablePolicies();
+    const userIds = policies
+      .filter(policy => isAgentSwitchedOn(AGENT_REGISTRY.post, policy.agents))
+      .map(policy => policy.userId);
 
     let drafted = 0;
     for (const userId of userIds) {
@@ -598,7 +619,7 @@ export class AutomationService {
 
   /** One run with its stages, for the live tracker. */
   async getRun(userId: string, runId: string): Promise<AgentRunDTO> {
-    const run = await this.runs.findByIdForUser(runId, userId);
+    const run = await this.runs.findByIdForOwners(runId, runOwnersFor(userId));
     if (!run) {
       throw new NotFoundError('agent run not found');
     }
@@ -610,7 +631,7 @@ export class AutomationService {
    * so a page of successes costs no cache reads at all.
    */
   private async withResumable(run: AgentRunDTO): Promise<AgentRunDTO> {
-    if (run.status !== AgentRunStatus.failed) {
+    if (run.status !== AgentRunStatus.failed || run.agent !== POST_AGENT_NAME) {
       return run;
     }
     return { ...run, resumable: await this.postAgent.isResumable(run.id) };
@@ -669,6 +690,7 @@ export class AutomationService {
       groupId: run.groupId,
       groupName: run.group?.name ?? null,
       agent: run.agent,
+      agentKey: agentKeyForRun(run.agent),
       trigger: run.trigger,
       status: run.status,
       topic: run.topic,

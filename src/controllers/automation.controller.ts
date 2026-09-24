@@ -1,3 +1,5 @@
+import type { AgentKey } from '@/config/agentRegistry';
+import { agentControlService } from '@/services/agentControl.service';
 import { automationService } from '@/services/automation.service';
 import { UpdateAutomationPolicyPayload } from '@/types/accountGroup.types';
 import { UnauthorizedError } from '@/utils/http-error';
@@ -27,6 +29,7 @@ export async function updateAutomationPolicy(request: FastifyRequest, reply: Fas
 export async function listAgentRuns(request: FastifyRequest, reply: FastifyReply) {
   const query = request.query as {
     groupId?: string;
+    agent?: AgentKey;
     status?: AgentRunStatus;
     page?: number;
     limit?: number;
@@ -34,6 +37,7 @@ export async function listAgentRuns(request: FastifyRequest, reply: FastifyReply
   const result = await automationService.listRuns({
     userId: requireUserId(request),
     groupId: query.groupId,
+    agent: query.agent,
     status: query.status,
     page: query.page,
     limit: query.limit,
@@ -48,7 +52,8 @@ export async function getAgentRun(request: FastifyRequest, reply: FastifyReply) 
 }
 
 export async function getAutomationSummary(request: FastifyRequest, reply: FastifyReply) {
-  const summary = await automationService.summarise(requireUserId(request));
+  const { agent } = request.query as { agent?: AgentKey };
+  const summary = await automationService.summarise(requireUserId(request), undefined, agent);
   return success(reply, 200, 'Automation summary retrieved', 1000, summary);
 }
 
@@ -84,4 +89,16 @@ export async function cancelAgentRun(request: FastifyRequest, reply: FastifyRepl
 export async function getActiveAgentRun(request: FastifyRequest, reply: FastifyReply) {
   const run = await automationService.getActiveRun(requireUserId(request));
   return success(reply, 200, run ? 'A run is in progress' : 'Nothing running', 1000, { run });
+}
+
+export async function listAgents(request: FastifyRequest, reply: FastifyReply) {
+  const agents = await agentControlService.list(requireUserId(request));
+  return success(reply, 200, 'Agents retrieved', 1000, agents);
+}
+
+export async function updateAgent(request: FastifyRequest, reply: FastifyReply) {
+  const { key } = request.params as { key: AgentKey };
+  const { enabled } = request.body as { enabled: boolean };
+  const agent = await agentControlService.setEnabled(requireUserId(request), key, enabled);
+  return success(reply, 200, enabled ? 'Agent switched on' : 'Agent switched off', 1002, agent);
 }

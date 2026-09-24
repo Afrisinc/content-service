@@ -902,6 +902,10 @@ model AutomationPolicy {
   pausedUntil    DateTime? @db.Timestamptz()
   lastRunAt      DateTime? @db.Timestamptz()
 
+  /// Per-agent on/off choices keyed by agent key, e.g. { "news": true }. An agent
+  /// missing from the map uses its registry default (src/config/agentRegistry.ts).
+  agents Json @default("{}")
+
   createdAt DateTime @default(now()) @db.Timestamptz()
   updatedAt DateTime @updatedAt @db.Timestamptz()
 

@@ -13,12 +13,15 @@ const repository = vi.hoisted(() => ({
 }));
 
 const agent = vi.hoisted(() => ({
-  status: vi.fn(() => ({ enabled: true })),
+  status: vi.fn(() => ({ allowedByServer: true })),
   trigger: vi.fn(),
 }));
 
 vi.mock('@/repositories/n8nArticle.repository', () => ({ n8nArticleRepository: repository }));
 vi.mock('@/services/newsAgent.service', () => ({ newsAgentService: agent }));
+vi.mock('@/services/agentControl.service', () => ({
+  agentControlService: { isActive: vi.fn(async () => false) },
+}));
 
 const { newsDeskService, STUCK_AFTER_MINUTES } = await import('@/services/newsDesk.service');
 
@@ -123,7 +126,7 @@ describe('NewsDeskService.summary', () => {
       categories: ['news', 'tech'],
       stuckAfterMinutes: STUCK_AFTER_MINUTES,
       lastIngestedAt: new Date('2026-09-23T08:00:00.000Z'),
-      agent: { enabled: true },
+      agent: { allowedByServer: true, enabled: false },
     });
   });
 });

@@ -6,6 +6,7 @@ import {
   STUCK_AFTER_MINUTES,
   type NewsArticleStatus,
 } from '@/types/newsDesk.types';
+import { agentControlService } from '@/services/agentControl.service';
 import { newsAgentService, type NewsAgentStage } from '@/services/newsAgent.service';
 
 export { STUCK_AFTER_MINUTES };
@@ -64,11 +65,12 @@ export class NewsDeskService {
   }
 
   async summary() {
-    const [groups, stuck, categories, lastIngestedAt] = await Promise.all([
+    const [groups, stuck, categories, lastIngestedAt, scheduled] = await Promise.all([
       n8nArticleRepository.deskStatusTotals(),
       n8nArticleRepository.countStuck(stuckCutoff()),
       n8nArticleRepository.getCategories(),
       n8nArticleRepository.latestIngestedAt(),
+      agentControlService.isActive('news'),
     ]);
 
     const byStatus = Object.fromEntries(NEWS_ARTICLE_STATUSES.map(status => [status, 0])) as Record<
@@ -97,7 +99,7 @@ export class NewsDeskService {
       categories,
       stuckAfterMinutes: STUCK_AFTER_MINUTES,
       lastIngestedAt,
-      agent: newsAgentService.status(),
+      agent: { ...newsAgentService.status(), enabled: scheduled },
     };
   }
 

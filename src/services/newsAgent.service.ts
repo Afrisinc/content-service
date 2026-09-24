@@ -1,5 +1,11 @@
 import { env } from '@/config/env';
+import { enhancementOutcome, ingestionOutcome } from '@/helpers/agentRunOutcome.helper';
 import { resolveNewsSources } from '@/helpers/rssFeed.helper';
+import {
+  agentRunRecorder,
+  type AgentRunRecorder,
+  type RunTrigger,
+} from '@/services/agentRunRecorder.service';
 import {
   newsEnhancementService,
   type EnhancementResult,
@@ -35,15 +41,40 @@ export class NewsAgentService {
 
   constructor(
     private readonly ingestion: Pick<NewsIngestionService, 'run'> = newsIngestionService,
-    private readonly enhancement: Pick<NewsEnhancementService, 'run'> = newsEnhancementService
+    private readonly enhancement: Pick<NewsEnhancementService, 'run'> = newsEnhancementService,
+    private readonly recorder: Pick<AgentRunRecorder, 'record'> = agentRunRecorder
   ) {}
 
-  runIngestion(): Promise<IngestionResult | null> {
-    return this.runStage(this.ingest, () => this.ingestion.run(), 'ingest');
+  runIngestion(trigger: RunTrigger = 'schedule'): Promise<IngestionResult | null> {
+    return this.runStage(
+      this.ingest,
+      () =>
+        this.recorder.record({
+          agent: 'news',
+          trigger,
+          topic: 'Fetch news feeds',
+          stepLabel: 'Fetch feeds',
+          execute: () => this.ingestion.run(),
+          outcome: ingestionOutcome,
+        }),
+      'ingest'
+    );
   }
 
-  runEnhancement(): Promise<EnhancementResult | null> {
-    return this.runStage(this.enhance, () => this.enhancement.run(), 'enhance');
+  runEnhancement(trigger: RunTrigger = 'schedule'): Promise<EnhancementResult | null> {
+    return this.runStage(
+      this.enhance,
+      () =>
+        this.recorder.record({
+          agent: 'news',
+          trigger,
+          topic: 'Write & publish news',
+          stepLabel: 'Write & publish',
+          execute: () => this.enhancement.run(),
+          outcome: enhancementOutcome,
+        }),
+      'enhance'
+    );
   }
 
   /** Starts a stage in the background; false when that stage is already running. */
@@ -52,13 +83,13 @@ export class NewsAgentService {
     if (state.running) {
       return false;
     }
-    void (stage === 'ingest' ? this.runIngestion() : this.runEnhancement());
+    void (stage === 'ingest' ? this.runIngestion('manual') : this.runEnhancement('manual'));
     return true;
   }
 
   status() {
     return {
-      enabled: env.NEWS_AGENT_ENABLED,
+      allowedByServer: env.NEWS_AGENT_ENABLED,
       sources: resolveNewsSources(env.NEWS_RSS_SOURCES).length,
       minScore: env.NEWS_MIN_SCORE,
       batchSize: env.NEWS_ENHANCE_BATCH_SIZE,

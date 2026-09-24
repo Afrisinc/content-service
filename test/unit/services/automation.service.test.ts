@@ -16,6 +16,10 @@ function groupRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function runnable(userId: string, agents: Record<string, boolean> = {}) {
+  return { userId, mode: 'autopilot', pausedUntil: null, agents };
+}
+
 function build(overrides: { policy?: Record<string, unknown> | null; groups?: unknown[] } = {}) {
   const policies = {
     findByUser: vi.fn(async () => (overrides.policy === undefined ? null : overrides.policy)),
@@ -30,6 +34,7 @@ function build(overrides: { policy?: Record<string, unknown> | null; groups?: un
     })),
     touchLastRun: vi.fn(async () => ({ count: 1 })),
     findRunnableUserIds: vi.fn(async () => ['user-1']),
+    findRunnablePolicies: vi.fn(async () => [runnable('user-1')]),
   };
 
   const groups = {
@@ -56,6 +61,8 @@ function build(overrides: { policy?: Record<string, unknown> | null; groups?: un
     countForGroupSince: vi.fn(async () => 0),
     findRecentTopics: vi.fn(async () => []),
     summariseForUser: vi.fn(async () => ({ succeeded: 2 })),
+    summariseForOwners: vi.fn(async () => ({ succeeded: 2 })),
+    findByIdForOwners: vi.fn(async (id: string) => runs.findByIdForUser(id, 'user-1')),
   };
 
   const postAgent = {
@@ -376,14 +383,31 @@ describe('runDueUsers', () => {
 
     const result = await service.runDueUsers();
 
-    expect(policies.findRunnableUserIds).toHaveBeenCalled();
+    expect(policies.findRunnablePolicies).toHaveBeenCalled();
     expect(result).toEqual({ users: 1, drafted: 1 });
     expect(postAgent.createFromBrief).toHaveBeenCalledOnce();
   });
 
+  it('skips a workspace that switched the post agent off', async () => {
+    const { service, policies, postAgent } = build({
+      policy: { mode: 'autopilot', autoPublish: true, maxPostsPerDay: 3 },
+    });
+    policies.findRunnablePolicies.mockResolvedValueOnce([
+      runnable('user-1', { post: false }),
+    ] as never);
+
+    const result = await service.runDueUsers();
+
+    expect(result).toEqual({ users: 0, drafted: 0 });
+    expect(postAgent.createFromBrief).not.toHaveBeenCalled();
+  });
+
   it('keeps going when one workspace blows up', async () => {
     const { service, policies, groups } = build();
-    policies.findRunnableUserIds.mockResolvedValueOnce(['user-1', 'user-2'] as never);
+    policies.findRunnablePolicies.mockResolvedValueOnce([
+      runnable('user-1'),
+      runnable('user-2'),
+    ] as never);
     groups.findAutopilotGroups.mockRejectedValueOnce(new Error('db down') as never);
 
     const result = await service.runDueUsers();
@@ -460,12 +484,74 @@ describe('listRuns', () => {
   });
 });
 
+describe('listRuns scope', () => {
+  it('includes workspace runs and filters by agent', async () => {
+    const { service, runs } = build();
+
+    await service.listRuns({ userId: 'user-1', agent: 'news', limit: 12 });
+
+    expect(runs.list).toHaveBeenCalledWith({
+      userId: 'user-1',
+      limit: 12,
+      alsoOwnedBy: ['workspace'],
+      agent: 'news',
+    });
+  });
+
+  it('labels each run with its agent key and never offers to resume a workspace run', async () => {
+    const { service, runs, postAgent } = build();
+    runs.list.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'run-9',
+          groupId: null,
+          group: null,
+          agent: 'news',
+          trigger: 'schedule',
+          status: 'failed',
+          topic: 'Fetch news feeds',
+          draftId: null,
+          postIds: [],
+          accountsTargeted: 0,
+          errorMessage: 'Every feed failed',
+          startedAt: new Date('2026-09-24T08:00:00Z'),
+          finishedAt: new Date('2026-09-24T08:00:05Z'),
+          steps: [],
+        },
+      ],
+      total: 1,
+      page: 1,
+      limit: 20,
+    } as never);
+
+    const isResumable = vi.fn(async () => true);
+    (postAgent as unknown as Record<string, unknown>).isResumable = isResumable;
+
+    const result = await service.listRuns({ userId: 'user-1' });
+
+    expect(result.items[0]).toMatchObject({ agentKey: 'news', resumable: false });
+    expect(isResumable).not.toHaveBeenCalled();
+  });
+});
+
 describe('summarise', () => {
   it('reports today’s run counts by status', async () => {
     const { service, runs } = build();
 
     await expect(service.summarise('user-1')).resolves.toEqual({ succeeded: 2 });
-    expect(runs.summariseForUser).toHaveBeenCalled();
+    expect(runs.summariseForOwners).toHaveBeenCalledWith(
+      ['user-1', 'workspace'],
+      expect.any(Date),
+      undefined
+    );
+  });
+
+  it('narrows the counts to one agent by its run name', async () => {
+    const { service, runs } = build();
+
+    await service.summarise('user-1', new Date('2026-09-24T00:00:00Z'), 'post');
+
+    expect(runs.summariseForOwners.mock.calls[0][2]).toBe('post-agent');
   });
 });
 
