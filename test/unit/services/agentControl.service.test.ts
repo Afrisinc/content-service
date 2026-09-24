@@ -60,7 +60,13 @@ describe('AgentControlService', () => {
   it('lists every registered agent with its state and the reason it is not running', async () => {
     const agents = await service.list('u1');
 
-    expect(agents.map(agent => agent.key)).toEqual(['post', 'news', 'newsletter', 'analytics']);
+    expect(agents.map(agent => agent.key)).toEqual([
+      'post',
+      'story',
+      'news',
+      'newsletter',
+      'analytics',
+    ]);
     const byKey = Object.fromEntries(agents.map(agent => [agent.key, agent]));
 
     expect(byKey.post).toMatchObject({

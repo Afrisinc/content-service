@@ -14,6 +14,8 @@ export interface RunOutcome {
 
 export interface RecordRunInput<T> {
   agent: AgentKey;
+  ownerId?: string;
+  groupId?: string | null;
   trigger: RunTrigger;
   topic: string;
   stepLabel: string;
@@ -61,7 +63,8 @@ export class AgentRunRecorder {
   private async open<T>(input: RecordRunInput<T>): Promise<string | null> {
     try {
       const run = await this.runs.start({
-        userId: WORKSPACE_RUN_OWNER,
+        userId: input.ownerId ?? WORKSPACE_RUN_OWNER,
+        ...(input.groupId ? { groupId: input.groupId } : {}),
         agent: AGENT_REGISTRY[input.agent].runAgent,
         trigger: input.trigger,
         topic: input.topic,

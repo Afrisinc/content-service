@@ -1,6 +1,6 @@
 import { env } from '@/config/env';
 
-export const AGENT_KEYS = ['post', 'news', 'newsletter', 'analytics'] as const;
+export const AGENT_KEYS = ['post', 'story', 'news', 'newsletter', 'analytics'] as const;
 
 export type AgentKey = (typeof AGENT_KEYS)[number];
 
@@ -47,6 +47,18 @@ export const AGENT_REGISTRY: Record<AgentKey, AgentDefinition> = {
     enabledByDefault: true,
     allowedByServer: () => env.AUTOPILOT_ENABLED,
     schedules: () => [{ label: 'Checks for open slots', cron: env.CRON_SCHEDULE_AUTOPILOT }],
+  },
+  story: {
+    key: 'story',
+    runAgent: 'story',
+    name: 'Story agent',
+    description:
+      'Writes the next episode of your active stories and leaves each one ready for your review.',
+    scope: 'user',
+    requiresAutopilot: true,
+    enabledByDefault: false,
+    allowedByServer: () => env.STORY_AGENT_ENABLED,
+    schedules: () => [{ label: 'Writes due episodes', cron: env.CRON_SCHEDULE_STORY_AGENT }],
   },
   news: {
     key: 'news',

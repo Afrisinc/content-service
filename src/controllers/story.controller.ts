@@ -1,6 +1,7 @@
 import { StoryStatus } from '@prisma/client';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { assertStoryBrief, storyService, type StoryBrief } from '@/services/story.service';
+import { storyAgentService } from '@/services/storyAgent.service';
 import { storyEpisodeService } from '@/services/storyEpisode.service';
 import { UnauthorizedError } from '@/utils/http-error';
 import { success } from '@/utils/response';
@@ -82,14 +83,14 @@ export async function generateEpisode(request: FastifyRequest, reply: FastifyRep
     instructions?: string;
     idempotencyKey?: string;
   };
-  const episode = await storyEpisodeService.generateNext(id, { instructions, idempotencyKey });
+  const episode = await storyAgentService.writeNext(id, { instructions, idempotencyKey }, 'manual');
   return success(reply, 201, 'Episode generated', 1102, episode);
 }
 
 export async function regenerateEpisode(request: FastifyRequest, reply: FastifyReply) {
   const { id, episodeId } = request.params as EpisodeParams;
   const { instructions } = (request.body ?? {}) as { instructions?: string };
-  const episode = await storyEpisodeService.regenerate(id, episodeId, { instructions });
+  const episode = await storyAgentService.rewrite(id, episodeId, { instructions });
   return success(reply, 200, 'Episode regenerated', 1107, episode);
 }
 

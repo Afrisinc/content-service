@@ -53,6 +53,27 @@ describe('AgentRunRecorder', () => {
     expect(runs.finish).toHaveBeenCalledWith('run-1', { status: 'succeeded' });
   });
 
+  it('opens a user run under its owner and brand when they are given', async () => {
+    await recorder.record({
+      ...input(
+        async () => 1,
+        () => ({ status: 'succeeded', detail: 'Episode 2' })
+      ),
+      agent: 'story',
+      ownerId: 'user-1',
+      groupId: 'group-1',
+      trigger: 'manual',
+    });
+
+    expect(runs.start).toHaveBeenCalledWith({
+      userId: 'user-1',
+      groupId: 'group-1',
+      agent: 'story',
+      trigger: 'manual',
+      topic: 'Fetch news feeds',
+    });
+  });
+
   it('records a failed outcome with its error on the stage and the run', async () => {
     await recorder.record(
       input(
