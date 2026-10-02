@@ -166,3 +166,54 @@ def test_a_slide_without_rows_still_measures_its_headline():
 
     assert [line.role for line in result.slides[0].lines] == ["headline line"]
     assert result.fits is False
+
+
+TALL_STACK = {
+    "headline": ["Your process.", "Not a template.", "Built to last.", "Shipped weekly."],
+    "eyebrow": {"text": "Software development", "kind": "label"},
+    "subs": ["A sub-line that carries the offer.", "A second sub-line with proof."],
+    "cta": {"text": "afrisinc.com", "arrow": True},
+    "coral_rule": True,
+}
+
+
+def test_a_stack_taller_than_the_band_is_reported_with_the_overflow():
+    result = fit_headlines(HeadlineFitRequest(format="single", slides=[TALL_STACK]))
+
+    stack = [line for line in result.slides[0].lines if line.role == "stack height"]
+    assert result.fits is False
+    assert len(stack) == 1
+    assert stack[0].fits is False
+    assert stack[0].overflow > 0
+
+
+def test_a_stack_that_clears_the_band_passes_and_reports_its_height():
+    result = fit_headlines(
+        HeadlineFitRequest(
+            format="single",
+            slides=[{"headline": ["Your process.", FITS], "subs": ["One short sub-line."]}],
+        )
+    )
+
+    stack = [line for line in result.slides[0].lines if line.role == "stack height"]
+    assert result.fits is True
+    assert stack[0].fits is True
+    assert 0 < stack[0].width <= POST_GEO.band_height
+
+
+def test_the_stack_is_not_measured_when_a_headline_line_is_already_too_wide():
+    result = fit_headlines(
+        HeadlineFitRequest(slides=[{"headline": [TOO_WIDE], "subs": ["A sub-line."]}])
+    )
+
+    assert all(line.role != "stack height" for line in result.slides[0].lines)
+
+
+def test_a_slide_the_renderer_would_refuse_outright_skips_the_stack_check():
+    result = fit_headlines(
+        HeadlineFitRequest(
+            slides=[{"headline": [FITS], "rows": [{"title": "One", "body": "Only a single row."}]}]
+        )
+    )
+
+    assert all(line.role != "stack height" for line in result.slides[0].lines)

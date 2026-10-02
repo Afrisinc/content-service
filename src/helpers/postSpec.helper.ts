@@ -22,7 +22,7 @@ export function buildPostSlug(topic: string, createdAt: Date = new Date()): stri
   return `${base || 'carousel'}-${stamp}`;
 }
 
-function surfaceForRole(
+export function surfaceForRole(
   slide: PostCopySlide,
   index: number,
   total: number,

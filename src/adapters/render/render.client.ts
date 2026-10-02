@@ -61,7 +61,7 @@ class HttpRenderClient implements RenderClient {
     try {
       const response = await this.client.post<HeadlineFitResult>('/fit/headlines', {
         format,
-        slides: slides.map(slide => ({ headline: slide.headline, rows: slide.rows ?? [] })),
+        slides: slides.map(slide => ({ ...slide, rows: slide.rows ?? [] })),
       });
       return response.data;
     } catch (err) {

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from pydantic import ValidationError
+
 from .brand import tokens as T
 from .brand.geometry import Geometry, geometry_for
+from .errors import LayoutOverflowError
 from .render import components as C
 from .render import typography as ty
+from .render.slide import build_stack, fit_stack
 from .schema import (
     FittedLine,
     FittedSlide,
@@ -13,6 +17,7 @@ from .schema import (
     HeadlineFitResult,
     HeadlineFitSlide,
     Row,
+    SlideSpec,
 )
 
 
@@ -46,9 +51,44 @@ def _row_lines(rows: list[Row], geo: Geometry) -> list[FittedLine]:
     ]
 
 
+def _stack_line(slide: HeadlineFitSlide, geo: Geometry) -> FittedLine | None:
+    try:
+        spec = SlideSpec(
+            surface="azure",
+            headline=slide.headline,
+            eyebrow=slide.eyebrow,
+            subs=slide.subs,
+            rows=slide.rows,
+            closing=slide.closing,
+            cta=slide.cta,
+            coral_rule=slide.coral_rule,
+        )
+    except ValidationError:
+        return None
+
+    try:
+        _, size = fit_stack(spec, geo)
+        fits = True
+    except LayoutOverflowError:
+        size, fits = T.MIN_HEADLINE_SIZE, False
+
+    height = build_stack(spec, size).height(geo)
+    return FittedLine(
+        role="stack height",
+        text=" / ".join(spec.headline),
+        width=round(height, 1),
+        overflow=round(height - geo.band_height, 1),
+        fits=fits,
+    )
+
+
 def _fit_slide(index: int, slide: HeadlineFitSlide, geo: Geometry) -> FittedSlide:
     size, lines = _headline_lines(slide.headline, geo)
     lines.extend(_row_lines(slide.rows, geo))
+    if all(line.fits for line in lines):
+        stack = _stack_line(slide, geo)
+        if stack is not None:
+            lines.append(stack)
     return FittedSlide(
         index=index,
         headline_size=size,

@@ -122,6 +122,11 @@ export interface RenderResult {
 export interface HeadlineFitInput {
   headline: string[];
   rows?: PostRow[];
+  eyebrow?: PostEyebrow;
+  subs?: string[];
+  closing?: string;
+  cta?: PostCta;
+  coral_rule?: boolean;
 }
 
 export interface HeadlineFitLine {

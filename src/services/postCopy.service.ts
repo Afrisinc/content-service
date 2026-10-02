@@ -13,8 +13,16 @@ import {
 } from '@/brand/afrisinc.brand';
 import { env } from '@/config/env';
 import { ClaudeNode, runClaude } from '@/nodes';
+import { surfaceForRole } from '@/helpers/postSpec.helper';
 import { resolveClaudeConfig } from '@/services/aiCredentials.service';
-import { HeadlineFitResult, PostBriefPayload, PostCopy, PostFormatName } from '@/types/post.types';
+import {
+  HeadlineFitInput,
+  HeadlineFitResult,
+  PostBriefPayload,
+  PostCopy,
+  PostCopySlide,
+  PostFormatName,
+} from '@/types/post.types';
 import { BadRequestError, ServerError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
 import { z } from 'zod';
@@ -158,21 +166,52 @@ export function briefPrompt(brief: PostBriefPayload, complaint?: string): string
   return lines.filter(Boolean).join('\n');
 }
 
+const STACK_HEIGHT_ROLE = 'stack height';
+
+export function fitInputFor(slide: PostCopySlide, index: number, total: number): HeadlineFitInput {
+  const carriesRows =
+    surfaceForRole(slide, index, total, {}) === 'white' && Boolean(slide.rows?.length);
+
+  return {
+    headline: slide.headline,
+    eyebrow: { text: slide.eyebrow, kind: slide.eyebrowKind },
+    subs: slide.subs?.slice(0, 2),
+    rows: carriesRows ? slide.rows : [],
+    closing: carriesRows ? slide.closing : undefined,
+    cta: slide.cta ? { text: slide.cta, arrow: true } : undefined,
+    coral_rule: true,
+  };
+}
+
 export function describeFitFailure(fit: HeadlineFitResult): string {
-  const over = fit.slides.flatMap(slide =>
-    slide.lines
-      .filter(line => !line.fits)
-      .map(
-        line =>
-          `slide ${slide.index + 1} ${line.role} "${line.text}" measures ` +
-          `${Math.round(line.width)}px, ${Math.round(line.overflow)}px too wide`
-      )
+  const failing = fit.slides.flatMap(slide =>
+    slide.lines.filter(line => !line.fits).map(line => ({ slide, line }))
   );
-  return (
-    `${over.join('; ')}. Rewrite those lines shorter so each one holds its measure ` +
-    `and every headline sets at ${fit.min_headline_size}px. Cut words — the type ` +
-    'size is fixed.'
-  );
+  const tooWide = failing
+    .filter(({ line }) => line.role !== STACK_HEIGHT_ROLE)
+    .map(
+      ({ slide, line }) =>
+        `slide ${slide.index + 1} ${line.role} "${line.text}" measures ` +
+        `${Math.round(line.width)}px, ${Math.round(line.overflow)}px too wide`
+    );
+  const tooTall = failing
+    .filter(({ line }) => line.role === STACK_HEIGHT_ROLE)
+    .map(
+      ({ slide, line }) =>
+        `slide ${slide.index + 1} stacks ${Math.round(line.overflow)}px taller than its ` +
+        'frame even with the smallest headline'
+    );
+
+  const fixes = [
+    tooWide.length &&
+      'Rewrite the wide lines shorter so each one holds its measure and every headline ' +
+        `sets at ${fit.min_headline_size}px.`,
+    tooTall.length &&
+      'Drop a sub-line, a row or the closing line on the tall slides — the frame cannot grow.',
+  ].filter(Boolean);
+
+  const problems = [...tooWide, ...tooTall].join('; ');
+  return `${problems}. ${fixes.join(' ')} Cut words — the type size is fixed.`;
 }
 
 export class PostCopyService {
@@ -230,7 +269,7 @@ export class PostCopyService {
       }
 
       const fit = await this.render.fitHeadlines(
-        parsed.data.slides.map(slide => ({ headline: slide.headline, rows: slide.rows })),
+        parsed.data.slides.map((slide, index, all) => fitInputFor(slide, index, all.length)),
         format
       );
       if (fit && !fit.fits) {

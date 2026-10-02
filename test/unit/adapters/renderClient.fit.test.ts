@@ -36,6 +36,25 @@ describe('fitHeadlines', () => {
     });
   });
 
+  it('sends the whole stack so its height is checked as well as its width', async () => {
+    post.mockResolvedValue({ data: FIT_OK });
+    const slide = {
+      headline: ['Ship in weeks,'],
+      eyebrow: { text: 'HOW WE BUILD', kind: 'label' as const },
+      subs: ['one'],
+      closing: 'And then we stay.',
+      cta: { text: 'afrisinc.com', arrow: true },
+      coral_rule: true,
+    };
+
+    await client.fitHeadlines([slide], 'single');
+
+    expect(post).toHaveBeenCalledWith('/fit/headlines', {
+      format: 'single',
+      slides: [{ ...slide, rows: [] }],
+    });
+  });
+
   it('sends the rows so their narrower measure is checked too', async () => {
     post.mockResolvedValue({ data: FIT_OK });
     const rows = [{ title: 'DISCOVERY', body: 'We map your workflow first.' }];

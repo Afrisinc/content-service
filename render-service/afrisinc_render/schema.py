@@ -169,6 +169,11 @@ class RenderResult(BaseModel):
 class HeadlineFitSlide(BaseModel):
     headline: list[str] = Field(min_length=1, max_length=T.MAX_HEADLINE_LINES)
     rows: list[Row] = Field(default_factory=list)
+    eyebrow: Eyebrow | None = None
+    subs: list[str] = Field(default_factory=list, max_length=2)
+    closing: str | None = Field(default=None, max_length=90)
+    cta: Cta | None = None
+    coral_rule: bool = False
 
 
 class HeadlineFitRequest(BaseModel):
