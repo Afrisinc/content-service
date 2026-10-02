@@ -26,6 +26,7 @@ import {
   socialMediaAccountRepository,
 } from '@/repositories/socialMediaAccount.repository';
 import { buildPostSlug, buildPostSpecFromCopy, buildFullCaption } from '@/helpers/postSpec.helper';
+import { buildNewsCopy, buildNewsPostSpec } from '@/helpers/newsPost.helper';
 import {
   CANCELLED_POST_STATUS,
   nextFreeSlot,
@@ -40,6 +41,7 @@ import { requestPostReview } from '@/helpers/reviewNotification.helper';
 import { ArtDirectionService, artDirectionService } from '@/services/artDirection.service';
 import { PostCopyService, postCopyService } from '@/services/postCopy.service';
 import {
+  NewsBrief,
   PostBriefPayload,
   PostCopy,
   PostFormatName,
@@ -121,30 +123,38 @@ export class PostAgentService {
     // expensive part, and it is already correct.
     const signal = runId ? registerRun(runId) : undefined;
 
-    const { copy, attempts } = await this.reuseOrRun(
-      runId,
-      AGENT_STEP_KEYS.copy,
-      RUN_STATE_KEYS.copy,
-      () => this.copyService.generate({ ...brief, format }, signal),
-      generated => {
-        const frames = pluralise(generated.copy.slides.length, 'frame');
-        return `${frames} · ${pluralise(generated.attempts, 'attempt')}`;
-      }
-    );
+    const { copy, attempts } = brief.news
+      ? await this.newsCopy(runId, brief.news, format)
+      : await this.reuseOrRun(
+          runId,
+          AGENT_STEP_KEYS.copy,
+          RUN_STATE_KEYS.copy,
+          () => this.copyService.generate({ ...brief, format }, signal),
+          generated => {
+            const frames = pluralise(generated.copy.slides.length, 'frame');
+            return `${frames} · ${pluralise(generated.attempts, 'attempt')}`;
+          }
+        );
 
     const { photosByIndex, assetIds } = await this.reuseOrRun(
       runId,
       AGENT_STEP_KEYS.art,
       RUN_STATE_KEYS.art,
-      () => this.artDirection.assignPhotos(copy, userId, brief.groupId, brief.assetIds),
+      () =>
+        this.artDirection.assignPhotos(copy, userId, brief.groupId, brief.assetIds, brief.photoUrl),
       assigned => {
+        if (brief.photoUrl) {
+          return 'the article cover';
+        }
         const photos = pluralise(assigned.assetIds.length, 'photograph');
         return assigned.reused ? `${photos} · ${assigned.reused} reused` : photos;
       }
     );
 
     const slug = buildPostSlug(brief.topic);
-    const spec = buildPostSpecFromCopy(slug, copy, photosByIndex, format);
+    const spec = brief.news
+      ? this.newsSpec(slug, brief.news, copy, photosByIndex[0])
+      : buildPostSpecFromCopy(slug, copy, photosByIndex, format);
 
     const draft = await this.resumeDraft(runId, spec, copy);
     if (draft) {
@@ -159,14 +169,38 @@ export class PostAgentService {
       offer: brief.offer,
       audience: brief.audience,
       spec: spec as unknown as Prisma.InputJsonValue,
-      caption: buildFullCaption(copy),
+      caption: brief.news ? copy.caption : buildFullCaption(copy),
       hashtags: copy.hashtags,
       claims: copy.claims,
-      aiProvider: 'anthropic',
+      aiProvider: brief.news ? undefined : 'anthropic',
       generationTries: attempts,
     });
 
     return this.renderQueueAndFinish(created, spec, copy, assetIds, brief, runId, slug);
+  }
+
+  private newsCopy(
+    runId: string | null,
+    news: NewsBrief,
+    format: PostFormatName
+  ): Promise<{ copy: PostCopy; attempts: number }> {
+    return this.reuseOrRun(
+      runId,
+      AGENT_STEP_KEYS.copy,
+      RUN_STATE_KEYS.copy,
+      async () => {
+        const { lines } = await this.render.wrapHeadline(news.headline, format);
+        return { copy: buildNewsCopy(news, lines), attempts: 1 };
+      },
+      () => 'news copy taken from the article'
+    );
+  }
+
+  private newsSpec(slug: string, news: NewsBrief, copy: PostCopy, photo: string | undefined) {
+    if (!photo) {
+      throw new BadRequestError('a news post needs the article cover as its photograph');
+    }
+    return buildNewsPostSpec(slug, news, copy, photo);
   }
 
   /**

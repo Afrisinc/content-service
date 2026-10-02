@@ -21,7 +21,7 @@ export type ChatGptOperation = (typeof CHATGPT_OPERATION)[keyof typeof CHATGPT_O
 export const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 export const DEFAULT_CHAT_MODEL = 'gpt-4o-mini';
 export const DEFAULT_VISION_MODEL = 'gpt-4o-mini';
-export const DEFAULT_IMAGE_MODEL = 'dall-e-3';
+export const DEFAULT_IMAGE_MODEL = 'gpt-image-1';
 export const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small';
 export const DEFAULT_MODERATION_MODEL = 'omni-moderation-latest';
 export const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
@@ -40,6 +40,9 @@ export const IMAGE_MODEL_OPTIONS = [
   { name: 'DALL-E 3', value: 'dall-e-3' },
   { name: 'DALL-E 2', value: 'dall-e-2' },
   { name: 'GPT Image 1', value: 'gpt-image-1' },
+  { name: 'GPT Image 1 Mini', value: 'gpt-image-1-mini' },
+  { name: 'GPT Image 1.5', value: 'gpt-image-1.5' },
+  { name: 'GPT Image 2', value: 'gpt-image-2' },
 ];
 
 export const EMBEDDING_MODEL_OPTIONS = [

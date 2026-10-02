@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildEnhancementPrompt,
   countWords,
+  coverPrompt,
   parseEnhancement,
   sanitizeArticleHtml,
   slugify,
@@ -67,6 +68,53 @@ describe('buildEnhancementPrompt', () => {
     expect(prompt).toContain('Source: unknown');
     expect(prompt).toContain('Feed category: general');
     expect(prompt).toContain('Published: unknown');
+  });
+});
+
+describe('the standfirst', () => {
+  const reply = {
+    score: 0.8,
+    should_publish: true,
+    title: 'Kenya opens M-Pesa API',
+    slug: 'kenya-mpesa-api',
+    excerpt: 'A long excerpt of two or three sentences about the story.',
+    meta_description: 'The SEO description of the story.',
+    content: `<h2>Why</h2><p>${'word '.repeat(200)}</p>`,
+  };
+
+  it('is requested from the editor as a factual news deck', () => {
+    const { systemPrompt } = buildEnhancementPrompt(source);
+
+    expect(systemPrompt).toContain('"standfirst": "one factual sentence');
+    expect(systemPrompt).toContain('No questions, no "discover", no promotional');
+  });
+
+  it('is taken from the editor when it wrote one', () => {
+    const parsed = parseEnhancement(
+      { ...reply, standfirst: 'Kenya has opened M-Pesa to banks.' },
+      source
+    );
+
+    expect(parsed.standfirst).toBe('Kenya has opened M-Pesa to banks.');
+  });
+
+  it('falls back to the meta description when the editor left it out', () => {
+    expect(parseEnhancement(reply, source).standfirst).toBe('The SEO description of the story.');
+  });
+
+  it('never exceeds what the news frame can carry', () => {
+    const parsed = parseEnhancement({ ...reply, standfirst: 'x'.repeat(500) }, source);
+
+    expect(parsed.standfirst.length).toBeLessThanOrEqual(160);
+  });
+});
+
+describe('the cover instructions in the editor prompt', () => {
+  it('forbid naming real organisations and asking for any text in the picture', () => {
+    const { systemPrompt } = buildEnhancementPrompt(source);
+
+    expect(systemPrompt).toContain('Never name a real company, institution, brand');
+    expect(systemPrompt).toContain('never ask for signs, readable screens, captions or any text');
   });
 });
 
@@ -218,5 +266,15 @@ describe('slugify and countWords', () => {
   it('counts words outside markup', () => {
     expect(countWords('<p>One two</p><p>three</p>')).toBe(3);
     expect(countWords('<p></p>')).toBe(0);
+  });
+});
+
+describe('coverPrompt', () => {
+  it('keeps the model prompt and forbids any lettering, signage or logos in the picture', () => {
+    const prompt = coverPrompt('  A Nairobi banking hall at dawn  ');
+
+    expect(prompt.startsWith('A Nairobi banking hall at dawn')).toBe(true);
+    expect(prompt).toContain('no text, lettering, numbers, signage, logos, seals or watermarks');
+    expect(prompt).toContain('blank or show abstract shapes only');
   });
 });

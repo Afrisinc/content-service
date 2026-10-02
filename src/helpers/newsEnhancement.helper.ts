@@ -27,6 +27,7 @@ export interface EnhancedArticle {
   title: string;
   slug: string;
   excerpt: string;
+  standfirst: string;
   content: string;
   tags: string[];
   category: string;
@@ -81,8 +82,15 @@ export function buildEnhancementPrompt(article: EnhancementSource) {
     '- Credit the original source by name in the body.',
     '- "content" is HTML using only <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>,',
     '  <blockquote>. No <h1>, no inline styles, no scripts, no images. 500 to 800 words.',
-    '- The cover image prompt describes a photorealistic African business or technology',
-    '  scene. No text, no logos, no identifiable real people.',
+    '- "image_prompt" describes a generic photorealistic African business or technology scene.',
+    '  Never name a real company, institution, brand, product, publication or person in it,',
+    '  and never ask for signs, readable screens, captions or any text. Default to a scene',
+    '  with no people at all: places, architecture, skylines, devices, hands, objects, light',
+    '  and mood. Only if the story truly needs people, describe them from behind, in',
+    '  silhouette or small in the distance, and never describe faces, expressions, groups',
+    '  or "diverse people". No logos, no identifiable real people.',
+    '- "standfirst" reads like a news deck: one plain, factual sentence stating what happened',
+    '  and who it affects. No questions, no "discover", no promotional or motivational verbs.',
     '',
     'Respond with ONLY a JSON object with exactly these fields:',
     '{',
@@ -92,6 +100,7 @@ export function buildEnhancementPrompt(article: EnhancementSource) {
     '  "title": "headline, max 80 characters",',
     '  "slug": "kebab-case-url-slug, max 60 characters",',
     '  "excerpt": "2-3 sentence hook, max 300 characters",',
+    '  "standfirst": "one factual sentence for a news graphic, max 150 characters",',
     '  "content": "<h2>…</h2><p>…</p>",',
     '  "tags": ["3 to 6 short tags"],',
     `  "category": "one of: ${NEWS_CATEGORIES.join(', ')}",`,
@@ -103,7 +112,7 @@ export function buildEnhancementPrompt(article: EnhancementSource) {
     '  "twitter_title": "max 70 characters",',
     '  "twitter_description": "max 200 characters",',
     '  "cover_alt": "alt text for the cover image, max 125 characters",',
-    '  "image_prompt": "DALL-E 3 prompt"',
+    '  "image_prompt": "prompt for the cover photograph"',
     '}',
   ].join('\n');
 
@@ -211,6 +220,16 @@ function categoryFrom(value: unknown, fallback: string | null): string {
  * editor can act on. A rejection is not an error — it comes back with
  * `shouldPublish: false` and the model's reason.
  */
+const COVER_PROMPT_RULES =
+  'Editorial photograph. The image must contain no text, lettering, numbers, signage, logos, ' +
+  'seals or watermarks anywhere. Any screen, sign or display in the scene must be blank or ' +
+  'show abstract shapes only. Prefer a composition with no people. Show no face in close-up ' +
+  'or in profile: any person appears only from behind, in silhouette or small in the distance.';
+
+export function coverPrompt(imagePrompt: string): string {
+  return `${imagePrompt.trim()}\n\n${COVER_PROMPT_RULES}`;
+}
+
 export function parseEnhancement(raw: unknown, source: EnhancementSource): EnhancedArticle {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('the model did not return a JSON object');
@@ -240,6 +259,7 @@ export function parseEnhancement(raw: unknown, source: EnhancementSource): Enhan
 
   const excerpt = str(reply.excerpt, 300);
   const metaDescription = str(reply.meta_description, 155, excerpt);
+  const standfirst = str(reply.standfirst, 160, metaDescription);
 
   return {
     score,
@@ -254,6 +274,7 @@ export function parseEnhancement(raw: unknown, source: EnhancementSource): Enhan
     topic: str(reply.topic, 50) || null,
     metaTitle: str(reply.meta_title, 60, title),
     metaDescription,
+    standfirst,
     ogTitle: str(reply.og_title, 90, title),
     ogDescription: str(reply.og_description, 200, metaDescription),
     twitterTitle: str(reply.twitter_title, 70, title),

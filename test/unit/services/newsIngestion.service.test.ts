@@ -8,6 +8,7 @@ const envMock = vi.hoisted(() => ({
   ]),
   NEWS_FEED_TIMEOUT_MS: 10000,
   NEWS_FEED_ITEM_LIMIT: 10,
+  NEWS_FEED_MAX_AGE_HOURS: 72,
 }));
 
 const repository = vi.hoisted(() => ({
@@ -93,5 +94,79 @@ describe('NewsIngestionService.run', () => {
     const result = await new NewsIngestionService(fetcher).run();
 
     expect(result.failedSources[0].error).toBe('offline');
+  });
+
+  describe('freshness', () => {
+    const publishedAgo = (hours: number) => new Date(Date.now() - hours * 3600_000).toUTCString();
+
+    const datedFeed = (...items: { guid: string; hoursOld: number | null }[]) =>
+      `<rss><channel>${items
+        .map(
+          item =>
+            `<item><title>${item.guid}</title><guid>${item.guid}</guid>` +
+            `<link>https://x.africa/${item.guid}</link>` +
+            (item.hoursOld === null ? '' : `<pubDate>${publishedAgo(item.hoursOld)}</pubDate>`) +
+            '</item>'
+        )
+        .join('')}</channel></rss>`;
+
+    const alphaOnly = JSON.stringify([
+      { name: 'Alpha', url: 'https://alpha.africa/feed', category: 'tech' },
+    ]);
+
+    beforeEach(() => {
+      envMock.NEWS_RSS_SOURCES = alphaOnly;
+      repository.findExistingGuids.mockResolvedValue(new Set());
+    });
+
+    it('leaves out items older than the cutoff and says how many', async () => {
+      const result = await new NewsIngestionService(async () =>
+        datedFeed(
+          { guid: 'new', hoursOld: 2 },
+          { guid: 'edge', hoursOld: 71 },
+          { guid: 'old', hoursOld: 73 },
+          { guid: 'ancient', hoursOld: 24 * 900 }
+        )
+      ).run();
+
+      const rows = repository.createIngested.mock.calls[0][0];
+      expect(rows.map((row: { guid: string }) => row.guid)).toEqual(['new', 'edge']);
+      expect(result).toMatchObject({ fetched: 4, created: 2, stale: 2, duplicates: 0 });
+    });
+
+    it('keeps an item that carries no date', async () => {
+      await new NewsIngestionService(async () =>
+        datedFeed({ guid: 'undated', hoursOld: null })
+      ).run();
+
+      expect(repository.createIngested.mock.calls[0][0]).toHaveLength(1);
+    });
+
+    it('keeps everything when the cutoff is switched off', async () => {
+      envMock.NEWS_FEED_MAX_AGE_HOURS = 0;
+
+      const result = await new NewsIngestionService(async () =>
+        datedFeed({ guid: 'ancient', hoursOld: 24 * 900 })
+      ).run();
+
+      expect(result).toMatchObject({ created: 1, stale: 0 });
+      envMock.NEWS_FEED_MAX_AGE_HOURS = 72;
+    });
+
+    it('reads at most the configured number of items from each feed', async () => {
+      envMock.NEWS_FEED_ITEM_LIMIT = 2;
+
+      const result = await new NewsIngestionService(async () =>
+        datedFeed(
+          { guid: 'a', hoursOld: 1 },
+          { guid: 'b', hoursOld: 2 },
+          { guid: 'c', hoursOld: 3 },
+          { guid: 'd', hoursOld: 4 }
+        )
+      ).run();
+
+      expect(result.fetched).toBe(2);
+      envMock.NEWS_FEED_ITEM_LIMIT = 10;
+    });
   });
 });

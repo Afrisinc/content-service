@@ -70,6 +70,62 @@ def contact_rail(draw: ImageDraw.ImageDraw, geo: Geometry, surface: str) -> None
     )
 
 
+def news_badge_rect(geo: Geometry) -> tuple[float, float, float, float]:
+    fnt = ty.font(ty.BOLD, T.SIZE_BADGE)
+    text = ty.text_width(T.NEWS_BADGE_LABEL, fnt, ty.tracking(T.SIZE_BADGE, caps=True))
+    width = (
+        T.NEWS_BADGE_PADDING * 2 + T.NEWS_BADGE_DOT_RADIUS * 2 + T.NEWS_BADGE_GAP + text
+    )
+    top = geo.header_y - T.NEWS_BADGE_HEIGHT / 2
+    return (geo.right_edge - width, top, geo.right_edge, top + T.NEWS_BADGE_HEIGHT)
+
+
+def news_badge(draw: ImageDraw.ImageDraw, geo: Geometry) -> None:
+    left, top, right, bottom = news_badge_rect(geo)
+    draw.rounded_rectangle(
+        [left, top, right, bottom], radius=T.NEWS_BADGE_HEIGHT // 2, fill=T.WHITE + (255,)
+    )
+
+    dot_x = left + T.NEWS_BADGE_PADDING + T.NEWS_BADGE_DOT_RADIUS
+    centre_y = (top + bottom) / 2
+    draw.ellipse(
+        [
+            dot_x - T.NEWS_BADGE_DOT_RADIUS,
+            centre_y - T.NEWS_BADGE_DOT_RADIUS,
+            dot_x + T.NEWS_BADGE_DOT_RADIUS,
+            centre_y + T.NEWS_BADGE_DOT_RADIUS,
+        ],
+        fill=T.CORAL + (255,),
+    )
+    ty.draw_cap_centred(
+        draw,
+        dot_x + T.NEWS_BADGE_DOT_RADIUS + T.NEWS_BADGE_GAP,
+        centre_y,
+        T.NEWS_BADGE_LABEL,
+        ty.font(ty.BOLD, T.SIZE_BADGE),
+        T.INK + (255,),
+        ty.tracking(T.SIZE_BADGE, caps=True),
+    )
+
+
+def dateline(draw: ImageDraw.ImageDraw, geo: Geometry, text: str, surface: str) -> None:
+    colour = R.foreground(surface)
+    rule_y = geo.footer_y - T.DATELINE_RULE_OFFSET
+    draw.line(
+        [(geo.margin, rule_y), (geo.right_edge, rule_y)],
+        fill=colour + (int(255 * T.DATELINE_RULE_ALPHA),),
+        width=2,
+    )
+
+    fnt = ty.font(ty.MEDIUM, T.SIZE_DATELINE)
+    fill = colour + (int(255 * T.DATELINE_TEXT_ALPHA),)
+    track = T.SIZE_DATELINE * 0.08
+    ty.draw_cap_centred(draw, geo.margin, geo.footer_y, text.upper(), fnt, fill, track)
+    ty.draw_cap_centred(
+        draw, geo.right_edge, geo.footer_y, T.SITE.upper(), fnt, fill, track, align_right=True
+    )
+
+
 def footer(draw: ImageDraw.ImageDraw, geo: Geometry, surface: str) -> None:
     colour = R.foreground(surface)
     draw.ellipse(

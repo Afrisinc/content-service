@@ -103,6 +103,11 @@ function build(overrides: Record<string, unknown> = {}) {
     fetchSlide: vi.fn(async (_slug: string, file: string) => Buffer.from(`png:${file}`)),
     slideUrl: vi.fn((slug: string, file: string) => `https://render/${slug}/${file}`),
     healthy: vi.fn(async () => true),
+    wrapHeadline: vi.fn(async () => ({
+      lines: ['Kenya opens M-Pesa API', 'to regional banks'],
+      size: 69,
+      truncated: false,
+    })),
   };
   const slideAssets = {
     publish: vi.fn(async (slug: string, files: { filename: string }[]) =>
@@ -207,6 +212,136 @@ describe('createFromBrief', () => {
     expect(render.render).toHaveBeenCalledOnce();
     expect(drafts.create).toHaveBeenCalledOnce();
     expect(drafts.markRendered).toHaveBeenCalledOnce();
+  });
+
+  it('hands the brief photograph to art direction so it is the background', async () => {
+    const { service, artDirection } = build();
+
+    await service.createFromBrief({
+      topic: 'Software development',
+      userId: 'user-1',
+      groupId: 'group-1',
+      photoUrl: 'https://cdn.afrisinc.com/cover.png',
+    });
+
+    expect(artDirection.assignPhotos).toHaveBeenCalledWith(
+      expect.anything(),
+      'user-1',
+      'group-1',
+      undefined,
+      'https://cdn.afrisinc.com/cover.png'
+    );
+  });
+
+  it('describes the art stage as the article cover when the photograph was given', async () => {
+    const { service, tracker } = build();
+
+    await service.createFromBrief({
+      topic: 'Software development',
+      userId: 'user-1',
+      photoUrl: 'https://cdn.afrisinc.com/cover.png',
+    });
+
+    const detail = tracker.track.mock.calls.find(call => call[1] === 'art')?.[3] as
+      ((assigned: unknown) => string) | undefined;
+    expect(detail?.({ photosByIndex: {}, assetIds: [], reused: 0 })).toBe('the article cover');
+  });
+
+  describe('a news brief', () => {
+    const NEWS_BRIEF = {
+      topic: 'Kenya opens M-Pesa API to regional banks',
+      userId: 'user-1',
+      format: 'single' as const,
+      photoUrl: 'https://cdn.afrisinc.com/cover.png',
+      news: {
+        headline: 'Kenya opens M-Pesa API to regional banks',
+        summary: 'Regulators agreed a shared licensing regime.',
+        category: 'fintech',
+        source: 'TechCabal',
+        publishedAt: '2026-10-02T09:30:00.000Z',
+        articleUrl: 'https://afrisinc.com/media/articles/mpesa-open-api',
+        tags: ['banking'],
+      },
+    };
+
+    const buildNews = () => {
+      const built = build();
+      built.artDirection.assignPhotos.mockResolvedValue({
+        photosByIndex: { 0: 'https://cdn.afrisinc.com/cover.png' },
+        assetIds: [],
+      });
+      return built;
+    };
+
+    it('takes its copy from the article instead of asking the copy agent', async () => {
+      const { service, copyService } = buildNews();
+
+      await service.createFromBrief(NEWS_BRIEF);
+
+      expect(copyService.generate).not.toHaveBeenCalled();
+    });
+
+    it('lays the headline out through the render service for the news frame', async () => {
+      const { service, render } = buildNews();
+
+      await service.createFromBrief(NEWS_BRIEF);
+
+      expect(render.wrapHeadline).toHaveBeenCalledWith(
+        'Kenya opens M-Pesa API to regional banks',
+        'single'
+      );
+    });
+
+    it('renders a news frame on the article cover, with the source and date', async () => {
+      const { service, render } = buildNews();
+
+      await service.createFromBrief(NEWS_BRIEF);
+
+      const spec = render.render.mock.calls[0][0];
+      expect(spec.format).toBe('single');
+      expect(spec.slides).toEqual([
+        expect.objectContaining({
+          surface: 'photo',
+          layout: 'news',
+          photo: 'https://cdn.afrisinc.com/cover.png',
+          headline: ['Kenya opens M-Pesa API', 'to regional banks'],
+          dateline: 'Source: TechCabal · 2 Oct 2026',
+        }),
+      ]);
+      expect(spec.slides[0]).not.toHaveProperty('cta');
+    });
+
+    it('saves a news caption with no brand footer and no AI provider', async () => {
+      const { service, drafts } = buildNews();
+
+      await service.createFromBrief(NEWS_BRIEF);
+
+      const saved = drafts.create.mock.calls[0][0] as { caption: string; aiProvider?: string };
+      expect(saved.caption).toContain(
+        'Read the full story: https://afrisinc.com/media/articles/mpesa-open-api'
+      );
+      expect(saved.caption).not.toMatch(/\+250|Call or WhatsApp/);
+      expect(saved.aiProvider).toBeUndefined();
+    });
+
+    it('fails clearly when no cover was given to put behind the news frame', async () => {
+      const { service, artDirection } = build();
+      artDirection.assignPhotos.mockResolvedValueOnce({ photosByIndex: {}, assetIds: [] });
+
+      await expect(service.createFromBrief(NEWS_BRIEF)).rejects.toThrow(
+        'a news post needs the article cover'
+      );
+    });
+
+    it('describes the copy stage as taken from the article', async () => {
+      const { service, tracker } = buildNews();
+
+      await service.createFromBrief(NEWS_BRIEF);
+
+      const detail = tracker.track.mock.calls.find(call => call[1] === 'copy')?.[3] as
+        (() => string) | undefined;
+      expect(detail?.()).toBe('news copy taken from the article');
+    });
   });
 
   it('stores the public asset url per rendered frame, not the internal render url', async () => {

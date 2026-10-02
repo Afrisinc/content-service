@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const envMock = vi.hoisted(() => ({
+  NEWSLETTER_SITE_URL: 'https://afrisinc.com',
   OPENAI_API_KEY: 'sk-test',
   NEWS_ENHANCE_BATCH_SIZE: 5,
   NEWS_MIN_SCORE: 0.6,
@@ -22,6 +23,9 @@ vi.mock('@/repositories/n8nArticle.repository', () => ({ n8nArticleRepository: r
 vi.mock('@/adapters/nodes/nodeServices', () => ({ nodeServices: {} }));
 vi.mock('@/nodes', () => ({ runChatGpt: vi.fn(), chatGptCredentialsFromEnv: vi.fn() }));
 vi.mock('@/services/aiCredentials.service', () => ({ resolveChatGptConfig }));
+vi.mock('@/services/automation.service', () => ({
+  automationService: { draftNewsPosts: vi.fn(async () => []) },
+}));
 vi.mock('@/services/agentSettings.service', () => ({
   agentSettingsService: { getNewsSettings },
 }));
@@ -70,6 +74,7 @@ describe('NewsEnhancementService', () => {
     writeArticle: vi.fn(),
     drawCover: vi.fn(),
     storeCover: vi.fn(),
+    postToSocial: vi.fn(),
   };
   const service = new NewsEnhancementService(deps);
 
@@ -78,6 +83,7 @@ describe('NewsEnhancementService', () => {
     resolveChatGptConfig.mockResolvedValue({ credentials: { apiKey: 'sk' } });
     repository.failOrphaned.mockResolvedValue(0);
     getNewsSettings.mockResolvedValue({ batchSize: 1 });
+    deps.postToSocial.mockResolvedValue([]);
     repository.isSlugTaken.mockResolvedValue(false);
     repository.publishEnhanced.mockResolvedValue({ id: 'mp-1' });
     deps.writeArticle.mockResolvedValue(goodReply);
@@ -153,6 +159,92 @@ describe('NewsEnhancementService', () => {
     );
   });
 
+  describe('the social post for a published article', () => {
+    it('is drafted from the published article with the same cover as the website', async () => {
+      deps.postToSocial.mockResolvedValue([
+        { userId: 'u1', groupName: 'AFRISINC', status: 'drafted', reason: null },
+      ]);
+
+      const result = await service.enhanceArticle(article(7n));
+
+      expect(deps.postToSocial).toHaveBeenCalledWith({
+        title: "M-Pesa's open API could reshape banking",
+        summary: 'One standard for the region.',
+        standfirst: 'One standard for the region.',
+        category: 'fintech',
+        source: 'Disrupt Africa',
+        publishedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        tags: ['fintech'],
+        articleUrl: 'https://afrisinc.com/media/articles/mpesa-open-api',
+        coverUrl: 'https://cdn.afrisinc.com/mpesa-open-api.png',
+      });
+      expect(result.social).toEqual([
+        { userId: 'u1', groupName: 'AFRISINC', status: 'drafted', reason: null },
+      ]);
+    });
+
+    it('uses the very cover that was stored for the website, not a new one', async () => {
+      await service.enhanceArticle(article(7n));
+
+      const stored = deps.storeCover.mock.results[0].value;
+      const source = deps.postToSocial.mock.calls[0][0];
+      expect(await stored).toBe(source.coverUrl);
+      expect(deps.drawCover).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not drafted for a rejected article', async () => {
+      deps.writeArticle.mockResolvedValue({ ...goodReply, score: 0.1 });
+
+      const result = await service.enhanceArticle(article(7n));
+
+      expect(deps.postToSocial).not.toHaveBeenCalled();
+      expect(result.social).toEqual([]);
+    });
+
+    it('is not drafted for an article that failed', async () => {
+      deps.drawCover.mockRejectedValue(new Error('image API down'));
+
+      await service.enhanceArticle(article(7n));
+
+      expect(deps.postToSocial).not.toHaveBeenCalled();
+    });
+
+    it('never fails or unpublishes the article when drafting throws', async () => {
+      deps.postToSocial.mockRejectedValue(new Error('render service unreachable'));
+
+      const result = await service.enhanceArticle(article(7n));
+
+      expect(result.outcome).toBe('published');
+      expect(result.social).toEqual([
+        { userId: 'all', groupName: null, status: 'failed', reason: 'render service unreachable' },
+      ]);
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it('never fails the article when the post source cannot even be built', async () => {
+      envMock.NEWSLETTER_SITE_URL = undefined as never;
+
+      const result = await service.enhanceArticle(article(7n));
+
+      expect(result.outcome).toBe('published');
+      expect(result.social[0]).toMatchObject({ status: 'failed' });
+      expect(repository.update).not.toHaveBeenCalled();
+      envMock.NEWSLETTER_SITE_URL = 'https://afrisinc.com';
+    });
+
+    it('is simply skipped when no drafting is wired in', async () => {
+      const bare = new NewsEnhancementService({
+        writeArticle: deps.writeArticle,
+        drawCover: deps.drawCover,
+        storeCover: deps.storeCover,
+      });
+
+      const result = await bare.enhanceArticle(article(7n));
+
+      expect(result).toMatchObject({ outcome: 'published', social: [] });
+    });
+  });
+
   it('explains a rejection when the editor gave no reason and chose not to publish', async () => {
     deps.writeArticle.mockResolvedValue({ score: 0.9, should_publish: false });
 
@@ -177,6 +269,7 @@ describe('NewsEnhancementService', () => {
       outcome: 'rejected',
       score: 0.9,
       reason: 'Duplicate of yesterday',
+      social: [],
     });
   });
 

@@ -9,10 +9,11 @@ import {
 const ingestion = (overrides = {}) => ({
   startedAt: '',
   finishedAt: '',
-  sources: 13,
+  sources: 4,
   fetched: 118,
   created: 9,
   duplicates: 109,
+  stale: 0,
   failedSources: [] as { name: string; error: string }[],
   ...overrides,
 });
@@ -30,9 +31,23 @@ const enhancement = (overrides = {}) => ({
     outcome: 'published' | 'rejected' | 'failed';
     score: number | null;
     reason: string | null;
+    social: {
+      userId: string;
+      groupName: string | null;
+      status: 'drafted' | 'skipped' | 'failed';
+      reason: string | null;
+    }[];
   }[],
   recovered: 0,
   ...overrides,
+});
+
+describe('ingestionOutcome for items that were too old', () => {
+  it('says how many were left out for their age', () => {
+    expect(ingestionOutcome(ingestion({ fetched: 12, created: 3, stale: 5 })).detail).toBe(
+      '12 items read · 3 new · 5 too old'
+    );
+  });
 });
 
 describe('ingestionOutcome', () => {
@@ -74,6 +89,7 @@ const failedArticle = (id: string, reason: string) => ({
   outcome: 'failed' as const,
   score: null,
   reason,
+  social: [],
 });
 
 describe('enhancementOutcome', () => {
@@ -163,6 +179,7 @@ describe('enhancementOutcome', () => {
             outcome: 'published',
             score: 0.86,
             reason: null,
+            social: [{ userId: 'u1', groupName: 'AFRISINC', status: 'drafted', reason: null }],
           },
           {
             articleId: '2',
@@ -170,6 +187,7 @@ describe('enhancementOutcome', () => {
             outcome: 'rejected',
             score: 0.21,
             reason: 'no African business angle',
+            social: [],
           },
           failedArticle('3', 'timeout'),
         ],
@@ -181,7 +199,7 @@ describe('enhancementOutcome', () => {
         key: 'article-1',
         label: 'Kenya opens M-Pesa API',
         status: 'succeeded',
-        detail: 'Published · score 0.86',
+        detail: 'Published · score 0.86 · 1 social post drafted',
       },
       {
         key: 'article-2',
@@ -191,6 +209,62 @@ describe('enhancementOutcome', () => {
       },
       { key: 'article-3', label: 'Headline 3', status: 'failed', errorMessage: 'Failed — timeout' },
     ]);
+  });
+
+  describe('what became of the social posts', () => {
+    const publishedWith = (social: unknown[]) =>
+      enhancementOutcome(
+        enhancement({
+          claimed: 1,
+          published: 1,
+          rejected: 0,
+          failed: 0,
+          articles: [
+            {
+              articleId: '1',
+              headline: 'Story',
+              outcome: 'published',
+              score: 0.9,
+              reason: null,
+              social,
+            },
+          ],
+        })
+      ).steps?.[0].detail;
+
+    const outcome = (status: string, reason: string | null = null, userId = 'u1') => ({
+      userId,
+      groupName: 'AFRISINC',
+      status,
+      reason,
+    });
+
+    it('counts the posts drafted', () => {
+      expect(publishedWith([outcome('drafted'), outcome('drafted', null, 'u2')])).toBe(
+        'Published · score 0.90 · 2 social posts drafted'
+      );
+    });
+
+    it('says why a user was skipped, once per reason', () => {
+      expect(
+        publishedWith([
+          outcome('skipped', 'no default brand is set'),
+          outcome('skipped', 'no default brand is set', 'u2'),
+        ])
+      ).toBe('Published · score 0.90 · social skipped: no default brand is set');
+    });
+
+    it('says why a post failed without failing the article', () => {
+      expect(publishedWith([outcome('drafted'), outcome('failed', 'render timed out', 'u2')])).toBe(
+        'Published · score 0.90 · 1 social post drafted · social post failed: render timed out'
+      );
+    });
+
+    it('says so when nobody was set up to receive a post', () => {
+      expect(publishedWith([])).toBe(
+        'Published · score 0.90 · no social post (no user has the news agent on under autopilot)'
+      );
+    });
   });
 
   it('shortens a very long headline to fit a step label', () => {
@@ -207,6 +281,7 @@ describe('enhancementOutcome', () => {
             outcome: 'published',
             score: 0.9,
             reason: null,
+            social: [],
           },
         ],
       })

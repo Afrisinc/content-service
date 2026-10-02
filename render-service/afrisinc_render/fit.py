@@ -5,12 +5,13 @@ from __future__ import annotations
 from pydantic import ValidationError
 
 from .brand import tokens as T
-from .brand.geometry import Geometry, geometry_for
+from .brand.geometry import Geometry, geometry_for, news_geometry
 from .errors import LayoutOverflowError
 from .render import components as C
 from .render import typography as ty
 from .render.slide import build_stack, fit_stack
 from .schema import (
+    NEWS,
     FittedLine,
     FittedSlide,
     HeadlineFitRequest,
@@ -21,8 +22,11 @@ from .schema import (
 )
 
 
-def _headline_lines(lines: list[str], geo: Geometry) -> tuple[int, list[FittedLine]]:
-    fit = ty.headline_fit(lines, geo.content_width, T.BRAND_HEADLINE_SIZES)
+def _headline_lines(
+    lines: list[str], geo: Geometry, layout: str = "brand"
+) -> tuple[int, list[FittedLine]]:
+    sizes = T.NEWS_HEADLINE_SIZES if layout == NEWS else T.BRAND_HEADLINE_SIZES
+    fit = ty.headline_fit(lines, geo.content_width, sizes)
     return fit.size, [
         FittedLine(
             role="headline line",
@@ -54,7 +58,10 @@ def _row_lines(rows: list[Row], geo: Geometry) -> list[FittedLine]:
 def _stack_line(slide: HeadlineFitSlide, geo: Geometry) -> FittedLine | None:
     try:
         spec = SlideSpec(
-            surface="azure",
+            surface="photo" if slide.layout == NEWS else "azure",
+            photo="fit-check" if slide.layout == NEWS else None,
+            layout=slide.layout,
+            dateline="fit check" if slide.layout == NEWS else None,
             headline=slide.headline,
             eyebrow=slide.eyebrow,
             subs=slide.subs,
@@ -83,7 +90,7 @@ def _stack_line(slide: HeadlineFitSlide, geo: Geometry) -> FittedLine | None:
 
 
 def _fit_slide(index: int, slide: HeadlineFitSlide, geo: Geometry) -> FittedSlide:
-    size, lines = _headline_lines(slide.headline, geo)
+    size, lines = _headline_lines(slide.headline, geo, slide.layout)
     lines.extend(_row_lines(slide.rows, geo))
     if all(line.fits for line in lines):
         stack = _stack_line(slide, geo)
@@ -98,12 +105,16 @@ def _fit_slide(index: int, slide: HeadlineFitSlide, geo: Geometry) -> FittedSlid
 
 
 def fit_headlines(request: HeadlineFitRequest) -> HeadlineFitResult:
-    geo = geometry_for(request.format)
-    slides = [_fit_slide(index, slide, geo) for index, slide in enumerate(request.slides)]
+    base = geometry_for(request.format)
+    slides = [
+        _fit_slide(index, slide, news_geometry(base) if slide.layout == NEWS else base)
+        for index, slide in enumerate(request.slides)
+    ]
+    all_news = all(slide.layout == NEWS for slide in request.slides)
 
     return HeadlineFitResult(
-        measure=geo.content_width,
-        min_headline_size=T.HEADLINE_BRAND_FLOOR,
+        measure=base.content_width,
+        min_headline_size=T.NEWS_HEADLINE_FLOOR if all_news else T.HEADLINE_BRAND_FLOOR,
         fits=all(slide.fits for slide in slides),
         slides=slides,
     )

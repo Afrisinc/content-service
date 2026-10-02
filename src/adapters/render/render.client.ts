@@ -2,6 +2,7 @@ import { env } from '@/config/env';
 import {
   HeadlineFitInput,
   HeadlineFitResult,
+  HeadlineWrapResult,
   PostFormatName,
   PostSpec,
   RenderResult,
@@ -16,6 +17,7 @@ export interface RenderClient {
     slides: HeadlineFitInput[],
     format: PostFormatName
   ): Promise<HeadlineFitResult | null>;
+  wrapHeadline(text: string, format: PostFormatName): Promise<HeadlineWrapResult>;
   fetchSlide(slug: string, filename: string): Promise<Buffer>;
   slideUrl(slug: string, filename: string): string;
   healthy(): Promise<boolean>;
@@ -70,6 +72,20 @@ class HttpRenderClient implements RenderClient {
         'Could not preflight headline fit; letting the copy through to render'
       );
       return null;
+    }
+  }
+
+  async wrapHeadline(text: string, format: PostFormatName): Promise<HeadlineWrapResult> {
+    try {
+      const response = await this.client.post<HeadlineWrapResult>('/layout/headline', {
+        text,
+        format,
+      });
+      return response.data;
+    } catch (err) {
+      const detail = isAxiosError(err) ? this.describe(err.response?.data) : String(err);
+      logger.error({ detail }, 'Could not lay out a news headline');
+      throw new ServerError(`could not lay out the headline: ${detail}`);
     }
   }
 

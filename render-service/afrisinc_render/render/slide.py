@@ -8,10 +8,10 @@ from PIL import Image, ImageDraw
 
 from ..brand import rules as R
 from ..brand import tokens as T
-from ..brand.geometry import STORY, Geometry
+from ..brand.geometry import STORY, Geometry, news_geometry
 from ..errors import LayoutOverflowError
 from ..luminance import contrast_on_white, region_luminance
-from ..schema import SlideSpec
+from ..schema import NEWS, SlideSpec
 from . import components as C
 from . import furniture, marks, plate, surfaces
 from . import typography as ty
@@ -45,7 +45,37 @@ def _eyebrow_block(spec: SlideSpec) -> C.Block | None:
     return C.EyebrowLabel(spec.eyebrow.text, R.foreground(spec.surface))
 
 
+def build_news_stack(spec: SlideSpec, headline_size: int) -> C.Stack:
+    stack = C.Stack()
+
+    eyebrow = _eyebrow_block(spec)
+    if eyebrow is not None:
+        stack.add(eyebrow)
+
+    stack.add(
+        C.Headline(
+            lines=spec.headline,
+            size=headline_size,
+            colours=R.headline_colours(spec.surface, len(spec.headline)),
+            strike_line=None,
+        ),
+        GAP_EYEBROW_HEADLINE if eyebrow is not None else 0.0,
+    )
+
+    for text in spec.subs:
+        stack.add(C.SubLine(text, R.foreground(spec.surface), T.SIZE_STANDFIRST), GAP_HEADLINE_SUB)
+
+    return stack
+
+
+def headline_sizes(spec: SlideSpec) -> tuple[int, ...]:
+    return T.NEWS_HEADLINE_SIZES if spec.layout == NEWS else T.HEADLINE_SIZES
+
+
 def build_stack(spec: SlideSpec, headline_size: int) -> C.Stack:
+    if spec.layout == NEWS:
+        return build_news_stack(spec, headline_size)
+
     foreground = R.foreground(spec.surface)
     stack = C.Stack()
 
@@ -102,8 +132,10 @@ def fit_stack(spec: SlideSpec, geo: Geometry) -> tuple[C.Stack, int]:
     means that case raises below instead of silently drawing a line past the
     right margin.
     """
-    natural = ty.headline_size(spec.headline, geo.content_width)
-    candidates = [size for size in T.HEADLINE_SIZES if size <= natural]
+    sizes = headline_sizes(spec)
+    floor = sizes[-1]
+    natural = ty.headline_size(spec.headline, geo.content_width, sizes)
+    candidates = [size for size in sizes if size <= natural]
 
     for size in candidates:
         if not all(ty.fits(line, ty.BOLD, size, geo.content_width) for line in spec.headline):
@@ -112,23 +144,28 @@ def fit_stack(spec: SlideSpec, geo: Geometry) -> tuple[C.Stack, int]:
         if stack.height(geo) <= geo.band_height:
             return stack, size
 
-    fit = ty.headline_fit(spec.headline, geo.content_width)
+    fit = ty.headline_fit(spec.headline, geo.content_width, sizes)
     if not fit.fits:
         worst = fit.worst
         raise LayoutOverflowError(
             f'headline line "{worst.text}" measures {worst.width:.0f}px at '
-            f"{T.MIN_HEADLINE_SIZE}px against a {geo.content_width}px measure — "
+            f"{floor}px against a {geo.content_width}px measure — "
             f"{worst.overflow:.0f}px over. Cut words, not points."
         )
     raise LayoutOverflowError(
         f"the stack is taller than the {geo.name} band ({geo.band_height}px) at "
-        f"{T.MIN_HEADLINE_SIZE}px — drop a sub-line or a row, not the type size."
+        f"{floor}px — drop a sub-line or a row, not the type size."
     )
 
 
-def furniture_bounds(geo: Geometry) -> list[plate.Rect]:
+def furniture_bounds(geo: Geometry, layout: str = "brand") -> list[plate.Rect]:
     """The fixed elements are white on every dark surface, so they need protecting
     from a bright photograph exactly as the headline does."""
+    if layout == NEWS:
+        return [
+            (geo.margin, geo.header_y - 26, geo.right_edge, geo.header_y + 26),
+            (geo.margin, geo.footer_y - 60, geo.right_edge, geo.footer_y + 22),
+        ]
     return [
         (geo.margin, geo.header_y - 26, geo.right_edge, geo.header_y + 26),
         (geo.margin, geo.contact_rail_y - 20, geo.right_edge, geo.contact_rail_y + 20),
@@ -146,6 +183,9 @@ class RenderedFrame(NamedTuple):
 
 
 def render(spec: SlideSpec, geo: Geometry) -> RenderedFrame:
+    if spec.layout == NEWS:
+        geo = news_geometry(geo)
+
     base = surfaces.build(
         spec.surface,
         geo,
@@ -162,7 +202,7 @@ def render(spec: SlideSpec, geo: Geometry) -> RenderedFrame:
     # Two passes: find where the type lands, darken the photograph behind it, and
     # only then draw. A single pass cannot know that a lit monitor sits mid-frame.
     if spec.surface == R.PHOTO:
-        base = plate.apply(base, geo, plate_rects + furniture_bounds(geo))
+        base = plate.apply(base, geo, plate_rects + furniture_bounds(geo, spec.layout))
 
     contrast = (
         [(rect, contrast_on_white(region_luminance(base, rect))) for rect in plate_rects]
@@ -175,14 +215,20 @@ def render(spec: SlideSpec, geo: Geometry) -> RenderedFrame:
     draw = ImageDraw.Draw(overlay)
     foreground = R.foreground(spec.surface)
 
-    marks.watermark(overlay, geo, spec.surface)
-    marks.masthead(draw, geo, foreground)
-    marks.registration_marks(draw, geo, foreground)
+    if spec.layout == NEWS:
+        furniture.header(overlay, draw, geo, spec.surface, show_site=False)
+        furniture.news_badge(draw, geo)
+        stack.draw(draw, overlay, anchor, geo)
+        furniture.dateline(draw, geo, spec.dateline or "", spec.surface)
+    else:
+        marks.watermark(overlay, geo, spec.surface)
+        marks.masthead(draw, geo, foreground)
+        marks.registration_marks(draw, geo, foreground)
 
-    furniture.header(overlay, draw, geo, spec.surface, show_site=spec.shows_site)
-    stack.draw(draw, overlay, anchor, geo)
-    furniture.contact_rail(draw, geo, spec.surface)
-    furniture.footer(draw, geo, spec.surface)
+        furniture.header(overlay, draw, geo, spec.surface, show_site=spec.shows_site)
+        stack.draw(draw, overlay, anchor, geo)
+        furniture.contact_rail(draw, geo, spec.surface)
+        furniture.footer(draw, geo, spec.surface)
 
     return RenderedFrame(
         Image.alpha_composite(base, overlay).convert("RGB"), headline_size, all_rects, contrast

@@ -5,9 +5,9 @@ const envMock = vi.hoisted(() => ({
   NEWS_ENHANCE_BATCH_SIZE: 5,
   NEWS_MIN_SCORE: 0.6,
   NEWS_TEXT_MODEL: 'gpt-4o',
-  NEWS_IMAGE_MODEL: 'dall-e-3',
-  NEWS_IMAGE_SIZE: '1792x1024',
-  NEWS_IMAGE_QUALITY: 'hd',
+  NEWS_IMAGE_MODEL: 'gpt-image-1',
+  NEWS_IMAGE_SIZE: '1536x1024',
+  NEWS_IMAGE_QUALITY: 'medium',
   NEWS_RSS_SOURCES: JSON.stringify([
     { name: 'Only', url: 'https://only.africa/feed', category: 'tech' },
   ]),
@@ -31,6 +31,9 @@ vi.mock('@/adapters/nodes/nodeServices', () => ({ nodeServices: { tag: 'services
 vi.mock('@/nodes', () => ({ runChatGpt, chatGptCredentialsFromEnv: () => ({ apiKey: 'sk' }) }));
 vi.mock('@/services/aiCredentials.service', () => ({
   resolveChatGptConfig: async () => ({ credentials: { apiKey: 'sk' } }),
+}));
+vi.mock('@/services/automation.service', () => ({
+  automationService: { draftNewsPosts: vi.fn(async () => []) },
 }));
 vi.mock('@/utils/assets-client', () => ({ getAssetsClient: () => ({ uploadBuffer }) }));
 vi.mock('axios', () => ({ default: { get: axiosGet } }));
@@ -75,7 +78,7 @@ describe('default OpenAI and assets adapters', () => {
     uploadBuffer.mockResolvedValue({ url: 'https://cdn.afrisinc.com/kenya.png' });
   });
 
-  it('asks for JSON, draws an HD base64 cover and stores it in the news folder', async () => {
+  it('asks for JSON, draws the cover with no response format and stores it', async () => {
     const outcome = await new NewsEnhancementService().enhance(article);
 
     expect(outcome).toBe('published');
@@ -90,15 +93,48 @@ describe('default OpenAI and assets adapters', () => {
     expect(runChatGpt.mock.calls[1][0].parameters).toMatchObject({
       resource: 'image',
       operation: 'generate',
-      model: 'dall-e-3',
-      prompt: 'Nairobi at dawn',
-      options: { size: '1792x1024', quality: 'hd', responseFormat: 'b64_json' },
+      model: 'gpt-image-1',
+      prompt: expect.stringContaining('Nairobi at dawn'),
+      options: { size: '1536x1024', quality: 'medium' },
     });
+    expect(runChatGpt.mock.calls[1][0].parameters.options).not.toHaveProperty('responseFormat');
+    expect(runChatGpt.mock.calls[1][0].parameters.prompt).toContain('no text, lettering');
     expect(uploadBuffer).toHaveBeenCalledWith(Buffer.from('png'), 'kenya-mpesa-api.png', {
       folderId: 'folder-1',
       tags: ['news', 'article-cover', 'ai-generated'],
     });
     expect(repository.publishEnhanced.mock.calls[0][1].excerpt).toBeNull();
+  });
+
+  it('downloads the cover when the image model answers with a URL, not the image', async () => {
+    runChatGpt
+      .mockReset()
+      .mockResolvedValueOnce([{ json: { parsed: reply } }])
+      .mockResolvedValueOnce([
+        { json: { images: [{ url: 'https://images.openai.test/cover.png' }] } },
+      ]);
+    axiosGet.mockResolvedValueOnce({ data: Buffer.from('png') });
+
+    const outcome = await new NewsEnhancementService().enhance(article);
+
+    expect(outcome).toBe('published');
+    expect(axiosGet).toHaveBeenCalledWith(
+      'https://images.openai.test/cover.png',
+      expect.objectContaining({ responseType: 'arraybuffer' })
+    );
+    expect(uploadBuffer.mock.calls[0][0]).toEqual(Buffer.from('png'));
+  });
+
+  it('fails the article when the image model returns neither an image nor a URL', async () => {
+    runChatGpt
+      .mockReset()
+      .mockResolvedValueOnce([{ json: { parsed: reply } }])
+      .mockResolvedValueOnce([{ json: { images: [{}] } }]);
+
+    const outcome = await new NewsEnhancementService().enhance(article);
+
+    expect(outcome).toBe('failed');
+    expect(uploadBuffer).not.toHaveBeenCalled();
   });
 
   it('uploads without a folder when none was set up at boot', async () => {

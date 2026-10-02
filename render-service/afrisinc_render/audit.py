@@ -9,7 +9,7 @@ from .brand import rules as R
 from .brand import tokens as T
 from .brand.geometry import STORY, Geometry
 from .luminance import contrast_on_white, region_luminance
-from .schema import AuditFinding, SlideSpec
+from .schema import NEWS, AuditFinding, SlideSpec
 
 _CORAL = np.array(T.CORAL, dtype=np.int16)
 _CORAL_TOLERANCE = 45
@@ -36,7 +36,12 @@ BANNED_WORDS = frozenset(
 )
 
 
-def text_bands(geo: Geometry) -> tuple[tuple[str, int, int], ...]:
+def text_bands(geo: Geometry, layout: str = "brand") -> tuple[tuple[str, int, int], ...]:
+    if layout == NEWS:
+        return (
+            ("header", geo.header_y - 24, geo.header_y + 24),
+            ("dateline", geo.footer_y - 20, geo.footer_y + 20),
+        )
     return (
         ("header", geo.header_y - 24, geo.header_y + 24),
         ("contact_rail", geo.contact_rail_y - 18, geo.contact_rail_y + 18),
@@ -105,17 +110,18 @@ def audit_slide(
                     "measure — a row shrinks to fit but never wraps",
                 )
 
-    if headline_size is not None and headline_size < T.HEADLINE_BRAND_FLOOR:
+    floor = T.NEWS_HEADLINE_FLOOR if spec.layout == NEWS else T.HEADLINE_BRAND_FLOOR
+    if headline_size is not None and headline_size < floor:
         add(
             "headline_size",
-            f"set at {headline_size}px, below the {T.HEADLINE_BRAND_FLOOR}px brand floor — "
+            f"set at {headline_size}px, below the {floor}px brand floor — "
             "the copy is too long for the measure",
             severity="warning",
         )
 
     pixels = np.asarray(image.convert("RGB"))
     foreground_is_white = R.is_dark(spec.surface)
-    for name, top, bottom in text_bands(geo):
+    for name, top, bottom in text_bands(geo, spec.layout):
         band = pixels[top:bottom, geo.margin : geo.right_edge]
         mask = band.sum(axis=2) < 600 if foreground_is_white else band.sum(axis=2) > 240
         sample = band[mask] if mask.sum() > 50 else band.reshape(-1, 3)

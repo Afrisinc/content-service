@@ -23,8 +23,12 @@ export interface PostCta {
   arrow?: boolean;
 }
 
+export type PostLayout = 'brand' | 'news';
+
 export interface PostSlideSpec {
   surface: PostSurface;
+  layout?: PostLayout;
+  dateline?: string;
   photo?: string | null;
   eyebrow?: PostEyebrow;
   headline: string[];
@@ -70,6 +74,23 @@ export interface PostCopySlide {
 
 export type SlideRole = 'hook' | 'proof' | 'method' | 'differentiator' | 'cta';
 
+export interface NewsBrief {
+  headline: string;
+  summary: string;
+  standfirst?: string | null;
+  category: string;
+  source: string | null;
+  publishedAt: string;
+  articleUrl: string;
+  tags: string[];
+}
+
+export interface HeadlineWrapResult {
+  lines: string[];
+  size: number;
+  truncated: boolean;
+}
+
 export interface PostBriefPayload {
   topic: string;
   format?: PostFormatName;
@@ -80,6 +101,8 @@ export interface PostBriefPayload {
   keywords?: string;
   /** A reference link the copy or its CTA can point to. */
   link?: string;
+  photoUrl?: string;
+  news?: NewsBrief;
   slideCount?: number;
   userId?: string;
   /** Publish to every switched-on account in this group instead of one page. */

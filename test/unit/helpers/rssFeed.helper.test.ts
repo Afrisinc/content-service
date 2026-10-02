@@ -214,3 +214,20 @@ describe('resolveNewsSources', () => {
     expect(resolveNewsSources(value)).toBe(DEFAULT_NEWS_SOURCES);
   });
 });
+
+describe('the built-in feed list', () => {
+  it('is a short list of feeds worth reading, not every feed there is', () => {
+    expect(DEFAULT_NEWS_SOURCES.length).toBeGreaterThanOrEqual(3);
+    expect(DEFAULT_NEWS_SOURCES.length).toBeLessThanOrEqual(6);
+  });
+
+  it('has a unique name and a secure address for each feed', () => {
+    const names = DEFAULT_NEWS_SOURCES.map(source => source.name);
+
+    expect(new Set(names).size).toBe(names.length);
+    for (const source of DEFAULT_NEWS_SOURCES) {
+      expect(source.url).toMatch(/^https:\/\//);
+      expect(source.category.length).toBeGreaterThan(0);
+    }
+  });
+});

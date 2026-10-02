@@ -16,6 +16,7 @@ export function ingestionOutcome(result: IngestionResult): RunOutcome {
   const detail = [
     `${pluralise(result.fetched, 'item')} read`,
     `${result.created} new`,
+    ...(result.stale > 0 ? [`${result.stale} too old`] : []),
     ...(failed.length > 0 ? [`${pluralise(failed.length, 'feed')} failed`] : []),
   ].join(' · ');
 
@@ -47,6 +48,31 @@ function scoreOf(article: ArticleResult): string {
   return article.score === null ? '' : ` · score ${article.score.toFixed(2)}`;
 }
 
+function socialNote(article: ArticleResult): string {
+  if (article.social.length === 0) {
+    return ' · no social post (no user has the news agent on under autopilot)';
+  }
+
+  const reasons = (status: ArticleResult['social'][number]['status']) => [
+    ...new Set(
+      article.social.flatMap(outcome =>
+        outcome.status === status && outcome.reason ? [outcome.reason] : []
+      )
+    ),
+  ];
+  const drafted = article.social.filter(outcome => outcome.status === 'drafted').length;
+  const skipped = reasons('skipped');
+  const failed = reasons('failed');
+
+  return [
+    ...(drafted > 0 ? [pluralise(drafted, 'social post') + ' drafted'] : []),
+    ...(skipped.length > 0 ? [`social skipped: ${skipped.join(', ')}`] : []),
+    ...(failed.length > 0 ? [`social post failed: ${failed.join(', ')}`] : []),
+  ]
+    .map(part => ` · ${part}`)
+    .join('');
+}
+
 function articleStep(article: ArticleResult): RunStepOutcome {
   const base = {
     key: `article-${article.articleId}`,
@@ -55,7 +81,7 @@ function articleStep(article: ArticleResult): RunStepOutcome {
   };
 
   if (article.outcome === 'published') {
-    return { ...base, detail: `Published${scoreOf(article)}` };
+    return { ...base, detail: `Published${scoreOf(article)}${socialNote(article)}` };
   }
   if (article.outcome === 'rejected') {
     return { ...base, detail: `Rejected${scoreOf(article)} — ${article.reason}` };

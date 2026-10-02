@@ -66,7 +66,7 @@ export const AGENT_REGISTRY: Record<AgentKey, AgentDefinition> = {
     name: 'News agent',
     description:
       'Reads African news feeds, lets GPT-4o judge and rewrite what matters, draws a cover ' +
-      'and publishes it to the website.',
+      'and publishes it to the website, then drafts a matching social post on the same cover.',
     scope: 'workspace',
     requiresAutopilot: true,
     enabledByDefault: false,

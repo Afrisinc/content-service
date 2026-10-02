@@ -92,3 +92,33 @@ describe('fitHeadlines', () => {
     );
   });
 });
+
+describe('wrapHeadline', () => {
+  let client: import('@/adapters/render/render.client').RenderClient;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const module = await import('@/adapters/render/render.client');
+    module.setRenderClient(null);
+    client = module.getRenderClient();
+  });
+
+  it('asks the render service to lay the headline out for the frame format', async () => {
+    post.mockResolvedValue({ data: { lines: ['One', 'Two'], size: 69, truncated: false } });
+
+    await expect(client.wrapHeadline('One Two', 'single')).resolves.toEqual({
+      lines: ['One', 'Two'],
+      size: 69,
+      truncated: false,
+    });
+    expect(post).toHaveBeenCalledWith('/layout/headline', { text: 'One Two', format: 'single' });
+  });
+
+  it('fails the post when the headline cannot be laid out, rather than guessing', async () => {
+    post.mockRejectedValue(new Error('connect ECONNREFUSED'));
+
+    await expect(client.wrapHeadline('One Two', 'single')).rejects.toThrow(
+      'could not lay out the headline'
+    );
+  });
+});

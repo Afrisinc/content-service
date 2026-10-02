@@ -10,10 +10,13 @@ from .brand import rules as R
 from .brand import tokens as T
 from .brand.geometry import POST, SINGLE, Geometry, geometry_for
 
+NEWS = "news"
+
 SurfaceName = Literal["azure", "photo", "white"]
 FormatName = Literal["post", "story", "single"]
 EyebrowKind = Literal["label", "claim"]
 Anchor = Literal["top", "centre", "bottom"]
+Layout = Literal["brand", "news"]
 
 
 class Eyebrow(BaseModel):
@@ -65,6 +68,8 @@ class SlideSpec(BaseModel):
     coral_rule: bool = False
     anchor: Anchor | None = None
     dense_scrim: bool = False
+    layout: Layout = "brand"
+    dateline: str | None = Field(default=None, min_length=2, max_length=80)
     photo_focus: float = Field(
         default=0.5,
         ge=0.0,
@@ -109,12 +114,29 @@ class SlideSpec(BaseModel):
         claim = self.eyebrow is not None and self.eyebrow.kind == "claim"
         if claim and (self.coral_rule or self.strike_line is not None):
             raise ValueError("one coral element per slide")
+        if self.layout == NEWS:
+            self._check_news()
+        elif self.dateline:
+            raise ValueError("a dateline belongs to the news layout")
         return self
+
+    def _check_news(self) -> None:
+        if self.surface != R.PHOTO:
+            raise ValueError("a news frame is built on a photograph")
+        if self.rows or self.actions or self.cta or self.closing:
+            raise ValueError("a news frame carries a headline and a standfirst, nothing else")
+        if self.coral_rule or self.strike_line is not None:
+            raise ValueError("a news frame has no decorative accent")
+        if len(self.subs) > 1:
+            raise ValueError("a news frame carries one standfirst")
+        if not self.dateline:
+            raise ValueError("a news frame needs a dateline")
 
     @property
     def shows_site(self) -> bool:
-        """The domain appears exactly once: in the header, unless a CTA pill carries it."""
-        return self.cta is None
+        """The domain appears exactly once: in the header, unless a CTA pill or the
+        news dateline carries it."""
+        return self.cta is None and self.layout != NEWS
 
 
 class PostSpec(BaseModel):
@@ -167,6 +189,7 @@ class RenderResult(BaseModel):
 
 
 class HeadlineFitSlide(BaseModel):
+    layout: Layout = "brand"
     headline: list[str] = Field(min_length=1, max_length=T.MAX_HEADLINE_LINES)
     rows: list[Row] = Field(default_factory=list)
     eyebrow: Eyebrow | None = None
@@ -201,3 +224,14 @@ class HeadlineFitResult(BaseModel):
     min_headline_size: int
     fits: bool
     slides: list[FittedSlide]
+
+
+class HeadlineWrapRequest(BaseModel):
+    text: str = Field(min_length=2, max_length=400)
+    format: FormatName = SINGLE
+
+
+class HeadlineWrapResult(BaseModel):
+    lines: list[str]
+    size: int
+    truncated: bool

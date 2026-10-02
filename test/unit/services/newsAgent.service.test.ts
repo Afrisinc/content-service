@@ -102,7 +102,7 @@ describe('NewsAgentService', () => {
   it('reports its configuration', () => {
     expect(agent.status()).toMatchObject({
       allowedByServer: true,
-      sources: 13,
+      sources: 4,
       minScore: 0.6,
       batchSize: 5,
       ingest: { schedule: '*/30 * * * *' },

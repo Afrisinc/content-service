@@ -49,7 +49,8 @@ export class ArtDirectionService {
     copy: PostCopy,
     userId: string,
     groupId?: string,
-    assetIds?: string[]
+    assetIds?: string[],
+    fixedPhoto?: string
   ): Promise<PhotoAssignment> {
     // A one-frame post has no proof slide, so the single frame is the photo
     // slide. A pair opens on azure and closes on a photograph, so only its
@@ -63,6 +64,11 @@ export class ArtDirectionService {
 
     if (!photoSlides.length) {
       return { photosByIndex: {}, assetIds: [], reused: 0 };
+    }
+
+    if (fixedPhoto) {
+      const photosByIndex = Object.fromEntries(photoSlides.map(({ index }) => [index, fixedPhoto]));
+      return { photosByIndex, assetIds: [], reused: 0 };
     }
 
     // Resolved once: asking per slide would hit the database for every frame.

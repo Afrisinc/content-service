@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Final
 
+from . import tokens as T
+
 POST: Final[str] = "post"
 STORY: Final[str] = "story"
 SINGLE: Final[str] = "single"
@@ -116,6 +118,11 @@ FORMATS: Final[dict[str, Geometry]] = {
     STORY: STORY_GEOMETRY,
     SINGLE: SINGLE_GEOMETRY,
 }
+
+
+def news_geometry(geo: Geometry) -> Geometry:
+    """A news frame has no contact rail, so its type band runs down to the dateline."""
+    return replace(geo, band_bottom=geo.footer_y - T.NEWS_BAND_CLEARANCE)
 
 
 def geometry_for(name: str) -> Geometry:

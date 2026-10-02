@@ -1641,3 +1641,209 @@ describe('pacing against the posting slots', () => {
     expect(drafts.countScheduledAfter).toHaveBeenCalledWith(['draft-1'], expect.any(Date));
   });
 });
+
+describe('draftNewsPosts', () => {
+  const SOURCE = {
+    title: "M-Pesa's open API could reshape banking",
+    summary: 'One standard for the region.',
+    standfirst: 'A shared standard for the region.',
+    category: 'fintech',
+    source: 'TechCabal',
+    publishedAt: '2026-10-02T09:00:00.000Z',
+    tags: ['mpesa', 'banking'],
+    articleUrl: 'https://afrisinc.com/media/articles/mpesa-open-api',
+    coverUrl: 'https://cdn.afrisinc.com/mpesa-open-api.png',
+  };
+
+  const onFor = (userId: string) => runnable(userId, { news: true });
+
+  function buildNews(
+    options: {
+      policy?: Record<string, unknown> | null;
+      group?: Record<string, unknown> | null;
+    } = {}
+  ) {
+    const built = build({
+      policy:
+        options.policy === undefined
+          ? { mode: 'autopilot', autoPublish: true, defaultGroupId: 'group-1', maxPostsPerDay: 3 }
+          : options.policy,
+    });
+    built.policies.findRunnablePolicies.mockResolvedValue([onFor('user-1')]);
+    built.groups.findByIdForUser.mockResolvedValue(
+      (options.group === undefined
+        ? groupRow({ isActive: true, isDefault: true })
+        : options.group) as never
+    );
+    return built;
+  }
+
+  it('drafts one single post on the default brand with the article cover behind it', async () => {
+    const { service, postAgent } = buildNews();
+
+    const outcomes = await service.draftNewsPosts(SOURCE);
+
+    expect(outcomes).toEqual([
+      { userId: 'user-1', groupName: 'AFRISINC', status: 'drafted', reason: null },
+    ]);
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topic: SOURCE.title,
+        format: 'single',
+        slideCount: 1,
+        link: SOURCE.articleUrl,
+        photoUrl: SOURCE.coverUrl,
+        news: {
+          headline: SOURCE.title,
+          summary: SOURCE.summary,
+          standfirst: 'A shared standard for the region.',
+          category: 'fintech',
+          source: 'TechCabal',
+          publishedAt: '2026-10-02T09:00:00.000Z',
+          articleUrl: SOURCE.articleUrl,
+          tags: ['mpesa', 'banking'],
+        },
+        userId: 'user-1',
+        groupId: 'group-1',
+        trigger: 'autopilot',
+      })
+    );
+  });
+
+  it('approves the draft itself when the user has auto-publish on', async () => {
+    const { service, postAgent } = buildNews();
+
+    await service.draftNewsPosts(SOURCE);
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ autoPublish: true })
+    );
+    expect(postAgent.approve).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the draft waiting for approval when the user has auto-publish off', async () => {
+    const { service, postAgent } = buildNews({
+      policy: {
+        mode: 'autopilot',
+        autoPublish: false,
+        defaultGroupId: 'group-1',
+        maxPostsPerDay: 3,
+      },
+    });
+
+    await service.draftNewsPosts(SOURCE);
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ autoPublish: false })
+    );
+    expect(postAgent.approve).not.toHaveBeenCalled();
+  });
+
+  it('does nothing for users who have the news agent switched off', async () => {
+    const { service, policies, postAgent } = buildNews();
+    policies.findRunnablePolicies.mockResolvedValue([
+      runnable('user-1', { news: false }),
+      runnable('user-2'),
+    ]);
+
+    expect(await service.draftNewsPosts(SOURCE)).toEqual([]);
+    expect(postAgent.createFromBrief).not.toHaveBeenCalled();
+  });
+
+  it('drafts for every user who has it on, each on their own brand', async () => {
+    const { service, policies, groups, postAgent } = buildNews();
+    policies.findRunnablePolicies.mockResolvedValue([onFor('user-1'), onFor('user-2')]);
+    groups.findByIdForUser.mockImplementation((async (_id: string, userId: string) =>
+      groupRow({ id: `group-of-${userId}`, name: userId, isActive: true })) as never);
+
+    const outcomes = await service.draftNewsPosts(SOURCE);
+
+    expect(outcomes.map(outcome => outcome.status)).toEqual(['drafted', 'drafted']);
+    expect(postAgent.createFromBrief).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back to the brand marked as default when the policy names none', async () => {
+    const { service, groups, postAgent } = buildNews({
+      policy: { mode: 'autopilot', autoPublish: true, defaultGroupId: null, maxPostsPerDay: 3 },
+    });
+    groups.findAutopilotGroups.mockResolvedValue([
+      groupRow({ id: 'other', isActive: true, isDefault: false }),
+      groupRow({ id: 'house', isActive: true, isDefault: true }),
+    ] as never);
+
+    await service.draftNewsPosts(SOURCE);
+
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ groupId: 'house' })
+    );
+  });
+
+  it.each([
+    ['there is no default brand', { group: null }, 'no default brand is set'],
+    [
+      'the default brand is switched off',
+      { group: groupRow({ isActive: false }) },
+      'no default brand is set',
+    ],
+  ])('skips a user when %s', async (_label, options, reason) => {
+    const { service, postAgent } = buildNews(options);
+
+    const [outcome] = await service.draftNewsPosts(SOURCE);
+
+    expect(outcome).toMatchObject({ userId: 'user-1', status: 'skipped', reason });
+    expect(postAgent.createFromBrief).not.toHaveBeenCalled();
+  });
+
+  it('skips a user who has hit their daily post limit', async () => {
+    const { service, runs, postAgent } = buildNews();
+    runs.countSince.mockResolvedValue(3);
+
+    const [outcome] = await service.draftNewsPosts(SOURCE);
+
+    expect(outcome).toMatchObject({ status: 'skipped', reason: 'daily post limit reached' });
+    expect(postAgent.createFromBrief).not.toHaveBeenCalled();
+  });
+
+  it('does not post the same story to the same brand twice', async () => {
+    const { service, runs, postAgent } = buildNews();
+    runs.findRecentTopics.mockResolvedValue(['Something else', SOURCE.title]);
+
+    const [outcome] = await service.draftNewsPosts(SOURCE);
+
+    expect(outcome).toMatchObject({ status: 'skipped', reason: 'already posted for this brand' });
+    expect(postAgent.createFromBrief).not.toHaveBeenCalled();
+  });
+
+  it('skips a brand with no switched-on accounts', async () => {
+    const { service, groups, postAgent } = buildNews();
+    groups.findActiveTargets.mockResolvedValue([]);
+
+    const [outcome] = await service.draftNewsPosts(SOURCE);
+
+    expect(outcome).toMatchObject({
+      status: 'skipped',
+      reason: 'no switched-on accounts in this brand',
+    });
+    expect(postAgent.createFromBrief).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed draft with its reason and keeps going with the next user', async () => {
+    const { service, policies, postAgent } = buildNews();
+    policies.findRunnablePolicies.mockResolvedValue([onFor('user-1'), onFor('user-2')]);
+    postAgent.createFromBrief.mockRejectedValueOnce(new Error('render service unreachable'));
+
+    const outcomes = await service.draftNewsPosts(SOURCE);
+
+    expect(outcomes.map(outcome => outcome.status)).toEqual(['failed', 'drafted']);
+    expect(outcomes[0].reason).toBe('render service unreachable');
+  });
+
+  it('turns an unexpected error for one user into a failed outcome', async () => {
+    const { service, policies } = buildNews();
+    policies.findByUser.mockRejectedValue(new Error('db down'));
+
+    expect(await service.draftNewsPosts(SOURCE)).toEqual([
+      { userId: 'user-1', groupName: null, status: 'failed', reason: 'db down' },
+    ]);
+  });
+});

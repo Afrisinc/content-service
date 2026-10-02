@@ -12,7 +12,15 @@ from .config import settings
 from .errors import RenderError
 from .fit import fit_headlines
 from .render import marks, post, typography
-from .schema import HeadlineFitRequest, HeadlineFitResult, PostSpec, RenderResult
+from .wrap import wrap_headline
+from .schema import (
+    HeadlineFitRequest,
+    HeadlineFitResult,
+    HeadlineWrapRequest,
+    HeadlineWrapResult,
+    PostSpec,
+    RenderResult,
+)
 
 TAG = "render"
 
@@ -75,6 +83,16 @@ async def health() -> dict[str, str]:
 )
 async def fit(request: HeadlineFitRequest) -> HeadlineFitResult:
     return fit_headlines(request)
+
+
+@app.post(
+    "/layout/headline",
+    response_model=HeadlineWrapResult,
+    tags=[TAG],
+    dependencies=[Depends(require_api_key)],
+)
+async def layout_headline(request: HeadlineWrapRequest) -> HeadlineWrapResult:
+    return wrap_headline(request)
 
 
 @app.post(

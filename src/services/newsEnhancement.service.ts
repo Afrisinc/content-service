@@ -1,16 +1,24 @@
 import type { N8nArticle } from '@prisma/client';
+import axios from 'axios';
 import { nodeServices } from '@/adapters/nodes/nodeServices';
 import { env } from '@/config/env';
 import {
   buildEnhancementPrompt,
+  coverPrompt,
   parseEnhancement,
   type EnhancedArticle,
 } from '@/helpers/newsEnhancement.helper';
 import { runChatGpt } from '@/nodes';
+import { articleUrl } from '@/helpers/newsletterDigest.helper';
 import { agentSettingsService } from '@/services/agentSettings.service';
+import { automationService } from '@/services/automation.service';
 import { resolveChatGptConfig } from '@/services/aiCredentials.service';
 import { n8nArticleRepository } from '@/repositories/n8nArticle.repository';
-import { STUCK_AFTER_MINUTES } from '@/types/newsDesk.types';
+import {
+  STUCK_AFTER_MINUTES,
+  type NewsPostSource,
+  type NewsSocialOutcome,
+} from '@/types/newsDesk.types';
 import { getAssetsClient } from '@/utils/assets-client';
 import { logger } from '@/utils/logger';
 
@@ -24,6 +32,7 @@ export interface NewsEnhancementDeps {
   writeArticle(input: ArticlePrompt): Promise<unknown>;
   drawCover(prompt: string, articleId: bigint): Promise<Buffer>;
   storeCover(image: Buffer, filename: string): Promise<string>;
+  postToSocial?(source: NewsPostSource): Promise<NewsSocialOutcome[]>;
 }
 
 export type EnhancementOutcome = 'published' | 'rejected' | 'failed';
@@ -34,6 +43,7 @@ export interface ArticleResult {
   outcome: EnhancementOutcome;
   score: number | null;
   reason: string | null;
+  social: NewsSocialOutcome[];
 }
 
 export interface EnhancementResult {
@@ -51,6 +61,8 @@ const ORPHANED_REASON =
   'The enhancement run stopped before it finished. Send it back to the queue to try again.';
 
 const MAX_ERROR_LENGTH = 1000;
+const COVER_DOWNLOAD_TIMEOUT_MS = 30_000;
+const MAX_COVER_BYTES = 20 * 1024 * 1024;
 
 function socialMediaFolderId(): string | undefined {
   const id = (globalThis as { SOCIAL_MEDIA_FOLDER_ID?: string }).SOCIAL_MEDIA_FOLDER_ID;
@@ -89,20 +101,28 @@ const openAiDeps: NewsEnhancementDeps = {
         resource: 'image',
         operation: 'generate',
         model: model ?? env.NEWS_IMAGE_MODEL,
-        prompt,
+        prompt: coverPrompt(prompt),
         options: {
           size: env.NEWS_IMAGE_SIZE,
           quality: env.NEWS_IMAGE_QUALITY,
-          responseFormat: 'b64_json',
         },
       },
     });
-    const images = items[0]?.json?.images as { b64Json?: string | null }[] | undefined;
-    const encoded = images?.[0]?.b64Json;
-    if (!encoded) {
-      throw new Error('the image model returned no cover');
+    const images = items[0]?.json?.images as
+      { b64Json?: string | null; url?: string | null }[] | undefined;
+    const image = images?.[0];
+    if (image?.b64Json) {
+      return Buffer.from(image.b64Json, 'base64');
     }
-    return Buffer.from(encoded, 'base64');
+    if (image?.url) {
+      const download = await axios.get<ArrayBuffer>(image.url, {
+        responseType: 'arraybuffer',
+        timeout: COVER_DOWNLOAD_TIMEOUT_MS,
+        maxContentLength: MAX_COVER_BYTES,
+      });
+      return Buffer.from(download.data);
+    }
+    throw new Error('the image model returned no cover');
   },
 
   async storeCover(image, filename) {
@@ -115,6 +135,8 @@ const openAiDeps: NewsEnhancementDeps = {
     }
     return asset.url;
   },
+
+  postToSocial: source => automationService.draftNewsPosts(source),
 };
 
 function errorMessage(error: unknown): string {
@@ -193,7 +215,7 @@ export class NewsEnhancementService {
           processing_error: rejectionNote(enhanced),
         });
         logger.info({ ...subject, score: enhanced.score, reason }, 'news_enhancement.rejected');
-        return { ...subject, outcome: 'rejected', score: enhanced.score, reason };
+        return { ...subject, outcome: 'rejected', score: enhanced.score, reason, social: [] };
       }
 
       const slug = await this.uniqueSlug(enhanced.slug, article.id);
@@ -202,12 +224,58 @@ export class NewsEnhancementService {
 
       await this.publish(article, enhanced, slug, coverUrl, `${systemPrompt}\n\n---\n\n${prompt}`);
       logger.info({ ...subject, slug, score: enhanced.score }, 'news_enhancement.published');
-      return { ...subject, outcome: 'published', score: enhanced.score, reason: null };
+
+      const social = await this.draftSocialPosts(article, enhanced, slug, coverUrl);
+      return { ...subject, outcome: 'published', score: enhanced.score, reason: null, social };
     } catch (error) {
       const reason = errorMessage(error);
       await n8nArticleRepository.update(article.id, { status: 'failed', processing_error: reason });
       logger.warn({ ...subject, error: reason }, 'news_enhancement.failed');
-      return { ...subject, outcome: 'failed', score: null, reason };
+      return { ...subject, outcome: 'failed', score: null, reason, social: [] };
+    }
+  }
+
+  private async draftSocialPosts(
+    article: N8nArticle,
+    enhanced: EnhancedArticle,
+    slug: string,
+    coverUrl: string
+  ): Promise<NewsSocialOutcome[]> {
+    if (!this.deps.postToSocial) {
+      return [];
+    }
+
+    try {
+      const source: NewsPostSource = {
+        title: enhanced.title,
+        summary: enhanced.excerpt || null,
+        standfirst: enhanced.standfirst || null,
+        category: enhanced.category,
+        source: article.creator,
+        publishedAt: new Date().toISOString(),
+        tags: enhanced.tags,
+        articleUrl: articleUrl(
+          {
+            id: article.id.toString(),
+            title: enhanced.title,
+            slug,
+            excerpt: enhanced.excerpt || null,
+            cover_image: coverUrl,
+          },
+          env.NEWSLETTER_SITE_URL
+        ),
+        coverUrl,
+      };
+      const outcomes = await this.deps.postToSocial(source);
+      logger.info(
+        { title: source.title, outcomes: outcomes.map(o => `${o.status}:${o.reason ?? 'ok'}`) },
+        'news_enhancement.social'
+      );
+      return outcomes;
+    } catch (error) {
+      const reason = errorMessage(error);
+      logger.warn({ title: enhanced.title, error: reason }, 'news_enhancement.social_failed');
+      return [{ userId: 'all', groupName: null, status: 'failed', reason }];
     }
   }
 

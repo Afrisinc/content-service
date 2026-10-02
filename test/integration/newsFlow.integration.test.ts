@@ -21,6 +21,7 @@ const { prisma } = await import('@/database/prismaClient');
 const { errorHandler } = await import('@/middlewares/errorHandler');
 const { newsDeskRoutes } = await import('@/routes/newsDesk.routes');
 const { AgentRunRecorder } = await import('@/services/agentRunRecorder.service');
+const { AutomationService } = await import('@/services/automation.service');
 const { resolveChatGptConfig } = await import('@/services/aiCredentials.service');
 const { aiProviderConfigService } = await import('@/services/aiProviderConfig.service');
 const { NewsAgentService } = await import('@/services/newsAgent.service');
@@ -84,8 +85,8 @@ function assertScratchDatabase() {
 async function resetDatabase() {
   assertScratchDatabase();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE n8n_articles, media_posts, agent_runs, agent_settings, ai_provider_configs ' +
-      'RESTART IDENTITY CASCADE'
+    'TRUNCATE TABLE n8n_articles, media_posts, agent_runs, agent_settings, ai_provider_configs, ' +
+      'automation_policies, account_groups, social_media_accounts, users RESTART IDENTITY CASCADE'
   );
 }
 
@@ -107,7 +108,14 @@ suite('news flow, end to end against a real database', () => {
     writeArticle: vi.fn(),
     drawCover: vi.fn(async () => Buffer.from('png')),
     storeCover: vi.fn(async (_image: Buffer, filename: string) => `https://cdn.test/${filename}`),
+    postToSocial: vi.fn(),
   };
+  const postAgent = {
+    createFromBrief: vi.fn(),
+    approve: vi.fn(),
+  };
+  const automation = new AutomationService(undefined, undefined, undefined, postAgent as never);
+  deps.postToSocial.mockImplementation(source => automation.draftNewsPosts(source));
   let currentFeed: FeedEntry[] = THREE_ITEMS;
   let feedError: Error | null = null;
 
@@ -145,6 +153,18 @@ suite('news flow, end to end against a real database', () => {
     currentFeed = THREE_ITEMS;
     feedError = null;
     deps.writeArticle.mockResolvedValue(goodReply());
+    deps.postToSocial.mockImplementation(source => automation.draftNewsPosts(source));
+    let drafted = 0;
+    postAgent.createFromBrief.mockImplementation(async () => ({
+      id: `draft-${(drafted += 1)}`,
+      status: 'awaiting_approval',
+      socialPostIds: [],
+    }));
+    postAgent.approve.mockImplementation(async (id: string) => ({
+      id,
+      status: 'scheduled',
+      socialPostIds: ['post-1'],
+    }));
   });
 
   describe('fetching feeds', () => {
@@ -155,6 +175,47 @@ suite('news flow, end to end against a real database', () => {
       expect(first).toMatchObject({ fetched: 3, created: 3, duplicates: 0 });
       expect(second).toMatchObject({ fetched: 3, created: 0, duplicates: 3 });
       expect(await articleStatuses()).toEqual(['draft', 'draft', 'draft']);
+    });
+
+    it('leaves out items that are too old and says how many in the run', async () => {
+      const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3600_000).toUTCString();
+      const dated = (guid: string, hours: number) =>
+        `<item><title>${guid}</title><guid>${guid}</guid>` +
+        `<link>https://example.africa/${guid}</link>` +
+        `<pubDate>${hoursAgo(hours)}</pubDate></item>`;
+      const oldAndNew = new NewsIngestionService(
+        async () =>
+          '<rss><channel>' +
+          dated('fresh', 2) +
+          dated('stale-1', 200) +
+          dated('stale-2', 5000) +
+          '</channel></rss>'
+      );
+      const dated_agent = new NewsAgentService(oldAndNew, enhancement, new AgentRunRecorder());
+
+      const result = await dated_agent.runIngestion('manual');
+
+      expect(result).toMatchObject({ fetched: 3, created: 1, stale: 2 });
+      expect(await articleStatuses()).toEqual(['draft']);
+      const [run] = await newsRuns();
+      expect(run.steps[0].detail).toBe('3 items read · 1 new · 2 too old');
+    });
+
+    it('reads no more than the configured number of items from a feed', async () => {
+      const many = new NewsIngestionService(async () =>
+        feed(
+          Array.from({ length: 8 }, (_, index) => ({
+            guid: `many-${index}`,
+            title: `Story ${index}`,
+            summary: 'Summary',
+          }))
+        )
+      );
+
+      const result = await many.run();
+
+      expect(result.fetched).toBe(3);
+      expect(await articleStatuses()).toHaveLength(3);
     });
 
     it('records the fetch as a succeeded workspace run', async () => {
@@ -572,6 +633,186 @@ suite('news flow, end to end against a real database', () => {
       });
 
       expect(response.statusCode).toBe(409);
+    });
+  });
+
+  describe('the social post for a published article', () => {
+    const seedUser = async (
+      options: {
+        id?: string;
+        autoPublish?: boolean;
+        newsOn?: boolean;
+        defaultGroup?: boolean;
+        account?: boolean;
+        maxPostsPerDay?: number;
+      } = {}
+    ) => {
+      const {
+        id = 'user-a',
+        autoPublish = true,
+        newsOn = true,
+        defaultGroup = true,
+        account = true,
+        maxPostsPerDay = 3,
+      } = options;
+      await prisma.user.create({ data: { id, email: `${id}@afrisinc.test`, password: 'x' } });
+      const group = await prisma.accountGroup.create({
+        data: { userId: id, name: `Brand ${id}`, slug: `brand-${id}`, isDefault: true },
+      });
+      if (account) {
+        const page = await prisma.socialMediaAccount.create({
+          data: { userId: id, platform: 'instagram', pageId: `page-${id}`, pageName: 'IG' },
+        });
+        await prisma.accountGroupMember.create({ data: { groupId: group.id, accountId: page.id } });
+      }
+      await prisma.automationPolicy.create({
+        data: {
+          userId: id,
+          mode: 'autopilot',
+          autoPublish,
+          maxPostsPerDay,
+          defaultGroupId: defaultGroup ? group.id : null,
+          agents: { news: newsOn },
+        },
+      });
+      return group;
+    };
+
+    beforeEach(async () => {
+      await agent.runIngestion('manual');
+      await prisma.agentRun.deleteMany();
+    });
+
+    it('uses the very cover published on the website as its background', async () => {
+      await seedUser();
+
+      await agent.runEnhancement('manual');
+
+      const post = await prisma.mediaPost.findFirstOrThrow();
+      expect(postAgent.createFromBrief).toHaveBeenCalledTimes(1);
+      expect(postAgent.createFromBrief.mock.calls[0][0]).toMatchObject({
+        topic: post.title,
+        format: 'single',
+        slideCount: 1,
+        photoUrl: post.cover_image,
+        link: 'https://afrisinc.com/media/articles/mpesa-open-api',
+        userId: 'user-a',
+        news: {
+          headline: post.title,
+          summary: 'One standard for the region.',
+          category: 'fintech',
+          source: 'Test Feed',
+          articleUrl: 'https://afrisinc.com/media/articles/mpesa-open-api',
+          tags: ['fintech'],
+        },
+      });
+      expect(deps.drawCover).toHaveBeenCalledTimes(1);
+    });
+
+    it('is tracked as its own post agent run and on the news run', async () => {
+      await seedUser();
+
+      await agent.runEnhancement('manual');
+
+      const postRun = await prisma.agentRun.findFirstOrThrow({ where: { agent: 'post-agent' } });
+      expect(postRun).toMatchObject({
+        userId: 'user-a',
+        status: 'succeeded',
+        trigger: 'autopilot',
+        topic: "M-Pesa's open API could reshape banking",
+      });
+      const newsRun = (await newsRuns())[0];
+      expect(newsRun.steps[1].detail).toBe('Published · score 0.80 · 1 social post drafted');
+    });
+
+    it('approves the post when the user has auto-publish on, and holds it when off', async () => {
+      await seedUser({ id: 'auto', autoPublish: true });
+      await seedUser({ id: 'manual', autoPublish: false });
+
+      await agent.runEnhancement('manual');
+
+      expect(postAgent.createFromBrief).toHaveBeenCalledTimes(2);
+      expect(postAgent.approve).toHaveBeenCalledTimes(1);
+    });
+
+    it('says so on the run when nobody is set up to receive a post', async () => {
+      await agent.runEnhancement('manual');
+
+      expect(postAgent.createFromBrief).not.toHaveBeenCalled();
+      const [run] = await newsRuns();
+      expect(run.steps[1].detail).toBe(
+        'Published · score 0.80 · no social post (no user has the news agent on under autopilot)'
+      );
+    });
+
+    it('skips users with the agent off, no brand, no accounts or at their limit', async () => {
+      await seedUser({ id: 'off', newsOn: false });
+      await seedUser({ id: 'nobrand', defaultGroup: false });
+      await seedUser({ id: 'noaccounts', account: false });
+      await seedUser({ id: 'limit', maxPostsPerDay: 1 });
+      await prisma.agentRun.create({
+        data: { userId: 'limit', agent: 'post-agent', trigger: 'manual', status: 'succeeded' },
+      });
+      await prisma.automationPolicy.update({
+        where: { userId: 'nobrand' },
+        data: { defaultGroupId: null },
+      });
+      await prisma.accountGroup.updateMany({
+        where: { userId: 'nobrand' },
+        data: { isDefault: false },
+      });
+
+      await agent.runEnhancement('manual');
+
+      expect(postAgent.createFromBrief).not.toHaveBeenCalled();
+      const [run] = await newsRuns();
+      const detail = run.steps.find(step => step.key !== 'run')?.detail ?? '';
+      expect(detail).toContain('social skipped:');
+      expect(detail).toContain('no default brand is set');
+      expect(detail).toContain('no switched-on accounts in this brand');
+      expect(detail).toContain('daily post limit reached');
+    });
+
+    it('does not post a second time for the same story and brand', async () => {
+      await seedUser();
+      const first = (await prisma.n8nArticle.findFirstOrThrow({ orderBy: { id: 'asc' } })).id;
+
+      await agent.runEnhancement('manual');
+      await prisma.n8nArticle.update({ where: { id: first }, data: { status: 'draft' } });
+      await prisma.mediaPost.deleteMany();
+      deps.writeArticle.mockResolvedValue(goodReply('same-story-again'));
+      postAgent.createFromBrief.mockClear();
+
+      await agent.runEnhancement('manual');
+
+      expect(postAgent.createFromBrief).not.toHaveBeenCalled();
+    });
+
+    it('keeps the article published and the run succeeded when the post fails', async () => {
+      await seedUser();
+      postAgent.createFromBrief.mockRejectedValue(new Error('render service unreachable'));
+
+      const result = await agent.runEnhancement('manual');
+
+      expect(result).toMatchObject({ published: 1, failed: 0 });
+      expect(await articleStatuses()).toEqual(['published', 'draft', 'draft']);
+      const [run] = await newsRuns();
+      expect(run.status).toBe('succeeded');
+      expect(run.steps[1].detail).toContain('social post failed: render service unreachable');
+      const postRun = await prisma.agentRun.findFirstOrThrow({ where: { agent: 'post-agent' } });
+      expect(postRun).toMatchObject({
+        status: 'failed',
+        errorMessage: 'render service unreachable',
+      });
+    });
+
+    it('never drafts a post for an article the editor rejected', async () => {
+      await seedUser();
+      deps.writeArticle.mockResolvedValue(rejectedReply());
+
+      await agent.runEnhancement('manual');
+
+      expect(postAgent.createFromBrief).not.toHaveBeenCalled();
     });
   });
 

@@ -24,3 +24,24 @@ export const DEFAULT_NEWS_BATCH_SIZE: NewsBatchSize = 1;
 export interface NewsAgentSettings {
   batchSize: number;
 }
+
+export interface NewsPostSource {
+  title: string;
+  summary: string | null;
+  standfirst: string | null;
+  category: string;
+  source: string | null;
+  publishedAt: string;
+  tags: string[];
+  articleUrl: string;
+  coverUrl: string;
+}
+
+export type NewsSocialStatus = 'drafted' | 'skipped' | 'failed';
+
+export interface NewsSocialOutcome {
+  userId: string;
+  groupName: string | null;
+  status: NewsSocialStatus;
+  reason: string | null;
+}

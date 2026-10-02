@@ -28,7 +28,8 @@ import {
   AutomationPolicyDTO,
   UpdateAutomationPolicyPayload,
 } from '@/types/accountGroup.types';
-import { PostFormatName } from '@/types/post.types';
+import type { NewsPostSource, NewsSocialOutcome } from '@/types/newsDesk.types';
+import { PostBriefPayload, PostFormatName } from '@/types/post.types';
 import { BadRequestError, ConflictError, NotFoundError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
 import { AgentRunStatus, AgentStepStatus, AutomationMode, PostDraftStatus } from '@prisma/client';
@@ -440,6 +441,89 @@ export class AutomationService {
     return { users: userIds.length, drafted };
   }
 
+  async draftNewsPosts(source: NewsPostSource): Promise<NewsSocialOutcome[]> {
+    const policies = await this.policies.findRunnablePolicies();
+    const userIds = policies
+      .filter(policy => isAgentSwitchedOn(AGENT_REGISTRY.news, policy.agents))
+      .map(policy => policy.userId);
+
+    const outcomes: NewsSocialOutcome[] = [];
+    for (const userId of userIds) {
+      outcomes.push(await this.draftNewsPostForUser(userId, source));
+    }
+    return outcomes;
+  }
+
+  private async draftNewsPostForUser(
+    userId: string,
+    source: NewsPostSource
+  ): Promise<NewsSocialOutcome> {
+    const outcome = (
+      status: NewsSocialOutcome['status'],
+      reason: string | null,
+      groupName: string | null = null
+    ): NewsSocialOutcome => ({ userId, groupName, status, reason });
+
+    try {
+      const policy = await this.policies.findByUser(userId);
+      const group = await this.newsGroupFor(userId, policy?.defaultGroupId ?? null);
+      if (!group) {
+        return outcome('skipped', 'no default brand is set');
+      }
+
+      const maxPostsPerDay = policy?.maxPostsPerDay ?? DEFAULT_MAX_POSTS_PER_DAY;
+      if ((await this.runs.countSince(userId, startOfToday())) >= maxPostsPerDay) {
+        return outcome('skipped', 'daily post limit reached', group.name);
+      }
+
+      if ((await this.runs.findRecentTopics(group.id)).includes(source.title)) {
+        return outcome('skipped', 'already posted for this brand', group.name);
+      }
+
+      const targets = await this.groups.findActiveTargets(group.id);
+      if (!targets.length) {
+        return outcome('skipped', 'no switched-on accounts in this brand', group.name);
+      }
+
+      const failure = await this.draftOne(
+        userId,
+        group,
+        source.title,
+        AUTOPILOT_TRIGGER,
+        policy?.autoPublish ?? true,
+        targets.length,
+        {
+          format: 'single',
+          slideCount: 1,
+          link: source.articleUrl,
+          photoUrl: source.coverUrl,
+          news: {
+            headline: source.title,
+            summary: source.summary ?? '',
+            standfirst: source.standfirst,
+            category: source.category,
+            source: source.source,
+            publishedAt: source.publishedAt,
+            articleUrl: source.articleUrl,
+            tags: source.tags,
+          },
+        }
+      );
+      return failure
+        ? outcome('failed', failure, group.name)
+        : outcome('drafted', null, group.name);
+    } catch (err) {
+      return outcome('failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private async newsGroupFor(userId: string, defaultGroupId: string | null) {
+    const group = defaultGroupId
+      ? await this.groups.findByIdForUser(defaultGroupId, userId)
+      : (await this.groups.findAutopilotGroups([userId])).find(candidate => candidate.isDefault);
+    return group?.isActive ? group : null;
+  }
+
   private async runGroup(
     userId: string,
     group: AccountGroupWithMembers,
@@ -496,7 +580,8 @@ export class AutomationService {
     topic: string,
     trigger: string,
     autoPublish: boolean,
-    accountsTargeted: number
+    accountsTargeted: number,
+    overrides: Partial<PostBriefPayload> = {}
   ): Promise<string | null> {
     const run = await this.runs.start({
       userId,
@@ -522,6 +607,7 @@ export class AutomationService {
         autoPublish,
         trigger,
         runId: run.id,
+        ...overrides,
       });
 
       // Autopilot signs the draft off itself. The craft audit still gates it —

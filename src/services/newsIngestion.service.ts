@@ -19,6 +19,7 @@ export interface IngestionResult {
   fetched: number;
   created: number;
   duplicates: number;
+  stale: number;
   failedSources: { name: string; error: string }[];
 }
 
@@ -53,6 +54,12 @@ function toRow(item: FeedItem, source: NewsSource): Prisma.N8nArticleCreateManyI
   };
 }
 
+function freshnessCutoff(now: Date = new Date()): Date | null {
+  return env.NEWS_FEED_MAX_AGE_HOURS > 0
+    ? new Date(now.getTime() - env.NEWS_FEED_MAX_AGE_HOURS * 60 * 60 * 1000)
+    : null;
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -67,6 +74,8 @@ export class NewsIngestionService {
     const failedSources: IngestionResult['failedSources'] = [];
     const rowsByGuid = new Map<string, Prisma.N8nArticleCreateManyInput>();
     let fetched = 0;
+    let stale = 0;
+    const oldest = freshnessCutoff();
 
     for (let index = 0; index < sources.length; index += FEED_CONCURRENCY) {
       const batch = sources.slice(index, index + FEED_CONCURRENCY);
@@ -84,6 +93,10 @@ export class NewsIngestionService {
         }
         fetched += result.value.items.length;
         for (const item of result.value.items) {
+          if (oldest && item.publishedAt && item.publishedAt < oldest) {
+            stale += 1;
+            continue;
+          }
           if (!rowsByGuid.has(item.guid)) {
             rowsByGuid.set(item.guid, toRow(item, result.value.source));
           }
@@ -101,7 +114,8 @@ export class NewsIngestionService {
       sources: sources.length,
       fetched,
       created,
-      duplicates: fetched - created,
+      duplicates: fetched - stale - created,
+      stale,
       failedSources,
     };
 
@@ -109,7 +123,7 @@ export class NewsIngestionService {
       logger.warn({ failedSources }, 'news_ingestion.sources_failed');
     }
     logger.info(
-      { sources: result.sources, fetched, created, failed: failedSources.length },
+      { sources: result.sources, fetched, stale, created, failed: failedSources.length },
       'news_ingestion.completed'
     );
     return result;

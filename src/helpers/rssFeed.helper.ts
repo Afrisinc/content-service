@@ -18,43 +18,10 @@ export interface FeedItem {
 }
 
 export const DEFAULT_NEWS_SOURCES: NewsSource[] = [
-  {
-    name: 'BBC Africa',
-    url: 'https://feeds.bbci.co.uk/news/world/africa/rss.xml',
-    category: 'news',
-  },
-  { name: 'Disrupt Africa', url: 'https://disrupt-africa.com/feed/', category: 'tech' },
   { name: 'TechCabal', url: 'https://techcabal.com/feed/', category: 'tech' },
-  {
-    name: 'TechCrunch Africa',
-    url: 'https://techcrunch.com/tag/africa/feed/',
-    category: 'startup',
-  },
-  { name: 'African Business', url: 'https://african.business/feed/', category: 'business' },
   { name: 'Ventureburn', url: 'https://ventureburn.com/feed/', category: 'startup' },
-  { name: 'The Africa Report', url: 'https://www.theafricareport.com/feed/', category: 'news' },
-  { name: 'Africanews', url: 'https://www.africanews.com/feed/', category: 'news' },
+  { name: 'The Africa Report', url: 'https://www.theafricareport.com/feed/', category: 'business' },
   { name: 'BusinessDay', url: 'https://businessday.ng/feed/', category: 'business' },
-  {
-    name: 'AllAfrica',
-    url: 'https://allafrica.com/tools/headlines/rdf/latest/headlines.rdf',
-    category: 'general',
-  },
-  {
-    name: 'GNews Africa Finance',
-    url: 'https://news.google.com/rss/search?q=africa+finance&hl=en&gl=ZA&ceid=ZA:en',
-    category: 'finance',
-  },
-  {
-    name: 'GNews Africa Business',
-    url: 'https://news.google.com/rss/search?q=africa+business&hl=en&gl=ZA&ceid=ZA:en',
-    category: 'business',
-  },
-  {
-    name: 'GNews Africa Tech',
-    url: 'https://news.google.com/rss/search?q=africa+technology&hl=en&gl=ZA&ceid=ZA:en',
-    category: 'tech',
-  },
 ];
 
 const LIMITS = { guid: 2000, title: 500, link: 2000, summary: 5000 } as const;
