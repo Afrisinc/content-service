@@ -1,12 +1,8 @@
 import { z } from 'zod';
 import { env } from '@/config/env';
 import { nodeServices } from '@/adapters/nodes/nodeServices';
-import {
-  chatGptCredentialsFromEnv,
-  claudeCredentialsFromEnv,
-  runChatGpt,
-  runClaude,
-} from '@/nodes';
+import { runChatGpt, runClaude } from '@/nodes';
+import { resolveChatGptConfig, resolveClaudeConfig } from '@/services/aiCredentials.service';
 import { OllamaLlmProvider } from '@/studio/providers/llm/ollama.provider';
 import { extractJson } from '@/studio/directors/structured';
 import { ServerError } from '@/utils/http-error';
@@ -111,15 +107,16 @@ async function generateWithChatGpt(
   requestId: string,
   userId: string
 ): Promise<string> {
+  const { credentials, model } = await resolveChatGptConfig();
   const items = await runChatGpt({
-    credentials: chatGptCredentialsFromEnv(),
+    credentials,
     logger,
     services: nodeServices,
     usageContext: { requestId, userId },
     parameters: {
       resource: 'text',
       operation: 'message',
-      model: env.STORY_LLM_CHATGPT_MODEL,
+      model: model ?? env.STORY_LLM_CHATGPT_MODEL,
       systemPrompt: SYSTEM_PROMPT,
       prompt,
       options: { temperature: env.STORY_LLM_TEMPERATURE, maxTokens: env.STORY_LLM_MAX_TOKENS },
@@ -138,15 +135,16 @@ async function generateWithClaude(
   requestId: string,
   userId: string
 ): Promise<string> {
+  const { credentials, model } = await resolveClaudeConfig();
   const items = await runClaude({
-    credentials: claudeCredentialsFromEnv(),
+    credentials,
     logger,
     services: nodeServices,
     usageContext: { requestId, userId },
     parameters: {
       resource: 'text',
       operation: 'message',
-      model: env.STORY_LLM_CLAUDE_MODEL,
+      model: model ?? env.STORY_LLM_CLAUDE_MODEL,
       maxTokens: env.STORY_LLM_MAX_TOKENS,
       systemPrompt: SYSTEM_PROMPT,
       prompt,

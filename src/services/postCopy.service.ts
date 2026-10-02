@@ -12,7 +12,8 @@ import {
   VOICE_PROMPT,
 } from '@/brand/afrisinc.brand';
 import { env } from '@/config/env';
-import { claudeCredentialsFromEnv, ClaudeNode, runClaude } from '@/nodes';
+import { ClaudeNode, runClaude } from '@/nodes';
+import { resolveClaudeConfig } from '@/services/aiCredentials.service';
 import { HeadlineFitResult, PostBriefPayload, PostCopy, PostFormatName } from '@/types/post.types';
 import { BadRequestError, ServerError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
@@ -256,17 +257,18 @@ export class PostCopyService {
     signal?: AbortSignal
   ): Promise<string> {
     try {
+      const { credentials, model } = await resolveClaudeConfig();
       const items = await runClaude({
         node: copyNode,
         signal,
-        credentials: claudeCredentialsFromEnv(),
+        credentials,
         logger,
         services: nodeServices,
         usageContext: { userId: brief.userId, requestId: brief.runId },
         parameters: {
           resource: 'text',
           operation: 'message',
-          model: env.POST_AGENT_MODEL,
+          model: model ?? env.POST_AGENT_MODEL,
           maxTokens: env.POST_AGENT_MAX_TOKENS,
           systemPrompt: VOICE_PROMPT,
           prompt: briefPrompt(brief, complaint),

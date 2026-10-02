@@ -1981,3 +1981,31 @@ model ArticleReadEvent {
   @@index([articleId])
   @@map("article_read_events")
 }
+
+// ─────────────────────────────────────────────
+// AI PROVIDER CONFIGS (platform-wide AI credentials and model settings)
+// ─────────────────────────────────────────────
+
+model AiProviderConfig {
+  id String @id @default(uuid())
+
+  provider       String // anthropic, openai
+  purpose        String  @default("text") // text, image, summary
+  model          String?
+  baseUrl        String?
+  organizationId String?
+  projectId      String?
+  apiKeyEnc      String
+  apiKeyHint     String
+  isActive       Boolean @default(true)
+
+  lastRotatedAt DateTime @default(now()) @db.Timestamptz()
+  updatedBy     String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@unique([provider, purpose])
+  @@index([isActive])
+  @@map("ai_provider_configs")
+}

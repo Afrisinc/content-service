@@ -1,5 +1,6 @@
-import { claudeCredentialsFromEnv, runClaude, summaryTranscript } from '@/nodes';
+import { runClaude, summaryTranscript } from '@/nodes';
 import type { IUsageRecorder, MemoryMessage } from '@/nodes/core';
+import { resolveClaudeConfig } from '@/services/aiCredentials.service';
 import { logger } from '@/utils/logger';
 
 export interface ClaudeSummariserOptions {
@@ -26,15 +27,16 @@ export function createClaudeSummariser(
   options: ClaudeSummariserOptions = {}
 ): (messages: MemoryMessage[]) => Promise<string> {
   return async messages => {
+    const { credentials, model } = await resolveClaudeConfig('summary');
     const items = await runClaude({
-      credentials: claudeCredentialsFromEnv(),
+      credentials,
       logger,
       ...(options.usage ? { services: { usage: options.usage } } : {}),
       usageContext: { requestId: 'chat-memory-summary' },
       parameters: {
         resource: 'text',
         operation: 'message',
-        model: options.model ?? 'claude-haiku-4-5',
+        model: options.model ?? model ?? 'claude-haiku-4-5',
         maxTokens: options.maxTokens ?? 1024,
         systemPrompt: SYSTEM_PROMPT,
         prompt: summaryTranscript(messages),

@@ -19,6 +19,9 @@ vi.mock('@/config/env', () => ({ env: envMock }));
 vi.mock('@/repositories/n8nArticle.repository', () => ({ n8nArticleRepository: repository }));
 vi.mock('@/adapters/nodes/nodeServices', () => ({ nodeServices: {} }));
 vi.mock('@/nodes', () => ({ runChatGpt: vi.fn(), chatGptCredentialsFromEnv: vi.fn() }));
+vi.mock('@/services/aiCredentials.service', () => ({
+  resolveChatGptConfig: async () => ({ credentials: { apiKey: 'sk' } }),
+}));
 vi.mock('@/utils/assets-client', () => ({ getAssetsClient: vi.fn() }));
 
 const { NewsEnhancementService } = await import('@/services/newsEnhancement.service');

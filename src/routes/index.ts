@@ -13,6 +13,7 @@ import { storyRoutes } from './story.routes';
 import { GeneratedPostsRoutes } from './n8nGeneratedPosts.routes';
 import { socialMediaRoutes } from './socialMedia.routes';
 import { socialMediaIntegrationRoutes } from './socialMediaIntegration.routes';
+import { aiProviderConfigRoutes } from './aiProviderConfig.routes';
 import { userRoutes } from './user.routes';
 import { mediaPostRoutes } from './mediaPost.routes';
 import { aiUsageRoutes } from './aiUsage.routes';
@@ -61,6 +62,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.register(userRoutes);
   app.register(socialMediaRoutes);
   app.register(socialMediaIntegrationRoutes);
+  app.register(aiProviderConfigRoutes);
   app.register(mediaPostRoutes);
   app.register(aiGenerationRoutes);
   app.register(ArticlesRoutes);

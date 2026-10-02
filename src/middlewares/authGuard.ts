@@ -18,6 +18,7 @@ declare module 'fastify' {
     user?: {
       userId: string;
       email?: string;
+      role?: string;
     };
   }
 }
@@ -89,6 +90,7 @@ export const authGuard = async (request: FastifyRequest, reply: FastifyReply) =>
     request.user = {
       userId: decoded.sub || decoded.userId || '',
       email: decoded.email,
+      role: decoded.role,
     };
 
     await ensureLocalUser(request.user.userId, decoded.email, decoded.name);

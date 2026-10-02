@@ -6,7 +6,8 @@ import {
   parseEnhancement,
   type EnhancedArticle,
 } from '@/helpers/newsEnhancement.helper';
-import { chatGptCredentialsFromEnv, runChatGpt } from '@/nodes';
+import { runChatGpt } from '@/nodes';
+import { resolveChatGptConfig } from '@/services/aiCredentials.service';
 import { n8nArticleRepository } from '@/repositories/n8nArticle.repository';
 import { STUCK_AFTER_MINUTES } from '@/types/newsDesk.types';
 import { getAssetsClient } from '@/utils/assets-client';
@@ -48,8 +49,9 @@ function socialMediaFolderId(): string | undefined {
 
 const openAiDeps: NewsEnhancementDeps = {
   async writeArticle({ articleId, systemPrompt, prompt }) {
+    const { credentials } = await resolveChatGptConfig();
     const items = await runChatGpt({
-      credentials: chatGptCredentialsFromEnv(),
+      credentials,
       logger,
       services: nodeServices,
       usageContext: { requestId: `news-enhance:${articleId.toString()}` },
@@ -67,15 +69,16 @@ const openAiDeps: NewsEnhancementDeps = {
   },
 
   async drawCover(prompt, articleId) {
+    const { credentials, model } = await resolveChatGptConfig('image');
     const items = await runChatGpt({
-      credentials: chatGptCredentialsFromEnv(),
+      credentials,
       logger,
       services: nodeServices,
       usageContext: { requestId: `news-cover:${articleId.toString()}` },
       parameters: {
         resource: 'image',
         operation: 'generate',
-        model: env.NEWS_IMAGE_MODEL,
+        model: model ?? env.NEWS_IMAGE_MODEL,
         prompt,
         options: {
           size: env.NEWS_IMAGE_SIZE,

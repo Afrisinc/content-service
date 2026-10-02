@@ -9,7 +9,8 @@ import {
   extractHtml,
   type DigestArticle,
 } from '@/helpers/newsletterDigest.helper';
-import { chatGptCredentialsFromEnv, runChatGpt } from '@/nodes';
+import { runChatGpt } from '@/nodes';
+import { resolveChatGptConfig } from '@/services/aiCredentials.service';
 import { mediaPostRepository } from '@/repositories/mediaPost.repository';
 import { logger } from '@/utils/logger';
 
@@ -62,8 +63,9 @@ class NewsletterDigestService {
     });
     const { systemPrompt, prompt } = buildDigestPrompt(context);
 
+    const { credentials, model } = await resolveChatGptConfig();
     const items = await runChatGpt({
-      credentials: chatGptCredentialsFromEnv(),
+      credentials,
       logger,
       services: nodeServices,
       // One paid generation per day: a retry replays the first result rather than paying again.
@@ -72,7 +74,7 @@ class NewsletterDigestService {
       parameters: {
         resource: 'text',
         operation: 'message',
-        model: env.NEWSLETTER_DIGEST_MODEL,
+        model: model ?? env.NEWSLETTER_DIGEST_MODEL,
         systemPrompt,
         prompt,
         options: { temperature: 0.6, maxTokens: 8000 },

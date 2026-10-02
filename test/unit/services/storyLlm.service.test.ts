@@ -23,6 +23,10 @@ vi.mock('@/nodes', () => ({
   chatGptCredentialsFromEnv: () => ({ apiKey: 'sk-test' }),
   claudeCredentialsFromEnv: () => ({ apiKey: 'anthropic-test' }),
 }));
+vi.mock('@/services/aiCredentials.service', () => ({
+  resolveChatGptConfig: async () => ({ credentials: { apiKey: 'sk-test' } }),
+  resolveClaudeConfig: async () => ({ credentials: { apiKey: 'anthropic-test' } }),
+}));
 vi.mock('@/studio/providers/llm/ollama.provider', () => ({
   OllamaLlmProvider: vi.fn().mockImplementation(() => ({ complete: mocks.ollamaComplete })),
 }));
