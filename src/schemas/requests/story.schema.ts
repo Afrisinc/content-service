@@ -49,6 +49,8 @@ export const ListStoriesSchema = {
 
 export const GetStorySchema = { params: idParams };
 
+export const GenerateStoryCoverSchema = { params: idParams };
+
 export const ListPublicStoriesSchema = {
   querystring: {
     type: 'object',

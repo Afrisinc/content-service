@@ -1,3 +1,5 @@
+import { withImageRules } from '@/helpers/coverPrompt.helper';
+
 export const NEWS_CATEGORIES = [
   'technology',
   'fintech',
@@ -220,14 +222,8 @@ function categoryFrom(value: unknown, fallback: string | null): string {
  * editor can act on. A rejection is not an error — it comes back with
  * `shouldPublish: false` and the model's reason.
  */
-const COVER_PROMPT_RULES =
-  'Editorial photograph. The image must contain no text, lettering, numbers, signage, logos, ' +
-  'seals or watermarks anywhere. Any screen, sign or display in the scene must be blank or ' +
-  'show abstract shapes only. Prefer a composition with no people. Show no face in close-up ' +
-  'or in profile: any person appears only from behind, in silhouette or small in the distance.';
-
 export function coverPrompt(imagePrompt: string): string {
-  return `${imagePrompt.trim()}\n\n${COVER_PROMPT_RULES}`;
+  return withImageRules('Editorial photograph.', imagePrompt);
 }
 
 export function parseEnhancement(raw: unknown, source: EnhancementSource): EnhancedArticle {

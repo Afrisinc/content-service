@@ -137,6 +137,9 @@ export const env = {
 
   STORY_LLM_CHATGPT_MODEL: process.env.STORY_LLM_CHATGPT_MODEL || 'gpt-4o',
   STORY_LLM_CLAUDE_MODEL: process.env.STORY_LLM_CLAUDE_MODEL || 'claude-sonnet-5',
+  STORY_COVER_MODEL: process.env.STORY_COVER_MODEL || 'gpt-image-1',
+  STORY_COVER_SIZE: process.env.STORY_COVER_SIZE || '1024x1536',
+  STORY_COVER_QUALITY: process.env.STORY_COVER_QUALITY || 'medium',
   STORY_LLM_MAX_TOKENS: Number(process.env.STORY_LLM_MAX_TOKENS) || 4096,
   STORY_LLM_TEMPERATURE: Number(process.env.STORY_LLM_TEMPERATURE ?? 0.85),
   STORY_LLM_MAX_ATTEMPTS: Number(process.env.STORY_LLM_MAX_ATTEMPTS) || 2,

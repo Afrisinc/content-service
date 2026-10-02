@@ -2,6 +2,7 @@ import { StoryStatus } from '@prisma/client';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { assertStoryBrief, storyService, type StoryBrief } from '@/services/story.service';
 import { storyAgentService } from '@/services/storyAgent.service';
+import { storyCoverService } from '@/services/storyCover.service';
 import { storyEpisodeService } from '@/services/storyEpisode.service';
 import { UnauthorizedError } from '@/utils/http-error';
 import { success } from '@/utils/response';
@@ -39,7 +40,7 @@ export async function listStories(request: FastifyRequest, reply: FastifyReply) 
 
 export async function getStory(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as IdParams;
-  const story = await storyService.get(id);
+  const story = await storyService.getOwned(id, requireUserId(request));
   return success(reply, 200, 'Story retrieved', 1100, story);
 }
 
@@ -83,6 +84,7 @@ export async function generateEpisode(request: FastifyRequest, reply: FastifyRep
     instructions?: string;
     idempotencyKey?: string;
   };
+  await storyService.requireOwned(id, requireUserId(request));
   const episode = await storyAgentService.writeNext(id, { instructions, idempotencyKey }, 'manual');
   return success(reply, 201, 'Episode generated', 1102, episode);
 }
@@ -90,6 +92,7 @@ export async function generateEpisode(request: FastifyRequest, reply: FastifyRep
 export async function regenerateEpisode(request: FastifyRequest, reply: FastifyReply) {
   const { id, episodeId } = request.params as EpisodeParams;
   const { instructions } = (request.body ?? {}) as { instructions?: string };
+  await storyService.requireOwned(id, requireUserId(request));
   const episode = await storyAgentService.rewrite(id, episodeId, { instructions });
   return success(reply, 200, 'Episode regenerated', 1107, episode);
 }
@@ -97,30 +100,42 @@ export async function regenerateEpisode(request: FastifyRequest, reply: FastifyR
 export async function listStoryEpisodes(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as IdParams;
   const query = request.query as { page?: number; limit?: number };
+  await storyService.requireOwned(id, requireUserId(request));
   const result = await storyEpisodeService.list(id, query);
   return success(reply, 200, 'Episodes retrieved', 1100, result);
 }
 
 export async function getStoryEpisode(request: FastifyRequest, reply: FastifyReply) {
   const { id, episodeId } = request.params as EpisodeParams;
+  await storyService.requireOwned(id, requireUserId(request));
   const episode = await storyEpisodeService.get(id, episodeId);
   return success(reply, 200, 'Episode retrieved', 1100, episode);
 }
 
 export async function approveStoryEpisode(request: FastifyRequest, reply: FastifyReply) {
   const { id, episodeId } = request.params as EpisodeParams;
+  await storyService.requireOwned(id, requireUserId(request));
   const episode = await storyEpisodeService.approve(id, episodeId);
   return success(reply, 200, 'Episode approved', 1103, episode);
 }
 
 export async function publishStoryEpisode(request: FastifyRequest, reply: FastifyReply) {
   const { id, episodeId } = request.params as EpisodeParams;
+  await storyService.requireOwned(id, requireUserId(request));
   const episode = await storyEpisodeService.publish(id, episodeId);
   return success(reply, 200, 'Episode published', 1104, episode);
 }
 
 export async function retryEpisodePromotion(request: FastifyRequest, reply: FastifyReply) {
   const { id, episodeId } = request.params as EpisodeParams;
+  await storyService.requireOwned(id, requireUserId(request));
   const episode = await storyEpisodeService.retryPromotion(id, episodeId);
   return success(reply, 200, 'Promotion retried', 1108, episode);
+}
+
+export async function generateStoryCover(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as IdParams;
+  const story = await storyService.requireOwned(id, requireUserId(request));
+  const coverImageUrl = await storyCoverService.generate(story);
+  return success(reply, 200, 'Cover generated', 1109, { coverImageUrl });
 }

@@ -7,6 +7,7 @@ import {
 } from '@/config/agentRegistry';
 import { env } from '@/config/env';
 import { isAgentSwitchedOn } from '@/helpers/agentSettings.helper';
+import { newsEditorial } from '@/helpers/newsPost.helper';
 import { pluralise } from '@/helpers/agentRun.helper';
 import { cancelRun, isRunCancellable } from '@/helpers/runCancellation.helper';
 import {
@@ -497,7 +498,7 @@ export class AutomationService {
           slideCount: 1,
           link: source.articleUrl,
           photoUrl: source.coverUrl,
-          news: {
+          editorial: newsEditorial({
             headline: source.title,
             summary: source.summary ?? '',
             standfirst: source.standfirst,
@@ -506,7 +507,7 @@ export class AutomationService {
             publishedAt: source.publishedAt,
             articleUrl: source.articleUrl,
             tags: source.tags,
-          },
+          }),
         }
       );
       return failure

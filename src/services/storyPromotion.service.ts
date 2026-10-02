@@ -1,5 +1,6 @@
 import { Story, StoryEpisode } from '@prisma/client';
 import { env } from '@/config/env';
+import { storyEditorial } from '@/helpers/storyPost.helper';
 import { postAgentService } from '@/services/postAgent.service';
 import { storyEpisodeRepository } from '@/repositories/storyEpisode.repository';
 import { logger } from '@/utils/logger';
@@ -16,6 +17,7 @@ function episodeUrl(story: Story, episode: StoryEpisode): string {
 export class StoryPromotionService {
   async promote(story: Story, episode: StoryEpisode): Promise<void> {
     try {
+      const url = episodeUrl(story, episode);
       const draft = await postAgentService.createFromBrief({
         userId: story.userId,
         groupId: story.groupId ?? undefined,
@@ -23,9 +25,12 @@ export class StoryPromotionService {
         format: 'single',
         audience: story.audience ?? undefined,
         keywords: episode.promotionHashtags.join(' ') || episode.themes.join(', '),
-        link: episodeUrl(story, episode),
+        link: url,
         autoPublish: story.autoApprovePromotion,
         trigger: 'story-agent',
+        ...(story.coverImageUrl
+          ? { photoUrl: story.coverImageUrl, editorial: storyEditorial(story, episode, url) }
+          : {}),
       });
 
       await storyEpisodeRepository.setPromotionResult(episode.id, {

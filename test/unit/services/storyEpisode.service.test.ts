@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { Prisma } from '@prisma/client';
-import { storyEpisodeService } from '@/services/storyEpisode.service';
+import { endingOf, readEpisodeMemory, storyEpisodeService } from '@/services/storyEpisode.service';
 
 const mocks = vi.hoisted(() => ({
   require: vi.fn(),
@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   findByIdempotencyKey: vi.fn(),
   findByNumber: vi.fn(),
   updateContent: vi.fn(),
+  findEarlier: vi.fn(),
+  ensureCover: vi.fn(),
 }));
 
 vi.mock('@/services/story.service', () => ({
@@ -27,6 +29,9 @@ vi.mock('@/services/story.service', () => ({
 }));
 vi.mock('@/services/storyLlm.service', () => ({
   storyLlmService: { generateEpisode: mocks.generateEpisode },
+}));
+vi.mock('@/services/storyCover.service', () => ({
+  storyCoverService: { ensure: mocks.ensureCover },
 }));
 vi.mock('@/services/storyPromotion.service', () => ({
   storyPromotionService: { promote: mocks.promote },
@@ -45,6 +50,7 @@ vi.mock('@/repositories/storyEpisode.repository', () => ({
     findByIdempotencyKey: mocks.findByIdempotencyKey,
     findByNumber: mocks.findByNumber,
     updateContent: mocks.updateContent,
+    findEarlier: mocks.findEarlier,
   },
 }));
 vi.mock('@/repositories/readerDevice.repository', () => ({
@@ -70,6 +76,8 @@ const generationResult = {
     hook: 'It begins.',
     body: 'Once upon a time.',
     cliffhanger: 'To be continued.',
+    summary: 'Amina finds the radio and hears her late father.',
+    continuity_notes: ['Amina is a radio engineer in Kigali'],
     themes: ['mystery'],
     content_warnings: [],
     promotion_caption: 'Read episode one now.',
@@ -85,6 +93,8 @@ beforeEach(() => {
   mocks.generateEpisode.mockResolvedValue(generationResult);
   mocks.create.mockImplementation(async input => ({ id: 'episode-1', ...input }));
   mocks.findByIdempotencyKey.mockResolvedValue(null);
+  mocks.findEarlier.mockResolvedValue([]);
+  mocks.ensureCover.mockResolvedValue(undefined);
 });
 
 describe('storyEpisodeService.generateNext', () => {
@@ -95,11 +105,36 @@ describe('storyEpisodeService.generateNext', () => {
 
     expect(episode.episodeNumber).toBe(1);
     expect(mocks.generateEpisode).toHaveBeenCalledWith(
-      expect.objectContaining({ episodeNumber: 1, priorCliffhanger: undefined }),
+      expect.objectContaining({
+        episodeNumber: 1,
+        priorCliffhanger: undefined,
+        priorEpisodes: [],
+        continuityNotes: [],
+        previousEnding: undefined,
+      }),
       expect.any(String),
       'user-1'
     );
     expect(mocks.markActive).toHaveBeenCalledWith('story-1');
+  });
+
+  it('keeps what the writer said happened, so later episodes can build on it', async () => {
+    mocks.lastForStory.mockResolvedValue(null);
+
+    await storyEpisodeService.generateNext('story-1');
+
+    expect(mocks.create.mock.calls[0][0].metadata).toEqual({
+      summary: 'Amina finds the radio and hears her late father.',
+      continuity: ['Amina is a radio engineer in Kigali'],
+    });
+  });
+
+  it('starts drawing the story cover when it has none, without waiting for it', async () => {
+    mocks.lastForStory.mockResolvedValue(null);
+
+    await storyEpisodeService.generateNext('story-1');
+
+    expect(mocks.ensureCover).toHaveBeenCalledWith(story);
   });
 
   it('continues from the prior episode and does not re-activate an active story', async () => {
@@ -109,16 +144,39 @@ describe('storyEpisodeService.generateNext', () => {
       title: 'Episode Three',
       hook: 'The trail goes cold.',
       cliffhanger: 'A door creaks open.',
+      body: 'First paragraph.\n\nThe trail went cold.\n\nA door creaked open.',
     });
+    mocks.findEarlier.mockResolvedValue([
+      {
+        episodeNumber: 1,
+        title: 'Episode One',
+        hook: 'It begins.',
+        cliffhanger: 'To be continued.',
+        metadata: { summary: 'Amina finds the radio.', continuity: ['Amina is an engineer'] },
+      },
+      {
+        episodeNumber: 2,
+        title: 'Episode Two',
+        hook: 'The voice answers.',
+        cliffhanger: null,
+        metadata: null,
+      },
+    ]);
 
     const episode = await storyEpisodeService.generateNext('story-1');
 
     expect(episode.episodeNumber).toBe(4);
+    expect(mocks.findEarlier).toHaveBeenCalledWith('story-1', 4);
     expect(mocks.generateEpisode).toHaveBeenCalledWith(
       expect.objectContaining({
         episodeNumber: 4,
         priorCliffhanger: 'A door creaks open.',
-        priorSummary: expect.stringContaining('Episode Three'),
+        priorEpisodes: [
+          { episodeNumber: 1, title: 'Episode One', summary: 'Amina finds the radio.' },
+          { episodeNumber: 2, title: 'Episode Two', summary: 'The voice answers.' },
+        ],
+        continuityNotes: ['Amina is an engineer'],
+        previousEnding: 'The trail went cold.\n\nA door creaked open.',
       }),
       expect.any(String),
       'user-1'
@@ -197,20 +255,30 @@ describe('storyEpisodeService.regenerate', () => {
       title: 'Episode One',
       hook: 'It begins.',
       cliffhanger: 'To be continued.',
+      body: 'Opening.\n\nThe radio crackled to life.',
     });
     mocks.updateContent.mockResolvedValue({ id: 'episode-2', title: 'Episode One (Take Two)' });
 
     const result = await storyEpisodeService.regenerate('story-1', 'episode-2');
 
     expect(mocks.findByNumber).toHaveBeenCalledWith('story-1', 1);
+    expect(mocks.findEarlier).toHaveBeenCalledWith('story-1', 2);
     expect(mocks.generateEpisode).toHaveBeenCalledWith(
-      expect.objectContaining({ episodeNumber: 2, priorCliffhanger: 'To be continued.' }),
+      expect.objectContaining({
+        episodeNumber: 2,
+        priorCliffhanger: 'To be continued.',
+        previousEnding: 'Opening.\n\nThe radio crackled to life.',
+      }),
       expect.any(String),
       'user-1'
     );
     expect(mocks.updateContent).toHaveBeenCalledWith(
       'episode-2',
-      expect.objectContaining({ llmProvider: 'chatgpt', llmAttempts: 1 })
+      expect.objectContaining({
+        llmProvider: 'chatgpt',
+        llmAttempts: 1,
+        metadata: expect.objectContaining({ summary: expect.any(String) }),
+      })
     );
     expect(result).toEqual({ id: 'episode-2', title: 'Episode One (Take Two)' });
   });
@@ -227,7 +295,11 @@ describe('storyEpisodeService.regenerate', () => {
 
     expect(mocks.findByNumber).not.toHaveBeenCalled();
     expect(mocks.generateEpisode).toHaveBeenCalledWith(
-      expect.objectContaining({ priorCliffhanger: undefined, priorSummary: undefined }),
+      expect.objectContaining({
+        priorCliffhanger: undefined,
+        priorEpisodes: [],
+        previousEnding: undefined,
+      }),
       expect.any(String),
       'user-1'
     );
@@ -402,5 +474,48 @@ describe('storyEpisodeService.recordCompletedRead', () => {
       storyEpisodeService.recordCompletedRead('story-1', 99, 'device-1')
     ).rejects.toThrow('episode not found');
     expect(mocks.recordCompletion).not.toHaveBeenCalled();
+  });
+});
+
+describe('readEpisodeMemory', () => {
+  it('reads the summary and continuity notes the writer left', () => {
+    expect(readEpisodeMemory({ summary: ' It happened. ', continuity: ['a', 'b'] })).toEqual({
+      summary: 'It happened.',
+      continuity: ['a', 'b'],
+    });
+  });
+
+  it.each([null, undefined, 'text', 4, [], {}])('is empty for %s', value => {
+    expect(readEpisodeMemory(value)).toEqual({ summary: null, continuity: [] });
+  });
+
+  it('ignores notes that are not text or are blank', () => {
+    expect(readEpisodeMemory({ summary: '', continuity: ['keep', 4, '  ', null] })).toEqual({
+      summary: null,
+      continuity: ['keep'],
+    });
+  });
+});
+
+describe('endingOf', () => {
+  it('is the last two paragraphs', () => {
+    expect(endingOf('One.\n\nTwo.\n\nThree.\n\nFour.')).toBe('Three.\n\nFour.');
+  });
+
+  it('is the whole text when it is short', () => {
+    expect(endingOf('Only paragraph.')).toBe('Only paragraph.');
+  });
+
+  it('is empty for an empty body', () => {
+    expect(endingOf('  ')).toBe('');
+  });
+
+  it('keeps no more than 700 characters, starting on a whole word', () => {
+    const body = `${'word '.repeat(300).trim()}`;
+
+    const ending = endingOf(body);
+
+    expect(ending.length).toBeLessThanOrEqual(700);
+    expect(ending.startsWith('word')).toBe(true);
   });
 });

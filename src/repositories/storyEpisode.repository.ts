@@ -26,6 +26,7 @@ export interface ListStoryEpisodesParams {
 }
 
 const MAX_PAGE_SIZE = 100;
+const MAX_CONTEXT_EPISODES = 200;
 
 export class StoryEpisodeRepository {
   private readonly prisma: PrismaClient;
@@ -56,6 +57,21 @@ export class StoryEpisodeRepository {
     return this.prisma.storyEpisode.findFirst({
       where: { storyId },
       orderBy: { episodeNumber: 'desc' },
+    });
+  }
+
+  async findEarlier(storyId: string, episodeNumber: number) {
+    return this.prisma.storyEpisode.findMany({
+      where: { storyId, episodeNumber: { lt: episodeNumber } },
+      orderBy: { episodeNumber: 'asc' },
+      take: MAX_CONTEXT_EPISODES,
+      select: {
+        episodeNumber: true,
+        title: true,
+        hook: true,
+        cliffhanger: true,
+        metadata: true,
+      },
     });
   }
 
@@ -112,6 +128,7 @@ export class StoryEpisodeRepository {
       promotionHashtags: string[];
       llmProvider: string;
       llmAttempts: number;
+      metadata?: Prisma.InputJsonValue;
     }
   ) {
     return this.prisma.storyEpisode.update({ where: { id }, data });

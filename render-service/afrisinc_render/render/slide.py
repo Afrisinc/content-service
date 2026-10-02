@@ -11,7 +11,7 @@ from ..brand import tokens as T
 from ..brand.geometry import STORY, Geometry, news_geometry
 from ..errors import LayoutOverflowError
 from ..luminance import contrast_on_white, region_luminance
-from ..schema import NEWS, SlideSpec
+from ..schema import SlideSpec, is_editorial
 from . import components as C
 from . import furniture, marks, plate, surfaces
 from . import typography as ty
@@ -69,11 +69,11 @@ def build_news_stack(spec: SlideSpec, headline_size: int) -> C.Stack:
 
 
 def headline_sizes(spec: SlideSpec) -> tuple[int, ...]:
-    return T.NEWS_HEADLINE_SIZES if spec.layout == NEWS else T.HEADLINE_SIZES
+    return T.NEWS_HEADLINE_SIZES if is_editorial(spec.layout) else T.HEADLINE_SIZES
 
 
 def build_stack(spec: SlideSpec, headline_size: int) -> C.Stack:
-    if spec.layout == NEWS:
+    if is_editorial(spec.layout):
         return build_news_stack(spec, headline_size)
 
     foreground = R.foreground(spec.surface)
@@ -161,7 +161,7 @@ def fit_stack(spec: SlideSpec, geo: Geometry) -> tuple[C.Stack, int]:
 def furniture_bounds(geo: Geometry, layout: str = "brand") -> list[plate.Rect]:
     """The fixed elements are white on every dark surface, so they need protecting
     from a bright photograph exactly as the headline does."""
-    if layout == NEWS:
+    if is_editorial(layout):
         return [
             (geo.margin, geo.header_y - 26, geo.right_edge, geo.header_y + 26),
             (geo.margin, geo.footer_y - 60, geo.right_edge, geo.footer_y + 22),
@@ -183,7 +183,7 @@ class RenderedFrame(NamedTuple):
 
 
 def render(spec: SlideSpec, geo: Geometry) -> RenderedFrame:
-    if spec.layout == NEWS:
+    if is_editorial(spec.layout):
         geo = news_geometry(geo)
 
     base = surfaces.build(
@@ -215,9 +215,9 @@ def render(spec: SlideSpec, geo: Geometry) -> RenderedFrame:
     draw = ImageDraw.Draw(overlay)
     foreground = R.foreground(spec.surface)
 
-    if spec.layout == NEWS:
+    if is_editorial(spec.layout):
         furniture.header(overlay, draw, geo, spec.surface, show_site=False)
-        furniture.news_badge(draw, geo)
+        furniture.news_badge(draw, geo, T.BADGE_LABELS[spec.layout])
         stack.draw(draw, overlay, anchor, geo)
         furniture.dateline(draw, geo, spec.dateline or "", spec.surface)
     else:

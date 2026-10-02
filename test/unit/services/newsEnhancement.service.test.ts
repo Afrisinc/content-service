@@ -29,7 +29,10 @@ vi.mock('@/services/automation.service', () => ({
 vi.mock('@/services/agentSettings.service', () => ({
   agentSettingsService: { getNewsSettings },
 }));
-vi.mock('@/utils/assets-client', () => ({ getAssetsClient: vi.fn() }));
+vi.mock('@/utils/assets-client', () => ({
+  getAssetsClient: vi.fn(),
+  socialMediaFolderId: vi.fn(),
+}));
 
 const { NewsEnhancementService } = await import('@/services/newsEnhancement.service');
 

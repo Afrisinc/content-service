@@ -1,5 +1,4 @@
 import type { N8nArticle } from '@prisma/client';
-import axios from 'axios';
 import { nodeServices } from '@/adapters/nodes/nodeServices';
 import { env } from '@/config/env';
 import {
@@ -10,6 +9,7 @@ import {
 } from '@/helpers/newsEnhancement.helper';
 import { runChatGpt } from '@/nodes';
 import { articleUrl } from '@/helpers/newsletterDigest.helper';
+import { drawCoverImage } from '@/services/coverImage.service';
 import { agentSettingsService } from '@/services/agentSettings.service';
 import { automationService } from '@/services/automation.service';
 import { resolveChatGptConfig } from '@/services/aiCredentials.service';
@@ -19,7 +19,7 @@ import {
   type NewsPostSource,
   type NewsSocialOutcome,
 } from '@/types/newsDesk.types';
-import { getAssetsClient } from '@/utils/assets-client';
+import { getAssetsClient, socialMediaFolderId } from '@/utils/assets-client';
 import { logger } from '@/utils/logger';
 
 export interface ArticlePrompt {
@@ -61,13 +61,6 @@ const ORPHANED_REASON =
   'The enhancement run stopped before it finished. Send it back to the queue to try again.';
 
 const MAX_ERROR_LENGTH = 1000;
-const COVER_DOWNLOAD_TIMEOUT_MS = 30_000;
-const MAX_COVER_BYTES = 20 * 1024 * 1024;
-
-function socialMediaFolderId(): string | undefined {
-  const id = (globalThis as { SOCIAL_MEDIA_FOLDER_ID?: string }).SOCIAL_MEDIA_FOLDER_ID;
-  return typeof id === 'string' && id.length > 0 ? id : undefined;
-}
 
 const openAiDeps: NewsEnhancementDeps = {
   async writeArticle({ articleId, systemPrompt, prompt }) {
@@ -91,38 +84,13 @@ const openAiDeps: NewsEnhancementDeps = {
   },
 
   async drawCover(prompt, articleId) {
-    const { credentials, model } = await resolveChatGptConfig('image');
-    const items = await runChatGpt({
-      credentials,
-      logger,
-      services: nodeServices,
-      usageContext: { requestId: `news-cover:${articleId.toString()}` },
-      parameters: {
-        resource: 'image',
-        operation: 'generate',
-        model: model ?? env.NEWS_IMAGE_MODEL,
-        prompt: coverPrompt(prompt),
-        options: {
-          size: env.NEWS_IMAGE_SIZE,
-          quality: env.NEWS_IMAGE_QUALITY,
-        },
-      },
+    return drawCoverImage({
+      prompt: coverPrompt(prompt),
+      defaultModel: env.NEWS_IMAGE_MODEL,
+      size: env.NEWS_IMAGE_SIZE,
+      quality: env.NEWS_IMAGE_QUALITY,
+      requestId: `news-cover:${articleId.toString()}`,
     });
-    const images = items[0]?.json?.images as
-      { b64Json?: string | null; url?: string | null }[] | undefined;
-    const image = images?.[0];
-    if (image?.b64Json) {
-      return Buffer.from(image.b64Json, 'base64');
-    }
-    if (image?.url) {
-      const download = await axios.get<ArrayBuffer>(image.url, {
-        responseType: 'arraybuffer',
-        timeout: COVER_DOWNLOAD_TIMEOUT_MS,
-        maxContentLength: MAX_COVER_BYTES,
-      });
-      return Buffer.from(download.data);
-    }
-    throw new Error('the image model returned no cover');
   },
 
   async storeCover(image, filename) {

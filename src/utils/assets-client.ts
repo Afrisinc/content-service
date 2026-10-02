@@ -217,6 +217,11 @@ export function initAssetsClient(baseURL: string, apiKey: string): AssetsClient 
   return singletonInstance;
 }
 
+export function socialMediaFolderId(): string | undefined {
+  const id = (globalThis as { SOCIAL_MEDIA_FOLDER_ID?: string }).SOCIAL_MEDIA_FOLDER_ID;
+  return typeof id === 'string' && id.length > 0 ? id : undefined;
+}
+
 export function getAssetsClient(): AssetsClient {
   if (!singletonInstance) {
     throw new Error(

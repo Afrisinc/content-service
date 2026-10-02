@@ -35,7 +35,11 @@ vi.mock('@/services/aiCredentials.service', () => ({
 vi.mock('@/services/automation.service', () => ({
   automationService: { draftNewsPosts: vi.fn(async () => []) },
 }));
-vi.mock('@/utils/assets-client', () => ({ getAssetsClient: () => ({ uploadBuffer }) }));
+vi.mock('@/utils/assets-client', () => ({
+  getAssetsClient: () => ({ uploadBuffer }),
+  socialMediaFolderId: () =>
+    (globalThis as { SOCIAL_MEDIA_FOLDER_ID?: string }).SOCIAL_MEDIA_FOLDER_ID,
+}));
 vi.mock('axios', () => ({ default: { get: axiosGet } }));
 
 const { NewsEnhancementService } = await import('@/services/newsEnhancement.service');

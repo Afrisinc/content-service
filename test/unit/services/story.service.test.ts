@@ -173,3 +173,39 @@ describe('storyService', () => {
     expect(result.items).toEqual([{ id: 'story-1', status: 'ongoing' }]);
   });
 });
+
+describe('storyService ownership', () => {
+  it('requireOwned returns the story to its owner', async () => {
+    mocks.findById.mockResolvedValue({ id: 'story-1', userId: 'user-1' });
+
+    await expect(storyService.requireOwned('story-1', 'user-1')).resolves.toMatchObject({
+      id: 'story-1',
+    });
+  });
+
+  it('requireOwned answers not found, not forbidden, to anyone else', async () => {
+    mocks.findById.mockResolvedValue({ id: 'story-1', userId: 'user-1' });
+
+    await expect(storyService.requireOwned('story-1', 'user-2')).rejects.toThrow('story not found');
+  });
+
+  it('requireOwned answers not found for a story that does not exist', async () => {
+    mocks.findById.mockResolvedValue(null);
+
+    await expect(storyService.requireOwned('missing', 'user-1')).rejects.toThrow('story not found');
+  });
+
+  it('getOwned returns the story with its episodes to its owner', async () => {
+    mocks.findWithEpisodes.mockResolvedValue({ id: 'story-1', userId: 'user-1', episodes: [] });
+
+    await expect(storyService.getOwned('story-1', 'user-1')).resolves.toMatchObject({
+      episodes: [],
+    });
+  });
+
+  it('getOwned never shows another user the story or its episodes', async () => {
+    mocks.findWithEpisodes.mockResolvedValue({ id: 'story-1', userId: 'user-1', episodes: [{}] });
+
+    await expect(storyService.getOwned('story-1', 'user-2')).rejects.toThrow('story not found');
+  });
+});

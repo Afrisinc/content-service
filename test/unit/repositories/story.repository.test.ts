@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const findMany = vi.fn();
 const count = vi.fn();
 const groupBy = vi.fn();
+const update = vi.fn();
 
 vi.mock('@/database/prismaClient', () => ({
-  prisma: { story: { findMany, count }, storyEpisode: { groupBy } },
+  prisma: { story: { findMany, count, update }, storyEpisode: { groupBy } },
 }));
 
 const { StoryRepository } = await import('@/repositories/story.repository');
@@ -94,5 +95,18 @@ describe('StoryRepository.list episode totals', () => {
 
     expect(groupBy).not.toHaveBeenCalled();
     expect(result.items).toEqual([]);
+  });
+});
+
+describe('StoryRepository.setCoverImage', () => {
+  it('saves only the cover address on the story', async () => {
+    update.mockResolvedValue({ id: 's1' });
+
+    await new StoryRepository().setCoverImage('s1', 'https://cdn.afrisinc.com/cover.png');
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 's1' },
+      data: { coverImageUrl: 'https://cdn.afrisinc.com/cover.png' },
+    });
   });
 });

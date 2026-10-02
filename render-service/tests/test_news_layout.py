@@ -348,3 +348,92 @@ class TestNewsFit:
         result = fit_headlines(HeadlineFitRequest(slides=[{"headline": ["Your process."]}]))
 
         assert result.min_headline_size == T.HEADLINE_BRAND_FLOOR
+
+
+class TestStoryLayout:
+    def story_spec(self, **overrides) -> SlideSpec:
+        fields = dict(
+            layout="story",
+            eyebrow=Eyebrow(text="Episode 3", kind="claim"),
+            headline=["The night the", "lights went out"],
+            subs=["Amina finds the first message hidden in the generator room."],
+            dateline="The Last Signal · Episode 3",
+        )
+        fields.update(overrides)
+        return news_spec(**fields)
+
+    def test_a_story_frame_is_valid_and_has_no_site_in_the_header(self):
+        spec = self.story_spec()
+
+        assert spec.layout == "story"
+        assert spec.shows_site is False
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"surface": "azure", "photo": None},
+            {"cta": {"text": "afrisinc.com"}},
+            {"subs": ["One.", "Two."]},
+            {"dateline": None},
+        ],
+    )
+    def test_a_story_frame_follows_the_same_rules_as_a_news_frame(self, overrides):
+        with pytest.raises(ValidationError):
+            self.story_spec(**overrides)
+
+    def test_a_story_frame_renders_and_passes_its_audit(self):
+        spec = self.story_spec()
+        frame = slide.render(spec, POST_GEO)
+
+        findings = audit.audit_slide(0, spec, frame.image, POST_GEO, frame.bounds, frame.contrast)
+
+        assert frame.image.size == POST_GEO.size
+        assert [f for f in findings if f.severity == "error"] == []
+
+    def test_the_badge_reads_story_not_news(self, monkeypatch):
+        labels: list[str] = []
+        real = furniture.news_badge
+        monkeypatch.setattr(
+            furniture, "news_badge", lambda draw, geo, label="NEWS": (labels.append(label), real(draw, geo, label))
+        )
+
+        slide.render(self.story_spec(), POST_GEO)
+        slide.render(news_spec(), POST_GEO)
+
+        assert labels == ["STORY", "NEWS"]
+
+    def test_the_story_badge_is_wider_than_the_news_badge_and_still_inside_the_margin(self):
+        geo = news_geometry(POST_GEO)
+        news_left, _, news_right, _ = furniture.news_badge_rect(geo, "NEWS")
+        story_left, _, story_right, _ = furniture.news_badge_rect(geo, "STORY")
+
+        assert story_left < news_left
+        assert story_right == news_right == POST_GEO.right_edge
+
+    def test_the_marketing_furniture_is_not_drawn_on_a_story_frame(self, monkeypatch):
+        def refuse(*_args, **_kwargs):
+            raise AssertionError("marketing furniture drawn on a story frame")
+
+        monkeypatch.setattr(furniture, "contact_rail", refuse)
+        monkeypatch.setattr(furniture, "footer", refuse)
+        monkeypatch.setattr(marks, "registration_marks", refuse)
+
+        slide.render(self.story_spec(), POST_GEO)
+
+    def test_the_fit_check_treats_story_slides_like_news_slides(self):
+        result = fit_headlines(
+            HeadlineFitRequest(
+                format="single",
+                slides=[
+                    {
+                        "layout": "story",
+                        "headline": ["The night the", "lights went out"],
+                        "eyebrow": {"text": "Episode 3", "kind": "claim"},
+                    }
+                ],
+            )
+        )
+
+        assert result.min_headline_size == T.NEWS_HEADLINE_FLOOR
+        assert result.fits is True
+

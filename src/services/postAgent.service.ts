@@ -26,7 +26,7 @@ import {
   socialMediaAccountRepository,
 } from '@/repositories/socialMediaAccount.repository';
 import { buildPostSlug, buildPostSpecFromCopy, buildFullCaption } from '@/helpers/postSpec.helper';
-import { buildNewsCopy, buildNewsPostSpec } from '@/helpers/newsPost.helper';
+import { buildEditorialCopy, buildEditorialSpec } from '@/helpers/editorialPost.helper';
 import {
   CANCELLED_POST_STATUS,
   nextFreeSlot,
@@ -41,7 +41,7 @@ import { requestPostReview } from '@/helpers/reviewNotification.helper';
 import { ArtDirectionService, artDirectionService } from '@/services/artDirection.service';
 import { PostCopyService, postCopyService } from '@/services/postCopy.service';
 import {
-  NewsBrief,
+  EditorialBrief,
   PostBriefPayload,
   PostCopy,
   PostFormatName,
@@ -123,8 +123,8 @@ export class PostAgentService {
     // expensive part, and it is already correct.
     const signal = runId ? registerRun(runId) : undefined;
 
-    const { copy, attempts } = brief.news
-      ? await this.newsCopy(runId, brief.news, format)
+    const { copy, attempts } = brief.editorial
+      ? await this.editorialCopy(runId, brief.editorial, format)
       : await this.reuseOrRun(
           runId,
           AGENT_STEP_KEYS.copy,
@@ -152,8 +152,8 @@ export class PostAgentService {
     );
 
     const slug = buildPostSlug(brief.topic);
-    const spec = brief.news
-      ? this.newsSpec(slug, brief.news, copy, photosByIndex[0])
+    const spec = brief.editorial
+      ? this.editorialSpec(slug, brief.editorial, copy, photosByIndex[0])
       : buildPostSpecFromCopy(slug, copy, photosByIndex, format);
 
     const draft = await this.resumeDraft(runId, spec, copy);
@@ -169,19 +169,19 @@ export class PostAgentService {
       offer: brief.offer,
       audience: brief.audience,
       spec: spec as unknown as Prisma.InputJsonValue,
-      caption: brief.news ? copy.caption : buildFullCaption(copy),
+      caption: brief.editorial ? copy.caption : buildFullCaption(copy),
       hashtags: copy.hashtags,
       claims: copy.claims,
-      aiProvider: brief.news ? undefined : 'anthropic',
+      aiProvider: brief.editorial ? undefined : 'anthropic',
       generationTries: attempts,
     });
 
     return this.renderQueueAndFinish(created, spec, copy, assetIds, brief, runId, slug);
   }
 
-  private newsCopy(
+  private editorialCopy(
     runId: string | null,
-    news: NewsBrief,
+    editorial: EditorialBrief,
     format: PostFormatName
   ): Promise<{ copy: PostCopy; attempts: number }> {
     return this.reuseOrRun(
@@ -189,18 +189,23 @@ export class PostAgentService {
       AGENT_STEP_KEYS.copy,
       RUN_STATE_KEYS.copy,
       async () => {
-        const { lines } = await this.render.wrapHeadline(news.headline, format);
-        return { copy: buildNewsCopy(news, lines), attempts: 1 };
+        const { lines } = await this.render.wrapHeadline(editorial.headline, format);
+        return { copy: buildEditorialCopy(editorial, lines), attempts: 1 };
       },
-      () => 'news copy taken from the article'
+      () => `copy taken from the ${editorial.layout === 'news' ? 'article' : 'episode'}`
     );
   }
 
-  private newsSpec(slug: string, news: NewsBrief, copy: PostCopy, photo: string | undefined) {
+  private editorialSpec(
+    slug: string,
+    editorial: EditorialBrief,
+    copy: PostCopy,
+    photo: string | undefined
+  ) {
     if (!photo) {
-      throw new BadRequestError('a news post needs the article cover as its photograph');
+      throw new BadRequestError('a news or story post needs its cover as the photograph');
     }
-    return buildNewsPostSpec(slug, news, copy, photo);
+    return buildEditorialSpec(slug, editorial, copy, photo);
   }
 
   /**

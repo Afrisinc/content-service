@@ -45,6 +45,22 @@ export class StoryService {
     return story;
   }
 
+  async requireOwned(storyId: string, userId: string) {
+    const story = await this.require(storyId);
+    if (story.userId !== userId) {
+      throw new NotFoundError('story not found');
+    }
+    return story;
+  }
+
+  async getOwned(storyId: string, userId: string) {
+    const story = await this.get(storyId);
+    if (story.userId !== userId) {
+      throw new NotFoundError('story not found');
+    }
+    return story;
+  }
+
   async list(params: { userId?: string; status?: StoryStatus; page?: number; limit?: number }) {
     return storyRepository.list(params);
   }

@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildNewsCopy,
-  buildNewsPostSpec,
   newsCaption,
   newsDateline,
+  newsEditorial,
   newsEyebrow,
   newsHashtags,
   standfirstFrom,
@@ -130,72 +129,31 @@ describe('newsCaption', () => {
   });
 });
 
-describe('buildNewsCopy', () => {
-  it('is one news slide with the headline lines and a standfirst', () => {
-    const copy = buildNewsCopy(NEWS, ['Kenya opens M-Pesa API', 'to regional banks']);
-
-    expect(copy.slides).toEqual([
-      {
-        role: 'hook',
-        eyebrow: 'FINTECH',
-        eyebrowKind: 'claim',
-        headline: ['Kenya opens M-Pesa API', 'to regional banks'],
-        subs: [NEWS.summary],
-      },
-    ]);
-    expect(copy.claims).toEqual([]);
-    expect(copy.concept).toBe(NEWS.headline);
-  });
-
-  it('prefers the written standfirst over the summary', () => {
-    const copy = buildNewsCopy({ ...NEWS, standfirst: 'A complete one-line deck.' }, ['Headline']);
-
-    expect(copy.slides[0].subs).toEqual(['A complete one-line deck.']);
-  });
-
-  it('falls back to the summary when the standfirst is empty', () => {
-    const copy = buildNewsCopy({ ...NEWS, standfirst: '' }, ['Headline']);
-
-    expect(copy.slides[0].subs).toEqual([NEWS.summary]);
-  });
-
-  it('has no standfirst when there is no summary', () => {
-    const copy = buildNewsCopy({ ...NEWS, summary: '' }, ['Headline']);
-
-    expect(copy.slides[0]).not.toHaveProperty('subs');
-  });
-});
-
-describe('buildNewsPostSpec', () => {
-  it('is a single news frame on the given photograph with a dateline', () => {
-    const copy = buildNewsCopy(NEWS, ['Kenya opens M-Pesa API', 'to regional banks']);
-
-    expect(
-      buildNewsPostSpec('kenya-api', NEWS, copy, 'https://cdn.afrisinc.com/cover.png')
-    ).toEqual({
-      slug: 'kenya-api',
-      format: 'single',
-      slides: [
-        {
-          surface: 'photo',
-          photo: 'https://cdn.afrisinc.com/cover.png',
-          layout: 'news',
-          eyebrow: { text: 'FINTECH', kind: 'claim' },
-          headline: ['Kenya opens M-Pesa API', 'to regional banks'],
-          subs: [NEWS.summary],
-          dateline: 'Source: TechCabal · 2 Oct 2026',
-        },
-      ],
+describe('newsEditorial', () => {
+  it('is a news frame with a category tag, standfirst, dateline and caption', () => {
+    expect(newsEditorial(NEWS)).toEqual({
+      layout: 'news',
+      headline: 'Kenya opens M-Pesa API to regional banks',
+      standfirst: NEWS.summary,
+      eyebrow: 'FINTECH',
+      dateline: 'Source: TechCabal · 2 Oct 2026',
+      caption: newsCaption(NEWS),
+      hashtags: ['#AfricaBusiness', '#Fintech', '#MobileMoney', '#Banking'],
     });
   });
 
-  it('has no call to action, rows or accents, which a news frame may not carry', () => {
-    const copy = buildNewsCopy(NEWS, ['Headline']);
-    const [slide] = buildNewsPostSpec('s', NEWS, copy, 'p.png').slides;
+  it('prefers the written standfirst over the summary', () => {
+    expect(newsEditorial({ ...NEWS, standfirst: 'A complete one-line deck.' }).standfirst).toBe(
+      'A complete one-line deck.'
+    );
+  });
 
-    expect(slide).not.toHaveProperty('cta');
-    expect(slide).not.toHaveProperty('rows');
-    expect(slide).not.toHaveProperty('coral_rule');
-    expect(slide).not.toHaveProperty('strike_line');
+  it('falls back to the summary when the standfirst is empty or missing', () => {
+    expect(newsEditorial({ ...NEWS, standfirst: '' }).standfirst).toBe(NEWS.summary);
+    expect(newsEditorial({ ...NEWS, standfirst: null }).standfirst).toBe(NEWS.summary);
+  });
+
+  it('has an empty standfirst when there is nothing to build one from', () => {
+    expect(newsEditorial({ ...NEWS, summary: '', standfirst: null }).standfirst).toBe('');
   });
 });

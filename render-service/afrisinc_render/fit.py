@@ -11,7 +11,7 @@ from .render import components as C
 from .render import typography as ty
 from .render.slide import build_stack, fit_stack
 from .schema import (
-    NEWS,
+    is_editorial,
     FittedLine,
     FittedSlide,
     HeadlineFitRequest,
@@ -25,7 +25,7 @@ from .schema import (
 def _headline_lines(
     lines: list[str], geo: Geometry, layout: str = "brand"
 ) -> tuple[int, list[FittedLine]]:
-    sizes = T.NEWS_HEADLINE_SIZES if layout == NEWS else T.BRAND_HEADLINE_SIZES
+    sizes = T.NEWS_HEADLINE_SIZES if is_editorial(layout) else T.BRAND_HEADLINE_SIZES
     fit = ty.headline_fit(lines, geo.content_width, sizes)
     return fit.size, [
         FittedLine(
@@ -58,10 +58,10 @@ def _row_lines(rows: list[Row], geo: Geometry) -> list[FittedLine]:
 def _stack_line(slide: HeadlineFitSlide, geo: Geometry) -> FittedLine | None:
     try:
         spec = SlideSpec(
-            surface="photo" if slide.layout == NEWS else "azure",
-            photo="fit-check" if slide.layout == NEWS else None,
+            surface="photo" if is_editorial(slide.layout) else "azure",
+            photo="fit-check" if is_editorial(slide.layout) else None,
             layout=slide.layout,
-            dateline="fit check" if slide.layout == NEWS else None,
+            dateline="fit check" if is_editorial(slide.layout) else None,
             headline=slide.headline,
             eyebrow=slide.eyebrow,
             subs=slide.subs,
@@ -107,10 +107,10 @@ def _fit_slide(index: int, slide: HeadlineFitSlide, geo: Geometry) -> FittedSlid
 def fit_headlines(request: HeadlineFitRequest) -> HeadlineFitResult:
     base = geometry_for(request.format)
     slides = [
-        _fit_slide(index, slide, news_geometry(base) if slide.layout == NEWS else base)
+        _fit_slide(index, slide, news_geometry(base) if is_editorial(slide.layout) else base)
         for index, slide in enumerate(request.slides)
     ]
-    all_news = all(slide.layout == NEWS for slide in request.slides)
+    all_news = all(is_editorial(slide.layout) for slide in request.slides)
 
     return HeadlineFitResult(
         measure=base.content_width,

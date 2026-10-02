@@ -2,7 +2,12 @@ import { Prisma } from '@prisma/client';
 import { ConflictError, NotFoundError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
 import { storyService } from '@/services/story.service';
-import { storyLlmService, type EpisodeBrief } from '@/services/storyLlm.service';
+import {
+  storyLlmService,
+  type EpisodeBrief,
+  type EpisodeContent,
+} from '@/services/storyLlm.service';
+import { storyCoverService } from '@/services/storyCover.service';
 import { storyPromotionService } from '@/services/storyPromotion.service';
 import { storyEpisodeRepository } from '@/repositories/storyEpisode.repository';
 import { readerDeviceRepository } from '@/repositories/readerDevice.repository';
@@ -26,19 +31,63 @@ interface StoryLike {
   tone: string | null;
 }
 
-interface PriorEpisodeLike {
+interface EarlierEpisode {
   episodeNumber: number;
   title: string;
   hook: string;
   cliffhanger: string | null;
+  metadata: unknown;
+}
+
+interface PreviousEpisode {
+  body: string;
+  cliffhanger: string | null;
+}
+
+interface EpisodeMemory {
+  summary: string | null;
+  continuity: string[];
+}
+
+const MAX_CONTINUITY_NOTES = 24;
+const MAX_ENDING_LENGTH = 700;
+const ENDING_PARAGRAPHS = 2;
+
+export function readEpisodeMemory(metadata: unknown): EpisodeMemory {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return { summary: null, continuity: [] };
+  }
+
+  const { summary, continuity } = metadata as Record<string, unknown>;
+  return {
+    summary: typeof summary === 'string' && summary.trim() ? summary.trim() : null,
+    continuity: Array.isArray(continuity)
+      ? continuity.filter((note): note is string => typeof note === 'string' && note.trim() !== '')
+      : [],
+  };
+}
+
+export function endingOf(body: string): string {
+  const paragraphs = body.split(/\n\s*\n/).filter(part => part.trim());
+  const tail = paragraphs.slice(-ENDING_PARAGRAPHS).join('\n\n').trim();
+  return tail.length > MAX_ENDING_LENGTH
+    ? tail.slice(-MAX_ENDING_LENGTH).replace(/^\S*\s/, '')
+    : tail;
 }
 
 function buildBrief(
   story: StoryLike,
   episodeNumber: number,
-  prior: PriorEpisodeLike | null,
+  earlier: EarlierEpisode[],
+  previous: PreviousEpisode | null,
   instructions?: string
 ): EpisodeBrief {
+  const memories = earlier.map(episode => ({
+    episode,
+    memory: readEpisodeMemory(episode.metadata),
+  }));
+  const notes = [...new Set(memories.flatMap(({ memory }) => memory.continuity))];
+
   return {
     storyTitle: story.title,
     premise: story.premise,
@@ -47,12 +96,20 @@ function buildBrief(
     audience: story.audience ?? undefined,
     tone: story.tone ?? undefined,
     episodeNumber,
-    priorCliffhanger: prior?.cliffhanger ?? undefined,
-    priorSummary: prior
-      ? `Episode ${prior.episodeNumber} — ${prior.title}: ${prior.hook}`
-      : undefined,
+    priorEpisodes: memories.map(({ episode, memory }) => ({
+      episodeNumber: episode.episodeNumber,
+      title: episode.title,
+      summary: memory.summary ?? episode.hook,
+    })),
+    continuityNotes: notes.slice(-MAX_CONTINUITY_NOTES),
+    previousEnding: previous ? endingOf(previous.body) || undefined : undefined,
+    priorCliffhanger: previous?.cliffhanger ?? undefined,
     instructions,
   };
+}
+
+function episodeMetadata(content: EpisodeContent): Prisma.InputJsonObject {
+  return { summary: content.summary, continuity: content.continuity_notes };
 }
 
 export class StoryEpisodeService {
@@ -74,7 +131,8 @@ export class StoryEpisodeService {
     const story = await storyService.require(storyId);
     const last = await storyEpisodeRepository.lastForStory(storyId);
     const episodeNumber = (last?.episodeNumber ?? 0) + 1;
-    const brief = buildBrief(story, episodeNumber, last, options.instructions);
+    const earlier = await storyEpisodeRepository.findEarlier(storyId, episodeNumber);
+    const brief = buildBrief(story, episodeNumber, earlier, last, options.instructions);
 
     const requestId = `story:${storyId}:episode:${episodeNumber}`;
     const result = await storyLlmService.generateEpisode(brief, requestId, story.userId);
@@ -97,6 +155,7 @@ export class StoryEpisodeService {
         llmProvider: result.provider,
         llmAttempts: result.attempts,
         status: 'READY_FOR_REVIEW',
+        metadata: episodeMetadata(result.content),
       });
     } catch (err) {
       // Two near-simultaneous retries with the same key: the loser here just
@@ -122,6 +181,8 @@ export class StoryEpisodeService {
       await storyService.markActive(storyId);
     }
 
+    void storyCoverService.ensure(story);
+
     logger.info(
       { storyId, episodeId: episode.id, episodeNumber, provider: result.provider },
       'story.episode.generated'
@@ -145,7 +206,8 @@ export class StoryEpisodeService {
       episode.episodeNumber > 1
         ? await storyEpisodeRepository.findByNumber(storyId, episode.episodeNumber - 1)
         : null;
-    const brief = buildBrief(story, episode.episodeNumber, prior, options.instructions);
+    const earlier = await storyEpisodeRepository.findEarlier(storyId, episode.episodeNumber);
+    const brief = buildBrief(story, episode.episodeNumber, earlier, prior, options.instructions);
 
     const requestId = `story:${storyId}:episode:${episode.episodeNumber}:retry:${Date.now()}`;
     const result = await storyLlmService.generateEpisode(brief, requestId, story.userId);
@@ -162,6 +224,7 @@ export class StoryEpisodeService {
       promotionHashtags: result.content.promotion_hashtags,
       llmProvider: result.provider,
       llmAttempts: result.attempts,
+      metadata: episodeMetadata(result.content),
     });
 
     logger.info(

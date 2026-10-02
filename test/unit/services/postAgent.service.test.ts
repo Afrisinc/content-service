@@ -253,14 +253,17 @@ describe('createFromBrief', () => {
       userId: 'user-1',
       format: 'single' as const,
       photoUrl: 'https://cdn.afrisinc.com/cover.png',
-      news: {
+      editorial: {
+        layout: 'news' as const,
         headline: 'Kenya opens M-Pesa API to regional banks',
-        summary: 'Regulators agreed a shared licensing regime.',
-        category: 'fintech',
-        source: 'TechCabal',
-        publishedAt: '2026-10-02T09:30:00.000Z',
-        articleUrl: 'https://afrisinc.com/media/articles/mpesa-open-api',
-        tags: ['banking'],
+        standfirst: 'Regulators agreed a shared licensing regime.',
+        eyebrow: 'FINTECH',
+        dateline: 'Source: TechCabal · 2 Oct 2026',
+        caption: [
+          'Kenya opens M-Pesa API to regional banks',
+          'Read the full story: https://afrisinc.com/media/articles/mpesa-open-api',
+        ].join('\n\n'),
+        hashtags: ['#AfricaBusiness', '#Fintech'],
       },
     };
 
@@ -324,12 +327,30 @@ describe('createFromBrief', () => {
       expect(saved.aiProvider).toBeUndefined();
     });
 
+    it('lays out a story frame the same way and says the copy came from the episode', async () => {
+      const { service, render, tracker } = buildNews();
+      const story = {
+        ...NEWS_BRIEF,
+        editorial: { ...NEWS_BRIEF.editorial, layout: 'story' as const, eyebrow: 'EPISODE 3' },
+      };
+
+      await service.createFromBrief(story);
+
+      expect(render.render.mock.calls[0][0].slides[0]).toMatchObject({
+        layout: 'story',
+        eyebrow: { text: 'EPISODE 3', kind: 'claim' },
+      });
+      const detail = tracker.track.mock.calls.find(call => call[1] === 'copy')?.[3] as
+        (() => string) | undefined;
+      expect(detail?.()).toBe('copy taken from the episode');
+    });
+
     it('fails clearly when no cover was given to put behind the news frame', async () => {
       const { service, artDirection } = build();
       artDirection.assignPhotos.mockResolvedValueOnce({ photosByIndex: {}, assetIds: [] });
 
       await expect(service.createFromBrief(NEWS_BRIEF)).rejects.toThrow(
-        'a news post needs the article cover'
+        'a news or story post needs its cover'
       );
     });
 
@@ -340,7 +361,7 @@ describe('createFromBrief', () => {
 
       const detail = tracker.track.mock.calls.find(call => call[1] === 'copy')?.[3] as
         (() => string) | undefined;
-      expect(detail?.()).toBe('news copy taken from the article');
+      expect(detail?.()).toBe('copy taken from the article');
     });
   });
 

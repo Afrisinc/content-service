@@ -70,9 +70,9 @@ def contact_rail(draw: ImageDraw.ImageDraw, geo: Geometry, surface: str) -> None
     )
 
 
-def news_badge_rect(geo: Geometry) -> tuple[float, float, float, float]:
+def news_badge_rect(geo: Geometry, label: str = "NEWS") -> tuple[float, float, float, float]:
     fnt = ty.font(ty.BOLD, T.SIZE_BADGE)
-    text = ty.text_width(T.NEWS_BADGE_LABEL, fnt, ty.tracking(T.SIZE_BADGE, caps=True))
+    text = ty.text_width(label, fnt, ty.tracking(T.SIZE_BADGE, caps=True))
     width = (
         T.NEWS_BADGE_PADDING * 2 + T.NEWS_BADGE_DOT_RADIUS * 2 + T.NEWS_BADGE_GAP + text
     )
@@ -80,8 +80,8 @@ def news_badge_rect(geo: Geometry) -> tuple[float, float, float, float]:
     return (geo.right_edge - width, top, geo.right_edge, top + T.NEWS_BADGE_HEIGHT)
 
 
-def news_badge(draw: ImageDraw.ImageDraw, geo: Geometry) -> None:
-    left, top, right, bottom = news_badge_rect(geo)
+def news_badge(draw: ImageDraw.ImageDraw, geo: Geometry, label: str = "NEWS") -> None:
+    left, top, right, bottom = news_badge_rect(geo, label)
     draw.rounded_rectangle(
         [left, top, right, bottom], radius=T.NEWS_BADGE_HEIGHT // 2, fill=T.WHITE + (255,)
     )
@@ -101,7 +101,7 @@ def news_badge(draw: ImageDraw.ImageDraw, geo: Geometry) -> None:
         draw,
         dot_x + T.NEWS_BADGE_DOT_RADIUS + T.NEWS_BADGE_GAP,
         centre_y,
-        T.NEWS_BADGE_LABEL,
+        label,
         ty.font(ty.BOLD, T.SIZE_BADGE),
         T.INK + (255,),
         ty.tracking(T.SIZE_BADGE, caps=True),

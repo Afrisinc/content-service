@@ -117,6 +117,10 @@ export class StoryRepository {
     return totals;
   }
 
+  async setCoverImage(id: string, coverImageUrl: string) {
+    return this.prisma.story.update({ where: { id }, data: { coverImageUrl } });
+  }
+
   async updateStatus(id: string, status: StoryStatus) {
     return this.prisma.story.update({ where: { id }, data: { status } });
   }

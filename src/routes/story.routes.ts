@@ -2,6 +2,7 @@ import {
   approveStoryEpisode,
   createStory,
   generateEpisode,
+  generateStoryCover,
   getPublicStory,
   getPublicStoryEpisode,
   getStory,
@@ -22,6 +23,7 @@ import {
   ApproveStoryEpisodeSchema,
   CreateStorySchema,
   GenerateEpisodeSchema,
+  GenerateStoryCoverSchema,
   GetPublicStoryEpisodeSchema,
   GetPublicStorySchema,
   GetStoryEpisodeSchema,
@@ -45,6 +47,13 @@ const EPISODE_GENERATION_RATE_LIMIT = {
   windowMs: 15 * 60 * 1000,
   maxRequests: 10,
   keyPrefix: 'story:generate',
+};
+
+/** An image generation is paid too, and a cover rarely needs more than a few tries. */
+const COVER_GENERATION_RATE_LIMIT = {
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 5,
+  keyPrefix: 'story:cover',
 };
 
 /** Also a paid LLM call (the post agent writes fresh copy) — same budget as generation. */
@@ -114,6 +123,15 @@ export async function storyRoutes(app: FastifyInstance) {
       onRequest: [authGuard, rateLimitGuard(EPISODE_GENERATION_RATE_LIMIT)],
     },
     asyncWrapper(generateEpisode)
+  );
+
+  app.post(
+    '/stories/:id/cover',
+    {
+      schema: { ...GenerateStoryCoverSchema, tags: TAGS },
+      onRequest: [authGuard, rateLimitGuard(COVER_GENERATION_RATE_LIMIT)],
+    },
+    asyncWrapper(generateStoryCover)
   );
 
   app.get(

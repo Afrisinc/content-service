@@ -1,4 +1,4 @@
-import type { NewsBrief, PostCopy, PostSlideSpec, PostSpec } from '@/types/post.types';
+import type { EditorialBrief, NewsBrief } from '@/types/post.types';
 
 const MAX_EYEBROW_LENGTH = 48;
 const FALLBACK_EYEBROW = 'LATEST';
@@ -75,42 +75,14 @@ export function newsCaption(news: NewsBrief): string {
     .join('\n\n');
 }
 
-export function buildNewsCopy(news: NewsBrief, headlineLines: string[]): PostCopy {
-  const standfirst = standfirstFrom(news.standfirst || news.summary);
-
+export function newsEditorial(news: NewsBrief): EditorialBrief {
   return {
-    concept: news.headline,
+    layout: 'news',
+    headline: news.headline,
+    standfirst: standfirstFrom(news.standfirst || news.summary),
+    eyebrow: newsEyebrow(news.category),
+    dateline: newsDateline(news.source, news.publishedAt),
     caption: newsCaption(news),
     hashtags: newsHashtags(news.category, news.tags),
-    claims: [],
-    slides: [
-      {
-        role: 'hook',
-        eyebrow: newsEyebrow(news.category),
-        eyebrowKind: 'claim',
-        headline: headlineLines,
-        ...(standfirst ? { subs: [standfirst] } : {}),
-      },
-    ],
   };
-}
-
-export function buildNewsPostSpec(
-  slug: string,
-  news: NewsBrief,
-  copy: PostCopy,
-  photo: string
-): PostSpec {
-  const slide = copy.slides[0];
-  const spec: PostSlideSpec = {
-    surface: 'photo',
-    photo,
-    layout: 'news',
-    eyebrow: { text: slide.eyebrow, kind: slide.eyebrowKind },
-    headline: slide.headline,
-    ...(slide.subs?.length ? { subs: slide.subs } : {}),
-    dateline: newsDateline(news.source, news.publishedAt),
-  };
-
-  return { slug, format: 'single', slides: [spec] };
 }

@@ -22,6 +22,7 @@ const story = {
   id: 'story-1',
   userId: 'user-1',
   groupId: 'group-1',
+  title: 'Static',
   audience: 'sci-fi readers',
   autoApprovePromotion: false,
 } as never;
@@ -119,5 +120,43 @@ describe('storyPromotionService.promote', () => {
     expect(mocks.createFromBrief).toHaveBeenCalledWith(
       expect.objectContaining({ groupId: undefined })
     );
+  });
+});
+
+describe('storyPromotionService.promote with a story cover', () => {
+  const covered = {
+    ...(story as object),
+    coverImageUrl: 'https://cdn.afrisinc.com/cover.png',
+  } as never;
+
+  it('lays the episode out as a story frame on the cover', async () => {
+    mocks.createFromBrief.mockResolvedValue({ id: 'draft-5' });
+
+    await storyPromotionService.promote(covered, {
+      ...(episode as object),
+      promotionCaption: 'Read it now.',
+    } as never);
+
+    const brief = mocks.createFromBrief.mock.calls[0][0];
+    expect(brief.photoUrl).toBe('https://cdn.afrisinc.com/cover.png');
+    expect(brief.editorial).toMatchObject({
+      layout: 'story',
+      eyebrow: 'EPISODE 2',
+      headline: 'The Signal Returns',
+      standfirst: 'It never really stopped.',
+    });
+    expect(brief.editorial.caption).toContain(
+      'Read episode 2: https://afrisinc.com/media/stories/story-1/episodes/2'
+    );
+  });
+
+  it('uses the ordinary marketing post when the story has no cover yet', async () => {
+    mocks.createFromBrief.mockResolvedValue({ id: 'draft-6' });
+
+    await storyPromotionService.promote(story, episode);
+
+    const brief = mocks.createFromBrief.mock.calls[0][0];
+    expect(brief).not.toHaveProperty('editorial');
+    expect(brief).not.toHaveProperty('photoUrl');
   });
 });
