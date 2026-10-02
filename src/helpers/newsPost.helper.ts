@@ -60,15 +60,22 @@ export function newsHashtags(category: string, tags: string[]): string[] {
   return [...new Set(candidates)].slice(0, MAX_HASHTAGS);
 }
 
+function sourceLine(news: NewsBrief): string {
+  if (!news.sourceUrl) {
+    return news.source ? `Source: ${news.source}` : '';
+  }
+  return news.source
+    ? `Source: ${news.source} — original report: ${news.sourceUrl}`
+    : `Original report: ${news.sourceUrl}`;
+}
+
 export function newsCaption(news: NewsBrief): string {
   const hashtags = newsHashtags(news.category, news.tags).join(' ');
 
   return [
     news.headline.trim(),
     news.summary.trim(),
-    [`Read the full story: ${news.articleUrl}`, news.source ? `Source: ${news.source}` : '']
-      .filter(Boolean)
-      .join('\n'),
+    [`Read the full story: ${news.articleUrl}`, sourceLine(news)].filter(Boolean).join('\n'),
     hashtags,
   ]
     .filter(Boolean)

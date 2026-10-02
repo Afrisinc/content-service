@@ -34,6 +34,7 @@ export interface NewsPostSource {
   publishedAt: string;
   tags: string[];
   articleUrl: string;
+  sourceUrl?: string | null;
   coverUrl: string;
 }
 

@@ -116,6 +116,9 @@ export const SYSTEM_PROMPT = [
   '  "suddenly"), stock names and summary narration.',
   '- Keep every fact consistent with the story so far: names, ages, relationships, places and',
   '  timeline. Never contradict earlier events and never introduce a known character again.',
+  '- Write the hook and the promotion caption as a stranger scrolling a feed would need them:',
+  '  concrete, present tense, one specific image or question from this episode, no spoilers, no',
+  '  summary words ("mysterious", "emerges", "journey", "unravel") and no "are you ready".',
   '- Each episode has its own small arc (a want, an obstacle, a turn) and ends on a turn that',
   '  makes the reader need the next one.',
   '- The body is the story only: no episode numbers, no headings, no markdown, no notes to the',
@@ -143,7 +146,8 @@ export function userPrompt(brief: EpisodeBrief, complaint?: string): string {
     'Return JSON in exactly this shape:',
     '{',
     '  "title": "episode title, evocative, at most six words",',
-    '  "hook": "one or two sentences that tease the episode without spoiling it",',
+    '  "hook": "one or two present-tense sentences built on a specific image or question ' +
+      'from this episode, without spoiling it",',
     '  "body": "the full episode as plain prose, paragraphs separated by \\n\\n",',
     '  "cliffhanger": "the turn the episode ends on, in one sentence",',
     '  "summary": "three or four sentences stating exactly what happens in this episode, ' +
@@ -151,7 +155,8 @@ export function userPrompt(brief: EpisodeBrief, complaint?: string): string {
     '  "continuity_notes": ["up to eight short facts a later episode must stay consistent with"],',
     '  "themes": ["short theme tags"],',
     '  "content_warnings": ["only if genuinely warranted"],',
-    '  "promotion_caption": "a short teaser line in the story\'s own voice, no emojis",',
+    '  "promotion_caption": "one or two sentences in the story\'s own voice that stop a ' +
+      'scrolling reader, naming something concrete, no emojis and no call to action",',
     '  "promotion_hashtags": ["#like", "#this"]',
     '}',
   ];

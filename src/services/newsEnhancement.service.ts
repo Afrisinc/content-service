@@ -220,6 +220,7 @@ export class NewsEnhancementService {
         standfirst: enhanced.standfirst || null,
         category: enhanced.category,
         source: article.creator,
+        sourceUrl: article.source_url,
         publishedAt: new Date().toISOString(),
         tags: enhanced.tags,
         articleUrl: articleUrl(

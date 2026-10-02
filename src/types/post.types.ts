@@ -93,6 +93,7 @@ export interface NewsBrief {
   source: string | null;
   publishedAt: string;
   articleUrl: string;
+  sourceUrl?: string | null;
   tags: string[];
 }
 

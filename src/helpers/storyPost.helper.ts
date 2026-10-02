@@ -31,6 +31,7 @@ export function storyEditorial(
     caption: [
       (episode.promotionCaption ?? episode.hook).trim(),
       `Read episode ${episode.episodeNumber}: ${url}`,
+      `Follow so you don't miss episode ${episode.episodeNumber + 1}, and save this to catch up.`,
       hashtags.join(' '),
     ]
       .filter(Boolean)

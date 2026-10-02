@@ -124,6 +124,26 @@ describe('newsCaption', () => {
     expect(caption).not.toMatch(/call|whatsapp|email/i);
   });
 
+  it('links the original report next to the outlet that published it', () => {
+    const caption = newsCaption({ ...NEWS, sourceUrl: 'https://techcabal.com/2026/10/02/mpesa' });
+
+    expect(caption).toContain(
+      'Source: TechCabal — original report: https://techcabal.com/2026/10/02/mpesa'
+    );
+  });
+
+  it('still links the original report when the outlet is unknown', () => {
+    const caption = newsCaption({ ...NEWS, source: null, sourceUrl: 'https://a.africa/x' });
+
+    expect(caption).toContain('Original report: https://a.africa/x');
+    expect(caption).not.toContain('Source:');
+  });
+
+  it('keeps just the outlet when there is no original link', () => {
+    expect(newsCaption({ ...NEWS, sourceUrl: null })).toContain('Source: TechCabal');
+    expect(newsCaption({ ...NEWS, sourceUrl: null })).not.toContain('original report');
+  });
+
   it('leaves out the source line when the source is unknown', () => {
     expect(newsCaption({ ...NEWS, source: null })).not.toContain('Source:');
   });

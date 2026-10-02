@@ -506,6 +506,7 @@ export class AutomationService {
             source: source.source,
             publishedAt: source.publishedAt,
             articleUrl: source.articleUrl,
+            sourceUrl: source.sourceUrl,
             tags: source.tags,
           }),
         }

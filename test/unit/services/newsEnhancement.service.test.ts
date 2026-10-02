@@ -176,6 +176,7 @@ describe('NewsEnhancementService', () => {
         standfirst: 'One standard for the region.',
         category: 'fintech',
         source: 'Disrupt Africa',
+        sourceUrl: 'https://example.africa/story',
         publishedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
         tags: ['fintech'],
         articleUrl: 'https://afrisinc.com/media/articles/mpesa-open-api',

@@ -9,6 +9,7 @@ const episode = {
   promotionCaption: 'A signal that should not exist just said her name.',
   promotionHashtags: ['#fiction', '#story'],
 };
+const FOLLOW_LINE = "Follow so you don't miss episode 4, and save this to catch up.";
 const URL = 'https://afrisinc.com/media/stories/story-1/episodes/3';
 
 describe('storyEditorial', () => {
@@ -22,6 +23,7 @@ describe('storyEditorial', () => {
       caption: [
         'A signal that should not exist just said her name.',
         `Read episode 3: ${URL}`,
+        FOLLOW_LINE,
         '#fiction #story',
       ].join('\n\n'),
       hashtags: ['#fiction', '#story'],
@@ -38,7 +40,7 @@ describe('storyEditorial', () => {
     const { caption, hashtags } = storyEditorial(story, { ...episode, promotionHashtags: [] }, URL);
 
     expect(hashtags).toEqual([]);
-    expect(caption).toBe(`${episode.promotionCaption}\n\nRead episode 3: ${URL}`);
+    expect(caption).toBe(`${episode.promotionCaption}\n\nRead episode 3: ${URL}\n\n${FOLLOW_LINE}`);
   });
 
   it('keeps no more than five hashtags', () => {
