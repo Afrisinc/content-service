@@ -6,6 +6,7 @@ import {
   isPolicyLive,
   isWorkspaceAgentActive,
   parseAgentChoices,
+  parseNewsSettings,
   withAgentChoice,
   type PolicySnapshot,
 } from '@/helpers/agentSettings.helper';
@@ -123,5 +124,24 @@ describe('isWorkspaceAgentActive', () => {
   it('is off whenever the server says so', () => {
     const blocked = agent({ allowedByServer: () => false, requiresAutopilot: false });
     expect(isWorkspaceAgentActive(blocked, [], NOW)).toBe(false);
+  });
+});
+
+describe('parseNewsSettings', () => {
+  it('reads a saved batch size', () => {
+    expect(parseNewsSettings({ batchSize: 2 }, 1)).toEqual({ batchSize: 2 });
+  });
+
+  it.each([
+    ['nothing saved', undefined],
+    ['null', null],
+    ['an array', [2]],
+    ['a missing key', {}],
+    ['a string', { batchSize: '2' }],
+    ['a fraction', { batchSize: 1.5 }],
+    ['zero', { batchSize: 0 }],
+    ['a negative number', { batchSize: -3 }],
+  ])('falls back to the server default for %s', (_label, value) => {
+    expect(parseNewsSettings(value, 1)).toEqual({ batchSize: 1 });
   });
 });

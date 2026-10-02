@@ -6,6 +6,7 @@ import {
   listNewsDeskArticles,
   requeueNewsDeskArticle,
   skipNewsDeskArticle,
+  updateNewsDeskSettings,
 } from '@/controllers/newsDesk.controller';
 import { asyncWrapper } from '@/middlewares/async_wrapper.middleware';
 import { authGuard } from '@/middlewares/authGuard';
@@ -16,6 +17,7 @@ import {
   ListNewsDeskArticlesSchema,
   NewsDeskArticleActionSchema,
   RunNewsAgentStageSchema,
+  UpdateNewsDeskSettingsSchema,
 } from '@/schemas/requests/newsDesk.schema';
 import { FastifyInstance } from 'fastify';
 
@@ -37,6 +39,12 @@ export async function newsDeskRoutes(app: FastifyInstance) {
     '/news-desk/summary',
     { schema: { tags: TAGS }, onRequest: [authGuard] },
     asyncWrapper(getNewsDeskSummary)
+  );
+
+  app.put(
+    '/news-desk/settings',
+    { schema: { ...UpdateNewsDeskSettingsSchema, tags: TAGS }, onRequest: [authGuard] },
+    asyncWrapper(updateNewsDeskSettings)
   );
 
   app.get(

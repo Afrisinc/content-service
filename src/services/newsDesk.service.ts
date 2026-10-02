@@ -3,10 +3,12 @@ import { BadRequestError, ConflictError, NotFoundError } from '@/utils/http-erro
 import { logger } from '@/utils/logger';
 import {
   NEWS_ARTICLE_STATUSES,
+  NEWS_BATCH_SIZE_OPTIONS,
   STUCK_AFTER_MINUTES,
   type NewsArticleStatus,
 } from '@/types/newsDesk.types';
 import { agentControlService } from '@/services/agentControl.service';
+import { agentSettingsService } from '@/services/agentSettings.service';
 import { newsAgentService, type NewsAgentStage } from '@/services/newsAgent.service';
 
 export { STUCK_AFTER_MINUTES };
@@ -65,12 +67,13 @@ export class NewsDeskService {
   }
 
   async summary() {
-    const [groups, stuck, categories, lastIngestedAt, scheduled] = await Promise.all([
+    const [groups, stuck, categories, lastIngestedAt, scheduled, settings] = await Promise.all([
       n8nArticleRepository.deskStatusTotals(),
       n8nArticleRepository.countStuck(stuckCutoff()),
       n8nArticleRepository.getCategories(),
       n8nArticleRepository.latestIngestedAt(),
       agentControlService.isActive('news'),
+      agentSettingsService.getNewsSettings(),
     ]);
 
     const byStatus = Object.fromEntries(NEWS_ARTICLE_STATUSES.map(status => [status, 0])) as Record<
@@ -99,8 +102,18 @@ export class NewsDeskService {
       categories,
       stuckAfterMinutes: STUCK_AFTER_MINUTES,
       lastIngestedAt,
-      agent: { ...newsAgentService.status(), enabled: scheduled },
+      agent: {
+        ...newsAgentService.status(),
+        batchSize: settings.batchSize,
+        batchSizeOptions: NEWS_BATCH_SIZE_OPTIONS,
+        enabled: scheduled,
+      },
     };
+  }
+
+  async updateSettings(batchSize: number, userId: string) {
+    const settings = await agentSettingsService.saveNewsSettings(batchSize, userId);
+    return { ...settings, batchSizeOptions: NEWS_BATCH_SIZE_OPTIONS };
   }
 
   async get(id: string) {

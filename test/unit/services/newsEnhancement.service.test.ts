@@ -13,14 +13,18 @@ const repository = vi.hoisted(() => ({
   update: vi.fn(),
   isSlugTaken: vi.fn(),
   publishEnhanced: vi.fn(),
+  findFailureReasons: vi.fn(),
 }));
+const resolveChatGptConfig = vi.hoisted(() => vi.fn());
+const getNewsSettings = vi.hoisted(() => vi.fn());
 
 vi.mock('@/config/env', () => ({ env: envMock }));
 vi.mock('@/repositories/n8nArticle.repository', () => ({ n8nArticleRepository: repository }));
 vi.mock('@/adapters/nodes/nodeServices', () => ({ nodeServices: {} }));
 vi.mock('@/nodes', () => ({ runChatGpt: vi.fn(), chatGptCredentialsFromEnv: vi.fn() }));
-vi.mock('@/services/aiCredentials.service', () => ({
-  resolveChatGptConfig: async () => ({ credentials: { apiKey: 'sk' } }),
+vi.mock('@/services/aiCredentials.service', () => ({ resolveChatGptConfig }));
+vi.mock('@/services/agentSettings.service', () => ({
+  agentSettingsService: { getNewsSettings },
 }));
 vi.mock('@/utils/assets-client', () => ({ getAssetsClient: vi.fn() }));
 
@@ -72,8 +76,10 @@ describe('NewsEnhancementService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    envMock.OPENAI_API_KEY = 'sk-test';
+    resolveChatGptConfig.mockResolvedValue({ credentials: { apiKey: 'sk' } });
     repository.failOrphaned.mockResolvedValue(0);
+    repository.findFailureReasons.mockResolvedValue([]);
+    getNewsSettings.mockResolvedValue({ batchSize: 1 });
     repository.isSlugTaken.mockResolvedValue(false);
     repository.publishEnhanced.mockResolvedValue({ id: 'mp-1' });
     deps.writeArticle.mockResolvedValue(goodReply);
@@ -204,6 +210,7 @@ describe('NewsEnhancementService', () => {
 
   it('run recovers orphans, claims a batch and tallies each outcome', async () => {
     repository.failOrphaned.mockResolvedValue(2);
+    repository.findFailureReasons.mockResolvedValue(['timeout', 'timeout', 'bad json']);
     repository.claimForEnhancement.mockResolvedValue([article(1n), article(2n), article(3n)]);
     deps.writeArticle
       .mockResolvedValueOnce(goodReply)
@@ -216,20 +223,49 @@ describe('NewsEnhancementService', () => {
       expect.any(Date),
       expect.stringContaining('stopped')
     );
-    expect(repository.claimForEnhancement).toHaveBeenCalledWith(5);
+    expect(repository.claimForEnhancement).toHaveBeenCalledWith(1);
     expect(result).toMatchObject({
       claimed: 3,
       published: 1,
       rejected: 1,
       failed: 1,
+      failureReasons: ['timeout', 'bad json'],
       recovered: 2,
     });
+    expect(repository.findFailureReasons).toHaveBeenCalledWith([1n, 2n, 3n]);
+  });
+
+  it('run claims as many articles as the saved setting allows', async () => {
+    getNewsSettings.mockResolvedValue({ batchSize: 2 });
+    repository.claimForEnhancement.mockResolvedValue([]);
+
+    await service.run();
+
+    expect(repository.claimForEnhancement).toHaveBeenCalledWith(2);
+  });
+
+  it('run does not look up failure reasons when nothing failed', async () => {
+    repository.claimForEnhancement.mockResolvedValue([article(1n)]);
+
+    const result = await service.run();
+
+    expect(result.failureReasons).toEqual([]);
+    expect(repository.findFailureReasons).not.toHaveBeenCalled();
+  });
+
+  it('run caps the reasons it reports', async () => {
+    repository.claimForEnhancement.mockResolvedValue([article(1n)]);
+    deps.writeArticle.mockRejectedValue(new Error('x'));
+    repository.findFailureReasons.mockResolvedValue(['a', 'b', 'c', 'd', 'e']);
+
+    expect((await service.run()).failureReasons).toEqual(['a', 'b', 'c']);
   });
 
   it('run refuses to start without an OpenAI key, before claiming anything', async () => {
-    envMock.OPENAI_API_KEY = '';
+    resolveChatGptConfig.mockRejectedValue(new Error('OPENAI_API_KEY is not set'));
 
     await expect(service.run()).rejects.toThrow(/OPENAI_API_KEY/);
+    expect(repository.failOrphaned).not.toHaveBeenCalled();
     expect(repository.claimForEnhancement).not.toHaveBeenCalled();
   });
 });

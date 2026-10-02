@@ -9,6 +9,7 @@ const service = vi.hoisted(() => ({
   skip: vi.fn(),
   setFeatured: vi.fn(),
   triggerStage: vi.fn(),
+  updateSettings: vi.fn(),
 }));
 
 vi.mock('@/services/newsDesk.service', () => ({ newsDeskService: service }));
@@ -78,6 +79,20 @@ describe('news desk controller', () => {
 
     expect(service.setFeatured).toHaveBeenCalledWith('9', featured);
     expect(reply.send.mock.calls[0][0].resp_msg).toBe(message);
+  });
+
+  it('saves the articles-per-run setting for the signed-in user', async () => {
+    service.updateSettings.mockResolvedValue({ batchSize: 2, batchSizeOptions: [1, 2] });
+    const reply = fakeReply();
+
+    await controller.updateNewsDeskSettings(
+      request({ body: { batchSize: 2 }, user: { userId: 'user-1' } }),
+      reply as unknown as FastifyReply
+    );
+
+    expect(service.updateSettings).toHaveBeenCalledWith(2, 'user-1');
+    expect(reply.status).toHaveBeenCalledWith(200);
+    expect(reply.send.mock.calls[0][0].data).toEqual({ batchSize: 2, batchSizeOptions: [1, 2] });
   });
 
   it('starts a pipeline stage and answers 202', async () => {

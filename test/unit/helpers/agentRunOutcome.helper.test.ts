@@ -24,6 +24,7 @@ const enhancement = (overrides = {}) => ({
   published: 3,
   rejected: 1,
   failed: 1,
+  failureReasons: [] as string[],
   recovered: 0,
   ...overrides,
 });
@@ -86,6 +87,38 @@ describe('enhancementOutcome', () => {
       status: 'succeeded',
       detail: '0 published · 0 rejected · 0 failed · 2 interrupted recovered',
     });
+  });
+
+  it('fails a batch that published nothing while some articles failed, and says why', () => {
+    expect(
+      enhancementOutcome(
+        enhancement({
+          claimed: 5,
+          published: 0,
+          rejected: 2,
+          failed: 3,
+          failureReasons: ['the rewritten article is too short (90 words)', 'timeout'],
+        })
+      )
+    ).toEqual({
+      status: 'failed',
+      detail: '0 published · 2 rejected · 3 failed',
+      errorMessage:
+        '3 articles failed and none were published: ' +
+        'the rewritten article is too short (90 words); timeout',
+    });
+  });
+
+  it('stays succeeded when some articles published despite a failure', () => {
+    expect(
+      enhancementOutcome(enhancement({ claimed: 4, published: 2, rejected: 1, failed: 1 }))
+    ).toMatchObject({ status: 'succeeded' });
+  });
+
+  it('stays succeeded when articles were only rejected', () => {
+    expect(
+      enhancementOutcome(enhancement({ claimed: 3, published: 0, rejected: 3, failed: 0 }))
+    ).toMatchObject({ status: 'succeeded' });
   });
 
   it('fails when every claimed article failed', () => {

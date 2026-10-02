@@ -7,6 +7,7 @@ import {
   type EnhancedArticle,
 } from '@/helpers/newsEnhancement.helper';
 import { runChatGpt } from '@/nodes';
+import { agentSettingsService } from '@/services/agentSettings.service';
 import { resolveChatGptConfig } from '@/services/aiCredentials.service';
 import { n8nArticleRepository } from '@/repositories/n8nArticle.repository';
 import { STUCK_AFTER_MINUTES } from '@/types/newsDesk.types';
@@ -34,6 +35,7 @@ export interface EnhancementResult {
   published: number;
   rejected: number;
   failed: number;
+  failureReasons: string[];
   recovered: number;
 }
 
@@ -41,6 +43,7 @@ const ORPHANED_REASON =
   'The enhancement run stopped before it finished. Send it back to the queue to try again.';
 
 const MAX_ERROR_LENGTH = 1000;
+const MAX_REPORTED_REASONS = 3;
 
 function socialMediaFolderId(): string | undefined {
   const id = (globalThis as { SOCIAL_MEDIA_FOLDER_ID?: string }).SOCIAL_MEDIA_FOLDER_ID;
@@ -124,14 +127,13 @@ export class NewsEnhancementService {
   constructor(private readonly deps: NewsEnhancementDeps = openAiDeps) {}
 
   async run(): Promise<EnhancementResult> {
-    if (!env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY is not configured — the news agent cannot enhance articles');
-    }
+    await resolveChatGptConfig();
 
     const startedAt = new Date();
     const cutoff = new Date(startedAt.getTime() - STUCK_AFTER_MINUTES * 60 * 1000);
     const recovered = await n8nArticleRepository.failOrphaned(cutoff, ORPHANED_REASON);
-    const articles = await n8nArticleRepository.claimForEnhancement(env.NEWS_ENHANCE_BATCH_SIZE);
+    const { batchSize } = await agentSettingsService.getNewsSettings();
+    const articles = await n8nArticleRepository.claimForEnhancement(batchSize);
 
     const tally: Record<EnhancementOutcome, number> = { published: 0, rejected: 0, failed: 0 };
     // One at a time: each article is two paid OpenAI calls, and the image API is rate limited.
@@ -139,11 +141,19 @@ export class NewsEnhancementService {
       tally[await this.enhance(article)] += 1;
     }
 
+    const failureReasons =
+      tally.failed > 0
+        ? [
+            ...new Set(await n8nArticleRepository.findFailureReasons(articles.map(a => a.id))),
+          ].slice(0, MAX_REPORTED_REASONS)
+        : [];
+
     const result: EnhancementResult = {
       startedAt: startedAt.toISOString(),
       finishedAt: new Date().toISOString(),
       claimed: articles.length,
       ...tally,
+      failureReasons,
       recovered,
     };
     logger.info(result, 'news_enhancement.completed');

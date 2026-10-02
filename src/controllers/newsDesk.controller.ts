@@ -41,6 +41,12 @@ export async function runNewsAgentStage(request: FastifyRequest, reply: FastifyR
   return success(reply, 202, 'News agent stage started', 1204, result);
 }
 
+export async function updateNewsDeskSettings(request: FastifyRequest, reply: FastifyReply) {
+  const { batchSize } = request.body as { batchSize: number };
+  const settings = await newsDeskService.updateSettings(batchSize, request.user!.userId);
+  return success(reply, 200, 'News agent settings saved', 1205, settings);
+}
+
 export async function featureNewsDeskArticle(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as IdParams;
   const { featured } = request.body as { featured: boolean };

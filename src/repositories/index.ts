@@ -19,3 +19,4 @@ export {
   aiProviderConfigRepository,
   AiProviderConfigRepository,
 } from './aiProviderConfig.repository';
+export { agentSettingRepository, AgentSettingRepository } from './agentSetting.repository';

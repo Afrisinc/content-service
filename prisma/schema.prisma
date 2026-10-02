@@ -2009,3 +2009,21 @@ model AiProviderConfig {
   @@index([isActive])
   @@map("ai_provider_configs")
 }
+
+// ─────────────────────────────────────────────
+// AGENT SETTINGS (workspace-wide tuning for one agent)
+// ─────────────────────────────────────────────
+
+/// Settings shared by the whole workspace for one agent, keyed by agent key
+/// (src/config/agentRegistry.ts). Unlike automation_policies.agents, which holds
+/// each user's on/off switch, this is one row per agent and never per user.
+model AgentSetting {
+  agentKey  String  @id
+  settings  Json    @default("{}")
+  updatedBy String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz()
+  updatedAt DateTime @updatedAt @db.Timestamptz()
+
+  @@map("agent_settings")
+}

@@ -122,7 +122,7 @@ export const env = {
   NEWS_RSS_SOURCES: process.env.NEWS_RSS_SOURCES || '',
   NEWS_FEED_TIMEOUT_MS: Number(process.env.NEWS_FEED_TIMEOUT_MS) || 10000,
   NEWS_FEED_ITEM_LIMIT: Number(process.env.NEWS_FEED_ITEM_LIMIT) || 10,
-  NEWS_ENHANCE_BATCH_SIZE: Number(process.env.NEWS_ENHANCE_BATCH_SIZE) || 5,
+  NEWS_ENHANCE_BATCH_SIZE: Number(process.env.NEWS_ENHANCE_BATCH_SIZE) || 1,
   NEWS_MIN_SCORE: Number(process.env.NEWS_MIN_SCORE ?? 0.6),
   NEWS_TEXT_MODEL: process.env.NEWS_TEXT_MODEL || 'gpt-4o',
   NEWS_IMAGE_MODEL: process.env.NEWS_IMAGE_MODEL || 'dall-e-3',

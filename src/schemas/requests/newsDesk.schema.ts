@@ -1,4 +1,4 @@
-import { NEWS_ARTICLE_STATUSES } from '@/types/newsDesk.types';
+import { NEWS_ARTICLE_STATUSES, NEWS_BATCH_SIZE_OPTIONS } from '@/types/newsDesk.types';
 
 const articleIdParams = {
   type: 'object',
@@ -29,6 +29,15 @@ export const RunNewsAgentStageSchema = {
     type: 'object',
     required: ['stage'],
     properties: { stage: { type: 'string', enum: ['ingest', 'enhance'] } },
+  },
+};
+
+export const UpdateNewsDeskSettingsSchema = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['batchSize'],
+    properties: { batchSize: { type: 'integer', enum: [...NEWS_BATCH_SIZE_OPTIONS] } },
   },
 };
 

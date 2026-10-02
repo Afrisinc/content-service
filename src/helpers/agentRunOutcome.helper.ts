@@ -42,11 +42,18 @@ export function enhancementOutcome(result: EnhancementResult): RunOutcome {
     ...(result.recovered > 0 ? [`${result.recovered} interrupted recovered`] : []),
   ].join(' · ');
 
-  if (result.claimed > 0 && result.failed === result.claimed) {
+  if (result.failed > 0 && result.published === 0) {
+    const summary =
+      result.failed === result.claimed
+        ? `All ${pluralise(result.claimed, 'article')} failed to publish`
+        : `${pluralise(result.failed, 'article')} failed and none were published`;
     return {
       status: AgentRunStatus.failed,
       detail,
-      errorMessage: `All ${pluralise(result.claimed, 'article')} failed to publish`,
+      errorMessage:
+        result.failureReasons.length > 0
+          ? `${summary}: ${result.failureReasons.join('; ')}`
+          : summary,
     };
   }
 

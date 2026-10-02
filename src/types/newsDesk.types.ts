@@ -14,3 +14,13 @@ export type NewsArticleStatus = (typeof NEWS_ARTICLE_STATUSES)[number];
  * there, and only `draft` is ever picked up — so past this age it is orphaned.
  */
 export const STUCK_AFTER_MINUTES = 30;
+
+export const NEWS_BATCH_SIZE_OPTIONS = [1, 2] as const;
+
+export type NewsBatchSize = (typeof NEWS_BATCH_SIZE_OPTIONS)[number];
+
+export const DEFAULT_NEWS_BATCH_SIZE: NewsBatchSize = 1;
+
+export interface NewsAgentSettings {
+  batchSize: number;
+}

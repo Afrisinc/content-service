@@ -1,5 +1,6 @@
 import { AutomationMode } from '@prisma/client';
 import { isAgentKey, type AgentDefinition, type AgentKey } from '@/config/agentRegistry';
+import type { NewsAgentSettings } from '@/types/newsDesk.types';
 
 export type AgentChoices = Partial<Record<AgentKey, boolean>>;
 
@@ -75,4 +76,17 @@ export function isWorkspaceAgentActive(
     return agent.enabledByDefault;
   }
   return policies.some(policy => isAgentActiveForPolicy(agent, policy, now));
+}
+
+/** The news agent's saved settings, with anything missing or unusable replaced by the fallback. */
+export function parseNewsSettings(value: unknown, fallbackBatchSize: number): NewsAgentSettings {
+  const stored =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>).batchSize
+      : undefined;
+
+  return {
+    batchSize:
+      Number.isInteger(stored) && (stored as number) >= 1 ? (stored as number) : fallbackBatchSize,
+  };
 }

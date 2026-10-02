@@ -17,7 +17,13 @@ const agent = vi.hoisted(() => ({
   trigger: vi.fn(),
 }));
 
+const settings = vi.hoisted(() => ({
+  getNewsSettings: vi.fn(async () => ({ batchSize: 1 })),
+  saveNewsSettings: vi.fn(),
+}));
+
 vi.mock('@/repositories/n8nArticle.repository', () => ({ n8nArticleRepository: repository }));
+vi.mock('@/services/agentSettings.service', () => ({ agentSettingsService: settings }));
 vi.mock('@/services/newsAgent.service', () => ({ newsAgentService: agent }));
 vi.mock('@/services/agentControl.service', () => ({
   agentControlService: { isActive: vi.fn(async () => false) },
@@ -126,8 +132,42 @@ describe('NewsDeskService.summary', () => {
       categories: ['news', 'tech'],
       stuckAfterMinutes: STUCK_AFTER_MINUTES,
       lastIngestedAt: new Date('2026-09-23T08:00:00.000Z'),
-      agent: { allowedByServer: true, enabled: false },
+      agent: { allowedByServer: true, enabled: false, batchSize: 1, batchSizeOptions: [1, 2] },
     });
+  });
+
+  it('reports the saved articles-per-run, not the server default', async () => {
+    repository.deskStatusTotals.mockResolvedValue([]);
+    repository.countStuck.mockResolvedValue(0);
+    repository.getCategories.mockResolvedValue([]);
+    repository.latestIngestedAt.mockResolvedValue(null);
+    settings.getNewsSettings.mockResolvedValueOnce({ batchSize: 2 });
+
+    const summary = await newsDeskService.summary();
+
+    expect(summary.agent.batchSize).toBe(2);
+  });
+});
+
+describe('NewsDeskService.updateSettings', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('saves the batch size for the acting user and echoes the allowed choices', async () => {
+    settings.saveNewsSettings.mockResolvedValue({ batchSize: 2 });
+
+    await expect(newsDeskService.updateSettings(2, 'user-1')).resolves.toEqual({
+      batchSize: 2,
+      batchSizeOptions: [1, 2],
+    });
+    expect(settings.saveNewsSettings).toHaveBeenCalledWith(2, 'user-1');
+  });
+
+  it('passes a rejection from the settings service straight through', async () => {
+    settings.saveNewsSettings.mockRejectedValue(
+      new BadRequestError('batchSize must be one of 1, 2')
+    );
+
+    await expect(newsDeskService.updateSettings(9, 'user-1')).rejects.toThrow(BadRequestError);
   });
 });
 
