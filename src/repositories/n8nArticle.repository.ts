@@ -260,14 +260,6 @@ export class N8nArticleRepository {
     return claimed;
   }
 
-  async findFailureReasons(ids: bigint[]): Promise<string[]> {
-    const rows = await prisma.n8nArticle.findMany({
-      where: { id: { in: ids }, status: 'failed', processing_error: { not: null } },
-      select: { processing_error: true },
-    });
-    return rows.flatMap(row => (row.processing_error ? [row.processing_error] : []));
-  }
-
   async failOrphaned(processingBefore: Date, reason: string): Promise<number> {
     const { count } = await prisma.n8nArticle.updateMany({
       where: { status: 'processing', updated_at: { lt: processingBefore } },

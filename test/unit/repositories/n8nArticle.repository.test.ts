@@ -150,23 +150,6 @@ describe('N8nArticleRepository news agent pipeline', () => {
     expect(claimed).toEqual([{ id: 1n }]);
   });
 
-  it('collects the failure reason of each failed article', async () => {
-    n8nArticle.findMany.mockResolvedValue([
-      { processing_error: 'timeout' },
-      { processing_error: null },
-      { processing_error: 'bad json' },
-    ]);
-
-    await expect(repository.findFailureReasons([1n, 2n, 3n])).resolves.toEqual([
-      'timeout',
-      'bad json',
-    ]);
-    expect(n8nArticle.findMany).toHaveBeenCalledWith({
-      where: { id: { in: [1n, 2n, 3n] }, status: 'failed', processing_error: { not: null } },
-      select: { processing_error: true },
-    });
-  });
-
   it('fails articles orphaned in processing before the cutoff', async () => {
     n8nArticle.updateMany.mockResolvedValue({ count: 2 });
     const cutoff = new Date('2026-09-23T10:00:00.000Z');

@@ -5,11 +5,20 @@ import { logger } from '@/utils/logger';
 
 export type RunTrigger = 'schedule' | 'manual';
 
+export interface RunStepOutcome {
+  key: string;
+  label: string;
+  status: AgentRunStatus;
+  detail?: string;
+  errorMessage?: string;
+}
+
 export interface RunOutcome {
   status: AgentRunStatus;
   detail: string;
   errorMessage?: string;
   keep?: boolean;
+  steps?: RunStepOutcome[];
 }
 
 export interface RecordRunInput<T> {
@@ -95,12 +104,33 @@ export class AgentRunRecorder {
         ...(outcome.detail ? { detail: outcome.detail } : {}),
         ...(errorMessage ? { errorMessage } : {}),
       });
+      await this.recordSteps(runId, outcome.steps ?? []);
       await this.runs.finish(runId, {
         status: outcome.status,
         ...(errorMessage ? { errorMessage } : {}),
       });
     } catch (error) {
       this.warn('close', error);
+    }
+  }
+
+  private async recordSteps(runId: string, steps: RunStepOutcome[]): Promise<void> {
+    if (steps.length === 0) {
+      return;
+    }
+
+    await this.runs.seedSteps(
+      runId,
+      steps.map((step, index) => ({ key: step.key, label: step.label, sequence: index + 1 }))
+    );
+    for (const step of steps) {
+      await this.runs.finishStep(runId, step.key, {
+        status: STEP_STATUS[step.status],
+        ...(step.detail ? { detail: step.detail.slice(0, MAX_MESSAGE_LENGTH) } : {}),
+        ...(step.errorMessage
+          ? { errorMessage: step.errorMessage.slice(0, MAX_MESSAGE_LENGTH) }
+          : {}),
+      });
     }
   }
 

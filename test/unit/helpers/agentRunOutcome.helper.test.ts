@@ -24,7 +24,13 @@ const enhancement = (overrides = {}) => ({
   published: 3,
   rejected: 1,
   failed: 1,
-  failureReasons: [] as string[],
+  articles: [] as {
+    articleId: string;
+    headline: string;
+    outcome: 'published' | 'rejected' | 'failed';
+    score: number | null;
+    reason: string | null;
+  }[],
   recovered: 0,
   ...overrides,
 });
@@ -62,6 +68,14 @@ describe('ingestionOutcome', () => {
   });
 });
 
+const failedArticle = (id: string, reason: string) => ({
+  articleId: id,
+  headline: `Headline ${id}`,
+  outcome: 'failed' as const,
+  score: null,
+  reason,
+});
+
 describe('enhancementOutcome', () => {
   it('drops a tick that found nothing to do', () => {
     expect(
@@ -75,6 +89,7 @@ describe('enhancementOutcome', () => {
     expect(enhancementOutcome(enhancement())).toEqual({
       status: 'succeeded',
       detail: '3 published · 1 rejected · 1 failed',
+      steps: [],
     });
   });
 
@@ -86,6 +101,7 @@ describe('enhancementOutcome', () => {
     ).toEqual({
       status: 'succeeded',
       detail: '0 published · 0 rejected · 0 failed · 2 interrupted recovered',
+      steps: [],
     });
   });
 
@@ -97,7 +113,11 @@ describe('enhancementOutcome', () => {
           published: 0,
           rejected: 2,
           failed: 3,
-          failureReasons: ['the rewritten article is too short (90 words)', 'timeout'],
+          articles: [
+            failedArticle('1', 'the rewritten article is too short (90 words)'),
+            failedArticle('2', 'timeout'),
+            failedArticle('3', 'timeout'),
+          ],
         })
       )
     ).toEqual({
@@ -106,7 +126,94 @@ describe('enhancementOutcome', () => {
       errorMessage:
         '3 articles failed and none were published: ' +
         'the rewritten article is too short (90 words); timeout',
+      steps: [
+        {
+          key: 'article-1',
+          label: 'Headline 1',
+          status: 'failed',
+          errorMessage: 'Failed — the rewritten article is too short (90 words)',
+        },
+        {
+          key: 'article-2',
+          label: 'Headline 2',
+          status: 'failed',
+          errorMessage: 'Failed — timeout',
+        },
+        {
+          key: 'article-3',
+          label: 'Headline 3',
+          status: 'failed',
+          errorMessage: 'Failed — timeout',
+        },
+      ],
     });
+  });
+
+  it('records one step per article with the verdict and the reason', () => {
+    const outcome = enhancementOutcome(
+      enhancement({
+        claimed: 3,
+        published: 1,
+        rejected: 1,
+        failed: 1,
+        articles: [
+          {
+            articleId: '1',
+            headline: 'Kenya opens M-Pesa API',
+            outcome: 'published',
+            score: 0.86,
+            reason: null,
+          },
+          {
+            articleId: '2',
+            headline: 'Celebrity wedding',
+            outcome: 'rejected',
+            score: 0.21,
+            reason: 'no African business angle',
+          },
+          failedArticle('3', 'timeout'),
+        ],
+      })
+    );
+
+    expect(outcome.steps).toEqual([
+      {
+        key: 'article-1',
+        label: 'Kenya opens M-Pesa API',
+        status: 'succeeded',
+        detail: 'Published · score 0.86',
+      },
+      {
+        key: 'article-2',
+        label: 'Celebrity wedding',
+        status: 'skipped',
+        detail: 'Rejected · score 0.21 — no African business angle',
+      },
+      { key: 'article-3', label: 'Headline 3', status: 'failed', errorMessage: 'Failed — timeout' },
+    ]);
+  });
+
+  it('shortens a very long headline to fit a step label', () => {
+    const outcome = enhancementOutcome(
+      enhancement({
+        claimed: 1,
+        published: 1,
+        rejected: 0,
+        failed: 0,
+        articles: [
+          {
+            articleId: '1',
+            headline: 'H'.repeat(120),
+            outcome: 'published',
+            score: 0.9,
+            reason: null,
+          },
+        ],
+      })
+    );
+
+    expect(outcome.steps?.[0].label).toHaveLength(60);
+    expect(outcome.steps?.[0].label.endsWith('…')).toBe(true);
   });
 
   it('stays succeeded when some articles published despite a failure', () => {

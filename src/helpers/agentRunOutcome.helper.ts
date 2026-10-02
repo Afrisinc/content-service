@@ -5,9 +5,9 @@ import {
   META_FAILURE_KINDS,
   type MetaFailureTally,
 } from '@/helpers/metaReadFailure.helper';
-import type { RunOutcome } from '@/services/agentRunRecorder.service';
+import type { RunOutcome, RunStepOutcome } from '@/services/agentRunRecorder.service';
 import type { PullReport } from '@/services/analyticsPull.service';
-import type { EnhancementResult } from '@/services/newsEnhancement.service';
+import type { ArticleResult, EnhancementResult } from '@/services/newsEnhancement.service';
 import type { IngestionResult } from '@/services/newsIngestion.service';
 import type { DigestRunResult } from '@/services/newsletterDigest.service';
 
@@ -30,6 +30,39 @@ export function ingestionOutcome(result: IngestionResult): RunOutcome {
   return { status: AgentRunStatus.succeeded, detail };
 }
 
+const MAX_STEP_LABEL = 60;
+const MAX_REPORTED_REASONS = 3;
+
+const ARTICLE_STEP_STATUS: Record<ArticleResult['outcome'], AgentRunStatus> = {
+  published: AgentRunStatus.succeeded,
+  rejected: AgentRunStatus.skipped,
+  failed: AgentRunStatus.failed,
+};
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function scoreOf(article: ArticleResult): string {
+  return article.score === null ? '' : ` · score ${article.score.toFixed(2)}`;
+}
+
+function articleStep(article: ArticleResult): RunStepOutcome {
+  const base = {
+    key: `article-${article.articleId}`,
+    label: truncate(article.headline, MAX_STEP_LABEL),
+    status: ARTICLE_STEP_STATUS[article.outcome],
+  };
+
+  if (article.outcome === 'published') {
+    return { ...base, detail: `Published${scoreOf(article)}` };
+  }
+  if (article.outcome === 'rejected') {
+    return { ...base, detail: `Rejected${scoreOf(article)} — ${article.reason}` };
+  }
+  return { ...base, errorMessage: `Failed — ${article.reason}` };
+}
+
 export function enhancementOutcome(result: EnhancementResult): RunOutcome {
   if (result.claimed === 0 && result.recovered === 0) {
     return { status: AgentRunStatus.skipped, detail: 'Nothing was waiting', keep: false };
@@ -41,8 +74,14 @@ export function enhancementOutcome(result: EnhancementResult): RunOutcome {
     `${result.failed} failed`,
     ...(result.recovered > 0 ? [`${result.recovered} interrupted recovered`] : []),
   ].join(' · ');
+  const steps = result.articles.map(articleStep);
 
   if (result.failed > 0 && result.published === 0) {
+    const reasons = [
+      ...new Set(
+        result.articles.flatMap(a => (a.outcome === 'failed' && a.reason ? [a.reason] : []))
+      ),
+    ].slice(0, MAX_REPORTED_REASONS);
     const summary =
       result.failed === result.claimed
         ? `All ${pluralise(result.claimed, 'article')} failed to publish`
@@ -50,14 +89,12 @@ export function enhancementOutcome(result: EnhancementResult): RunOutcome {
     return {
       status: AgentRunStatus.failed,
       detail,
-      errorMessage:
-        result.failureReasons.length > 0
-          ? `${summary}: ${result.failureReasons.join('; ')}`
-          : summary,
+      errorMessage: reasons.length > 0 ? `${summary}: ${reasons.join('; ')}` : summary,
+      steps,
     };
   }
 
-  return { status: AgentRunStatus.succeeded, detail };
+  return { status: AgentRunStatus.succeeded, detail, steps };
 }
 
 export function digestOutcome(result: DigestRunResult): RunOutcome {

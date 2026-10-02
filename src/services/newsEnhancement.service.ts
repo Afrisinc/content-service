@@ -28,6 +28,14 @@ export interface NewsEnhancementDeps {
 
 export type EnhancementOutcome = 'published' | 'rejected' | 'failed';
 
+export interface ArticleResult {
+  articleId: string;
+  headline: string;
+  outcome: EnhancementOutcome;
+  score: number | null;
+  reason: string | null;
+}
+
 export interface EnhancementResult {
   startedAt: string;
   finishedAt: string;
@@ -35,7 +43,7 @@ export interface EnhancementResult {
   published: number;
   rejected: number;
   failed: number;
-  failureReasons: string[];
+  articles: ArticleResult[];
   recovered: number;
 }
 
@@ -43,7 +51,6 @@ const ORPHANED_REASON =
   'The enhancement run stopped before it finished. Send it back to the queue to try again.';
 
 const MAX_ERROR_LENGTH = 1000;
-const MAX_REPORTED_REASONS = 3;
 
 function socialMediaFolderId(): string | undefined {
   const id = (globalThis as { SOCIAL_MEDIA_FOLDER_ID?: string }).SOCIAL_MEDIA_FOLDER_ID;
@@ -115,12 +122,18 @@ function errorMessage(error: unknown): string {
   return message.slice(0, MAX_ERROR_LENGTH);
 }
 
+function rejectionReason(enhanced: EnhancedArticle): string {
+  if (enhanced.rejectReason) {
+    return enhanced.rejectReason;
+  }
+  return enhanced.shouldPublish
+    ? `score ${enhanced.score.toFixed(2)} is below the ${env.NEWS_MIN_SCORE} minimum`
+    : 'the editor chose not to publish it';
+}
+
 function rejectionNote(enhanced: EnhancedArticle): string {
-  const reason = enhanced.rejectReason ?? 'below the relevance threshold';
-  return `Rejected by the AI editor (score ${enhanced.score.toFixed(2)}): ${reason}`.slice(
-    0,
-    MAX_ERROR_LENGTH
-  );
+  const verdict = `Rejected by the AI editor (score ${enhanced.score.toFixed(2)})`;
+  return `${verdict}: ${rejectionReason(enhanced)}`.slice(0, MAX_ERROR_LENGTH);
 }
 
 export class NewsEnhancementService {
@@ -135,25 +148,23 @@ export class NewsEnhancementService {
     const { batchSize } = await agentSettingsService.getNewsSettings();
     const articles = await n8nArticleRepository.claimForEnhancement(batchSize);
 
-    const tally: Record<EnhancementOutcome, number> = { published: 0, rejected: 0, failed: 0 };
+    const articleResults: ArticleResult[] = [];
     // One at a time: each article is two paid OpenAI calls, and the image API is rate limited.
     for (const article of articles) {
-      tally[await this.enhance(article)] += 1;
+      articleResults.push(await this.enhanceArticle(article));
     }
 
-    const failureReasons =
-      tally.failed > 0
-        ? [
-            ...new Set(await n8nArticleRepository.findFailureReasons(articles.map(a => a.id))),
-          ].slice(0, MAX_REPORTED_REASONS)
-        : [];
+    const count = (outcome: EnhancementOutcome) =>
+      articleResults.filter(result => result.outcome === outcome).length;
 
     const result: EnhancementResult = {
       startedAt: startedAt.toISOString(),
       finishedAt: new Date().toISOString(),
-      claimed: articles.length,
-      ...tally,
-      failureReasons,
+      claimed: articleResults.length,
+      published: count('published'),
+      rejected: count('rejected'),
+      failed: count('failed'),
+      articles: articleResults,
       recovered,
     };
     logger.info(result, 'news_enhancement.completed');
@@ -161,21 +172,28 @@ export class NewsEnhancementService {
   }
 
   async enhance(article: N8nArticle): Promise<EnhancementOutcome> {
+    return (await this.enhanceArticle(article)).outcome;
+  }
+
+  async enhanceArticle(article: N8nArticle): Promise<ArticleResult> {
+    const subject = {
+      articleId: article.id.toString(),
+      headline: article.source_headline?.trim() || `Article ${article.id}`,
+    };
+
     try {
       const { systemPrompt, prompt } = buildEnhancementPrompt(article);
       const reply = await this.deps.writeArticle({ articleId: article.id, systemPrompt, prompt });
       const enhanced = parseEnhancement(reply, article);
 
       if (!enhanced.shouldPublish || enhanced.score < env.NEWS_MIN_SCORE) {
+        const reason = rejectionReason(enhanced);
         await n8nArticleRepository.update(article.id, {
           status: 'skipped',
           processing_error: rejectionNote(enhanced),
         });
-        logger.info(
-          { articleId: article.id.toString(), score: enhanced.score },
-          'news_enhancement.rejected'
-        );
-        return 'rejected';
+        logger.info({ ...subject, score: enhanced.score, reason }, 'news_enhancement.rejected');
+        return { ...subject, outcome: 'rejected', score: enhanced.score, reason };
       }
 
       const slug = await this.uniqueSlug(enhanced.slug, article.id);
@@ -183,21 +201,13 @@ export class NewsEnhancementService {
       const coverUrl = await this.deps.storeCover(cover, `${slug}.png`);
 
       await this.publish(article, enhanced, slug, coverUrl, `${systemPrompt}\n\n---\n\n${prompt}`);
-      logger.info(
-        { articleId: article.id.toString(), slug, score: enhanced.score },
-        'news_enhancement.published'
-      );
-      return 'published';
+      logger.info({ ...subject, slug, score: enhanced.score }, 'news_enhancement.published');
+      return { ...subject, outcome: 'published', score: enhanced.score, reason: null };
     } catch (error) {
-      await n8nArticleRepository.update(article.id, {
-        status: 'failed',
-        processing_error: errorMessage(error),
-      });
-      logger.warn(
-        { articleId: article.id.toString(), error: errorMessage(error) },
-        'news_enhancement.failed'
-      );
-      return 'failed';
+      const reason = errorMessage(error);
+      await n8nArticleRepository.update(article.id, { status: 'failed', processing_error: reason });
+      logger.warn({ ...subject, error: reason }, 'news_enhancement.failed');
+      return { ...subject, outcome: 'failed', score: null, reason };
     }
   }
 

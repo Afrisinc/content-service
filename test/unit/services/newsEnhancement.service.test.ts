@@ -13,7 +13,6 @@ const repository = vi.hoisted(() => ({
   update: vi.fn(),
   isSlugTaken: vi.fn(),
   publishEnhanced: vi.fn(),
-  findFailureReasons: vi.fn(),
 }));
 const resolveChatGptConfig = vi.hoisted(() => vi.fn());
 const getNewsSettings = vi.hoisted(() => vi.fn());
@@ -78,7 +77,6 @@ describe('NewsEnhancementService', () => {
     vi.clearAllMocks();
     resolveChatGptConfig.mockResolvedValue({ credentials: { apiKey: 'sk' } });
     repository.failOrphaned.mockResolvedValue(0);
-    repository.findFailureReasons.mockResolvedValue([]);
     getNewsSettings.mockResolvedValue({ batchSize: 1 });
     repository.isSlugTaken.mockResolvedValue(false);
     repository.publishEnhanced.mockResolvedValue({ id: 'mp-1' });
@@ -134,7 +132,8 @@ describe('NewsEnhancementService', () => {
     expect(outcome).toBe('rejected');
     expect(repository.update).toHaveBeenCalledWith(7n, {
       status: 'skipped',
-      processing_error: 'Rejected by the AI editor (score 0.40): below the relevance threshold',
+      processing_error:
+        'Rejected by the AI editor (score 0.40): score 0.40 is below the 0.6 minimum',
     });
     expect(deps.drawCover).not.toHaveBeenCalled();
     expect(repository.publishEnhanced).not.toHaveBeenCalled();
@@ -152,6 +151,54 @@ describe('NewsEnhancementService', () => {
     expect(repository.update.mock.calls[0][1].processing_error).toBe(
       'Rejected by the AI editor (score 0.90): Duplicate of yesterday'
     );
+  });
+
+  it('explains a rejection when the editor gave no reason and chose not to publish', async () => {
+    deps.writeArticle.mockResolvedValue({ score: 0.9, should_publish: false });
+
+    const result = await service.enhanceArticle(article(7n));
+
+    expect(result).toMatchObject({
+      outcome: 'rejected',
+      reason: 'the editor chose not to publish it',
+    });
+  });
+
+  it('reports the headline, score and reason of a rejected article', async () => {
+    deps.writeArticle.mockResolvedValue({
+      score: 0.9,
+      should_publish: false,
+      reject_reason: 'Duplicate of yesterday',
+    });
+
+    await expect(service.enhanceArticle(article(7n))).resolves.toEqual({
+      articleId: '7',
+      headline: 'Kenya opens M-Pesa API',
+      outcome: 'rejected',
+      score: 0.9,
+      reason: 'Duplicate of yesterday',
+    });
+  });
+
+  it('reports the failure message of a failed article', async () => {
+    deps.writeArticle.mockRejectedValue(new Error('the image API is down'));
+
+    await expect(service.enhanceArticle(article(7n))).resolves.toMatchObject({
+      outcome: 'failed',
+      score: null,
+      reason: 'the image API is down',
+    });
+  });
+
+  it('falls back to a generic headline when the source has none', async () => {
+    deps.writeArticle.mockResolvedValue({ score: 0.1, should_publish: false });
+
+    const result = await service.enhanceArticle({
+      ...article(7n),
+      source_headline: null,
+    } as never);
+
+    expect(result.headline).toBe('Article 7');
   });
 
   it('suffixes the slug with the article id when it is taken', async () => {
@@ -210,7 +257,6 @@ describe('NewsEnhancementService', () => {
 
   it('run recovers orphans, claims a batch and tallies each outcome', async () => {
     repository.failOrphaned.mockResolvedValue(2);
-    repository.findFailureReasons.mockResolvedValue(['timeout', 'timeout', 'bad json']);
     repository.claimForEnhancement.mockResolvedValue([article(1n), article(2n), article(3n)]);
     deps.writeArticle
       .mockResolvedValueOnce(goodReply)
@@ -229,10 +275,28 @@ describe('NewsEnhancementService', () => {
       published: 1,
       rejected: 1,
       failed: 1,
-      failureReasons: ['timeout', 'bad json'],
       recovered: 2,
     });
-    expect(repository.findFailureReasons).toHaveBeenCalledWith([1n, 2n, 3n]);
+    expect(result.articles).toEqual([
+      expect.objectContaining({
+        articleId: '1',
+        headline: 'Kenya opens M-Pesa API',
+        outcome: 'published',
+        reason: null,
+      }),
+      expect.objectContaining({
+        articleId: '2',
+        outcome: 'rejected',
+        score: 0.1,
+        reason: 'score 0.10 is below the 0.6 minimum',
+      }),
+      expect.objectContaining({
+        articleId: '3',
+        outcome: 'failed',
+        score: null,
+        reason: 'timeout',
+      }),
+    ]);
   });
 
   it('run claims as many articles as the saved setting allows', async () => {
@@ -242,23 +306,6 @@ describe('NewsEnhancementService', () => {
     await service.run();
 
     expect(repository.claimForEnhancement).toHaveBeenCalledWith(2);
-  });
-
-  it('run does not look up failure reasons when nothing failed', async () => {
-    repository.claimForEnhancement.mockResolvedValue([article(1n)]);
-
-    const result = await service.run();
-
-    expect(result.failureReasons).toEqual([]);
-    expect(repository.findFailureReasons).not.toHaveBeenCalled();
-  });
-
-  it('run caps the reasons it reports', async () => {
-    repository.claimForEnhancement.mockResolvedValue([article(1n)]);
-    deps.writeArticle.mockRejectedValue(new Error('x'));
-    repository.findFailureReasons.mockResolvedValue(['a', 'b', 'c', 'd', 'e']);
-
-    expect((await service.run()).failureReasons).toEqual(['a', 'b', 'c']);
   });
 
   it('run refuses to start without an OpenAI key, before claiming anything', async () => {

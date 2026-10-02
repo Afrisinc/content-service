@@ -53,6 +53,64 @@ describe('AgentRunRecorder', () => {
     expect(runs.finish).toHaveBeenCalledWith('run-1', { status: 'succeeded' });
   });
 
+  it('records a step for each item after the main stage, in order', async () => {
+    await recorder.record(
+      input(
+        async () => 1,
+        () => ({
+          status: 'succeeded',
+          detail: '1 published · 1 rejected',
+          steps: [
+            {
+              key: 'article-1',
+              label: 'Kenya opens M-Pesa API',
+              status: 'succeeded',
+              detail: 'Published',
+            },
+            {
+              key: 'article-2',
+              label: 'Celebrity wedding',
+              status: 'skipped',
+              detail: 'Rejected — no African angle',
+            },
+            {
+              key: 'article-3',
+              label: 'Third',
+              status: 'failed',
+              errorMessage: 'Failed — timeout',
+            },
+          ],
+        })
+      )
+    );
+
+    expect(runs.seedSteps).toHaveBeenLastCalledWith('run-1', [
+      { key: 'article-1', label: 'Kenya opens M-Pesa API', sequence: 1 },
+      { key: 'article-2', label: 'Celebrity wedding', sequence: 2 },
+      { key: 'article-3', label: 'Third', sequence: 3 },
+    ]);
+    expect(runs.finishStep).toHaveBeenCalledWith('run-1', 'article-2', {
+      status: 'skipped',
+      detail: 'Rejected — no African angle',
+    });
+    expect(runs.finishStep).toHaveBeenCalledWith('run-1', 'article-3', {
+      status: 'failed',
+      errorMessage: 'Failed — timeout',
+    });
+    expect(runs.finish).toHaveBeenCalledWith('run-1', { status: 'succeeded' });
+  });
+
+  it('does not seed extra steps when the outcome has none', async () => {
+    await recorder.record(
+      input(
+        async () => 1,
+        () => ({ status: 'succeeded', detail: 'done' })
+      )
+    );
+
+    expect(runs.seedSteps).toHaveBeenCalledTimes(1);
+  });
+
   it('opens a user run under its owner and brand when they are given', async () => {
     await recorder.record({
       ...input(
