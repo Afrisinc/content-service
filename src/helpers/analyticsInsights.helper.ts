@@ -1,4 +1,16 @@
+import {
+  engagementOf,
+  intentOf,
+  leadBy,
+  median,
+  perReach,
+  scorerFor,
+  scoredValues,
+  type Lead,
+} from '@/helpers/postScore.helper';
 import type { PublishedPostRow } from '@/repositories/analytics.repository';
+
+export { engagementOf } from '@/helpers/postScore.helper';
 
 /**
  * What the numbers mean, kept apart from how they are fetched.
@@ -25,20 +37,85 @@ const MIN_POSTS_PER_FORMAT = 3;
 /** How much better a format must do before it is worth changing plans over. */
 const MATERIAL_LIFT = 0.15;
 const WINDOW_HOURS = 2;
+const SETTLE_HOURS = 48;
+const HOUR_MS = 60 * 60 * 1000;
+const PRIOR_POSTS = 2;
+
+const PLATFORM_NAMES: Record<string, string> = {
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+  linkedin: 'LinkedIn',
+  twitter: 'X',
+  x: 'X',
+  tiktok: 'TikTok',
+  youtube: 'YouTube',
+  threads: 'Threads',
+};
+
+export type ContentFormat = 'post' | 'single' | 'story' | 'video' | 'reel';
+
+const FORMAT_NAMES: Record<ContentFormat, string> = {
+  post: 'Carousels',
+  single: 'Single images',
+  story: 'Stories',
+  video: 'Videos',
+  reel: 'Reels',
+};
+
+export interface FormatLead {
+  format: ContentFormat;
+  average: number;
+  posts: number;
+  restAverage: number;
+  restPosts: number;
+  lift: number;
+}
 
 export interface Recommendation {
-  kind: 'timing' | 'format' | 'platform' | 'volume';
+  kind: 'timing' | 'format' | 'platform' | 'volume' | 'intent';
   title: string;
   detail: string;
 }
 
-export function engagementOf(post: PublishedPostRow): number {
-  return post.likes + post.comments + post.shares;
+export function platformName(platform: string): string {
+  return (
+    PLATFORM_NAMES[platform.toLowerCase()] ?? platform.charAt(0).toUpperCase() + platform.slice(1)
+  );
 }
+
+export function contentFormatOf(post: PublishedPostRow): ContentFormat | null {
+  if (post.postFormat === 'story' || post.postFormat === 'reel') {
+    return post.postFormat;
+  }
+  switch (post.mediaType) {
+    case 'carousel':
+      return 'post';
+    case 'image':
+      return 'single';
+    case 'video':
+      return 'video';
+    default:
+      return null;
+  }
+}
+
+export function comparablePosts(posts: PublishedPostRow[], now: Date = new Date()) {
+  const settledBefore = now.getTime() - SETTLE_HOURS * HOUR_MS;
+  return posts.filter(
+    post =>
+      post.publishedAt !== null &&
+      post.publishedAt.getTime() <= settledBefore &&
+      post.lastMetricsUpdate !== null &&
+      post.postFormat !== 'story'
+  );
+}
+
+const percent = (lift: number) => `${Math.round(lift * 100)}%`;
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 /** The hour and weekday an instant reads as in the user's own timezone. */
 function localParts(when: Date, timeZone: string): { weekday: number; hour: number } {
-  const parts = new Intl.DateTimeFormat('en-GB', {
+  const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
     weekday: 'short',
     hour: '2-digit',
@@ -54,38 +131,6 @@ function localParts(when: Date, timeZone: string): { weekday: number; hour: numb
   return { weekday, hour: Number.isFinite(hour) ? hour % 24 : 0 };
 }
 
-interface Bucket {
-  posts: number;
-  engagements: number;
-}
-
-function averagesByKey(
-  posts: PublishedPostRow[],
-  keyOf: (post: PublishedPostRow) => string | null
-): Map<string, Bucket> {
-  const buckets = new Map<string, Bucket>();
-
-  for (const post of posts) {
-    const key = keyOf(post);
-    if (key === null) {
-      continue;
-    }
-    const bucket = buckets.get(key) ?? { posts: 0, engagements: 0 };
-    bucket.posts += 1;
-    bucket.engagements += engagementOf(post);
-    buckets.set(key, bucket);
-  }
-
-  return buckets;
-}
-
-function meanEngagement(posts: PublishedPostRow[]): number {
-  if (!posts.length) {
-    return 0;
-  }
-  return posts.reduce((total, post) => total + engagementOf(post), 0) / posts.length;
-}
-
 /**
  * The weekday-and-hour band that has earned the most engagement per post.
  *
@@ -94,68 +139,40 @@ function meanEngagement(posts: PublishedPostRow[]): number {
  */
 export function bestPostingWindow(
   posts: PublishedPostRow[],
-  timeZone: string
+  timeZone: string,
+  slotHour?: number
 ): Recommendation | null {
   const dated = posts.filter(post => post.publishedAt !== null);
   if (dated.length < MIN_POSTS_FOR_WINDOW) {
     return null;
   }
 
-  const buckets = averagesByKey(dated, post => {
-    const { weekday, hour } = localParts(post.publishedAt as Date, timeZone);
-    if (weekday < 0) {
-      return null;
-    }
-    return `${weekday}:${Math.floor(hour / WINDOW_HOURS) * WINDOW_HOURS}`;
-  });
-
-  let best: { key: string; average: number } | null = null;
-  for (const [key, bucket] of buckets) {
-    if (bucket.posts < MIN_POSTS_PER_BUCKET) {
-      continue;
-    }
-    const average = bucket.engagements / bucket.posts;
-    if (!best || average > best.average) {
-      best = { key, average };
-    }
-  }
-
-  if (!best || best.average <= 0) {
-    return null;
-  }
-
-  const [weekday, hour] = best.key.split(':').map(Number);
-  const pad = (value: number) => String(value).padStart(2, '0');
-
-  return {
-    kind: 'timing',
-    title: `${WEEKDAY_NAMES[weekday]} ${pad(hour)}:00–${pad(hour + WINDOW_HOURS)}:00`,
-    detail: `Best window so far — ${Math.round(best.average)} engagements per post on average.`,
-  };
-}
-
-/** Whether one media type is reliably outperforming the rest. */
-export function bestFormat(posts: PublishedPostRow[]): Recommendation | null {
-  const typed = posts.filter(post => Boolean(post.mediaType));
-  if (typed.length < MIN_POSTS_FOR_WINDOW) {
-    return null;
-  }
-
-  const overall = meanEngagement(typed);
+  const scorer = scorerFor(dated);
+  const overall = median(scoredValues(dated, scorer.scoreOf));
   if (overall <= 0) {
     return null;
   }
 
-  const buckets = averagesByKey(typed, post => post.mediaType);
-
-  let best: { format: string; average: number } | null = null;
-  for (const [format, bucket] of buckets) {
-    if (bucket.posts < MIN_POSTS_PER_FORMAT) {
+  const buckets = new Map<string, number[]>();
+  for (const post of dated) {
+    const score = scorer.scoreOf(post);
+    const { weekday, hour } = localParts(post.publishedAt as Date, timeZone);
+    if (score === null || weekday < 0) {
       continue;
     }
-    const average = bucket.engagements / bucket.posts;
-    if (!best || average > best.average) {
-      best = { format, average };
+    const key = `${weekday}:${Math.floor(hour / WINDOW_HOURS) * WINDOW_HOURS}`;
+    buckets.set(key, [...(buckets.get(key) ?? []), score]);
+  }
+
+  let best: { key: string; value: number; posts: number; shrunk: number } | null = null;
+  for (const [key, scores] of buckets) {
+    if (scores.length < MIN_POSTS_PER_BUCKET) {
+      continue;
+    }
+    const value = median(scores);
+    const shrunk = (scores.length * value + PRIOR_POSTS * overall) / (scores.length + PRIOR_POSTS);
+    if (!best || shrunk > best.shrunk) {
+      best = { key, value, posts: scores.length, shrunk };
     }
   }
 
@@ -163,17 +180,105 @@ export function bestFormat(posts: PublishedPostRow[]): Recommendation | null {
     return null;
   }
 
-  const lift = best.average / overall - 1;
+  const lift = best.value / overall - 1;
   if (lift < MATERIAL_LIFT) {
     return null;
   }
 
+  const [weekday, hour] = best.key.split(':').map(Number);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  const outsideSlot =
+    slotHour !== undefined && (slotHour < hour || slotHour >= hour + WINDOW_HOURS);
+
+  return {
+    kind: 'timing',
+    title: `${WEEKDAY_NAMES[weekday]} ${pad(hour)}:00–${pad(hour + WINDOW_HOURS)}:00`,
+    detail:
+      `${scorer.describe(best.value)}, ${percent(lift)} above your typical post, ` +
+      `across ${plural(best.posts, 'post')}.` +
+      (outsideSlot
+        ? ` Your brand posts at ${pad(slotHour)}:00 — try moving a slot into this window.`
+        : ''),
+  };
+}
+
+export function leadingFormat(
+  posts: PublishedPostRow[],
+  allowed?: readonly ContentFormat[]
+): FormatLead | null {
+  const scorer = scorerFor(posts);
+  const lead = leadBy<ContentFormat>(posts, {
+    keyOf: post => {
+      const format = contentFormatOf(post);
+      return format !== null && (!allowed || allowed.includes(format)) ? format : null;
+    },
+    valueOf: scorer.scoreOf,
+    minPerGroup: MIN_POSTS_PER_FORMAT,
+    minTotal: MIN_POSTS_FOR_WINDOW,
+    minLift: MATERIAL_LIFT,
+  });
+  return lead && formatLead(lead);
+}
+
+function formatLead(lead: Lead<ContentFormat>): FormatLead {
+  return {
+    format: lead.key,
+    average: lead.value,
+    posts: lead.posts,
+    restAverage: lead.restValue,
+    restPosts: lead.restPosts,
+    lift: lead.lift,
+  };
+}
+
+const multiple = (lift: number) => `${(lift + 1).toFixed(1).replace(/\.0$/, '')}×`;
+
+const howMuchMore = (lift: number, noun: string) =>
+  lift >= 1 ? `${multiple(lift)} the ${noun}` : `${percent(lift)} more ${noun}`;
+
+/** Whether one media type is reliably outperforming the rest. */
+export function bestFormat(posts: PublishedPostRow[]): Recommendation | null {
+  const lead = leadingFormat(posts);
+  if (!lead) {
+    return null;
+  }
+
+  const { describe, figure } = scorerFor(posts);
+
   return {
     kind: 'format',
-    title: `${best.format} earns ${Math.round(lift * 100)}% more`,
+    title: `${FORMAT_NAMES[lead.format]} earn ${howMuchMore(lead.lift, 'engagement')}`,
     detail:
-      `${best.format} averages ${Math.round(best.average)} engagements ` +
-      `against ${Math.round(overall)} across everything else.`,
+      `${describe(lead.average)} across ${plural(lead.posts, 'post')}, against ` +
+      `${figure(lead.restAverage)} for everything else (${plural(lead.restPosts, 'post')}).`,
+  };
+}
+
+export function mostSaved(posts: PublishedPostRow[]): Recommendation | null {
+  const valueOf = perReach(posts, intentOf);
+  const lead = leadBy<ContentFormat>(posts, {
+    keyOf: contentFormatOf,
+    valueOf,
+    minPerGroup: MIN_POSTS_PER_FORMAT,
+    minTotal: MIN_POSTS_FOR_WINDOW,
+    minLift: MATERIAL_LIFT,
+    aggregate: 'mean',
+  });
+  if (!lead) {
+    return null;
+  }
+
+  const rate = scorerFor(posts).mode === 'rate';
+  const figure = (value: number) => (rate ? (value * 1000).toFixed(1) : value.toFixed(1));
+  const unit = rate ? 'per 1,000 people reached' : 'per post';
+
+  return {
+    kind: 'intent',
+    title: `${FORMAT_NAMES[lead.key]} get ${howMuchMore(lead.lift, 'saves and clicks')}`,
+    detail:
+      `Saves, link clicks and profile visits: ${figure(lead.value)} ${unit}, against ` +
+      `${figure(lead.restValue)} for other formats. These are the people most likely ` +
+      'to come back, so lead with this format for content you want followed.',
   };
 }
 
@@ -199,14 +304,17 @@ export function idlePlatform(
     return null;
   }
 
+  const busiestName = platformName(sorted[sorted.length - 1][0]);
+
   return {
     kind: 'platform',
-    title: `${quietest} is underused`,
+    title: `${platformName(quietest)} is underused`,
     detail:
       quietestCount === 0
-        ? 'Connected but nothing published to it this window, while the ' +
-          `busiest platform took ${busiest}.`
-        : `${quietestCount} post(s) against ${busiest} on the busiest platform.`,
+        ? `Connected, but nothing went out there this window while ${busiestName} ` +
+          `took ${plural(busiest, 'post')}. Reuse your best posts there first.`
+        : `${plural(quietestCount, 'post')} against ${busiest} on ${busiestName}. ` +
+          'Reuse your best posts there first.',
   };
 }
 
@@ -214,12 +322,14 @@ export function idlePlatform(
 export function buildRecommendations(
   posts: PublishedPostRow[],
   connected: string[],
-  timeZone: string
+  timeZone: string,
+  options: { slotHour?: number; volume?: PublishedPostRow[] } = {}
 ): Recommendation[] {
   return [
-    bestPostingWindow(posts, timeZone),
+    bestPostingWindow(posts, timeZone, options.slotHour),
     bestFormat(posts),
-    idlePlatform(posts, connected),
+    mostSaved(posts),
+    idlePlatform(options.volume ?? posts, connected),
   ].filter((entry): entry is Recommendation => entry !== null);
 }
 

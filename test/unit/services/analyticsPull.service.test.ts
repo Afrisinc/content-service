@@ -56,6 +56,7 @@ const metrics = {
   shares: 2,
   saves: 1,
   views: 40,
+  profileVisits: 6,
 };
 
 function duePost(overrides: Record<string, unknown> = {}) {
@@ -200,6 +201,9 @@ describe('post metrics', () => {
       views: 40,
       reach: 80,
       impressions: 100,
+      saves: 1,
+      clicks: 4,
+      profileVisits: 6,
     });
     expect(posts.upsertAnalytics).toHaveBeenCalledWith(
       'row-1',

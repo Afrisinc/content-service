@@ -32,7 +32,6 @@ export class StoryCoverService {
     return asset.url;
   }
 
-  /** A cover is a nicety: failing to draw one must never stop an episode from being written. */
   async ensure(story: CoverSubject & Pick<Story, 'coverImageUrl'>): Promise<void> {
     if (story.coverImageUrl) {
       return;

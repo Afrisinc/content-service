@@ -18,7 +18,7 @@ const agent = vi.hoisted(() => ({
 }));
 
 const settings = vi.hoisted(() => ({
-  getNewsSettings: vi.fn(async () => ({ batchSize: 1 })),
+  getNewsSettings: vi.fn(async () => ({ batchSize: 1, days: [0, 1, 2, 3, 4, 5, 6] })),
   saveNewsSettings: vi.fn(),
 }));
 
@@ -132,7 +132,13 @@ describe('NewsDeskService.summary', () => {
       categories: ['news', 'tech'],
       stuckAfterMinutes: STUCK_AFTER_MINUTES,
       lastIngestedAt: new Date('2026-09-23T08:00:00.000Z'),
-      agent: { allowedByServer: true, enabled: false, batchSize: 1, batchSizeOptions: [1, 2] },
+      agent: {
+        allowedByServer: true,
+        enabled: false,
+        batchSize: 1,
+        days: [0, 1, 2, 3, 4, 5, 6],
+        batchSizeOptions: [1, 2],
+      },
     });
   });
 
@@ -141,11 +147,12 @@ describe('NewsDeskService.summary', () => {
     repository.countStuck.mockResolvedValue(0);
     repository.getCategories.mockResolvedValue([]);
     repository.latestIngestedAt.mockResolvedValue(null);
-    settings.getNewsSettings.mockResolvedValueOnce({ batchSize: 2 });
+    settings.getNewsSettings.mockResolvedValueOnce({ batchSize: 2, days: [1] });
 
     const summary = await newsDeskService.summary();
 
     expect(summary.agent.batchSize).toBe(2);
+    expect(summary.agent.days).toEqual([1]);
   });
 });
 
@@ -153,13 +160,22 @@ describe('NewsDeskService.updateSettings', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('saves the batch size for the acting user and echoes the allowed choices', async () => {
-    settings.saveNewsSettings.mockResolvedValue({ batchSize: 2 });
+    settings.saveNewsSettings.mockResolvedValue({ batchSize: 2, days: [1, 4] });
 
-    await expect(newsDeskService.updateSettings(2, 'user-1')).resolves.toEqual({
+    await expect(newsDeskService.updateSettings(2, 'user-1', [1, 4])).resolves.toEqual({
       batchSize: 2,
+      days: [1, 4],
       batchSizeOptions: [1, 2],
     });
-    expect(settings.saveNewsSettings).toHaveBeenCalledWith(2, 'user-1');
+    expect(settings.saveNewsSettings).toHaveBeenCalledWith(2, 'user-1', [1, 4]);
+  });
+
+  it('leaves the days alone when only the batch size is sent', async () => {
+    settings.saveNewsSettings.mockResolvedValue({ batchSize: 2, days: [1] });
+
+    await newsDeskService.updateSettings(2, 'user-1');
+
+    expect(settings.saveNewsSettings).toHaveBeenCalledWith(2, 'user-1', undefined);
   });
 
   it('passes a rejection from the settings service straight through', async () => {

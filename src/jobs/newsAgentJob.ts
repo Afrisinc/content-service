@@ -1,6 +1,8 @@
 import cron, { ScheduledTask } from 'node-cron';
 import { env } from '@/config/env';
+import { isRunDay } from '@/helpers/agentSettings.helper';
 import { agentControlService } from '@/services/agentControl.service';
+import { agentSettingsService } from '@/services/agentSettings.service';
 import { newsAgentService } from '@/services/newsAgent.service';
 import { logger } from '@/utils/logger';
 
@@ -10,7 +12,11 @@ let enhanceJob: ScheduledTask | null = null;
 /** The dashboard switch and autopilot decide each tick whether the stage runs. */
 async function runIfActive(run: () => Promise<unknown>) {
   try {
-    if (await agentControlService.isActive('news')) {
+    if (!(await agentControlService.isActive('news'))) {
+      return;
+    }
+    const { days } = await agentSettingsService.getNewsSettings();
+    if (isRunDay(days)) {
       await run();
     }
   } catch (error) {

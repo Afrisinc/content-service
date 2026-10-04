@@ -82,17 +82,25 @@ describe('news desk controller', () => {
   });
 
   it('saves the articles-per-run setting for the signed-in user', async () => {
-    service.updateSettings.mockResolvedValue({ batchSize: 2, batchSizeOptions: [1, 2] });
+    service.updateSettings.mockResolvedValue({
+      batchSize: 2,
+      days: [1],
+      batchSizeOptions: [1, 2],
+    });
     const reply = fakeReply();
 
     await controller.updateNewsDeskSettings(
-      request({ body: { batchSize: 2 }, user: { userId: 'user-1' } }),
+      request({ body: { batchSize: 2, days: [1] }, user: { userId: 'user-1' } }),
       reply as unknown as FastifyReply
     );
 
-    expect(service.updateSettings).toHaveBeenCalledWith(2, 'user-1');
+    expect(service.updateSettings).toHaveBeenCalledWith(2, 'user-1', [1]);
     expect(reply.status).toHaveBeenCalledWith(200);
-    expect(reply.send.mock.calls[0][0].data).toEqual({ batchSize: 2, batchSizeOptions: [1, 2] });
+    expect(reply.send.mock.calls[0][0].data).toEqual({
+      batchSize: 2,
+      days: [1],
+      batchSizeOptions: [1, 2],
+    });
   });
 
   it('starts a pipeline stage and answers 202', async () => {

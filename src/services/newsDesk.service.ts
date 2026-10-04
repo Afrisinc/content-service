@@ -105,14 +105,15 @@ export class NewsDeskService {
       agent: {
         ...newsAgentService.status(),
         batchSize: settings.batchSize,
+        days: settings.days,
         batchSizeOptions: NEWS_BATCH_SIZE_OPTIONS,
         enabled: scheduled,
       },
     };
   }
 
-  async updateSettings(batchSize: number, userId: string) {
-    const settings = await agentSettingsService.saveNewsSettings(batchSize, userId);
+  async updateSettings(batchSize: number, userId: string, days?: number[]) {
+    const settings = await agentSettingsService.saveNewsSettings(batchSize, userId, days);
     return { ...settings, batchSizeOptions: NEWS_BATCH_SIZE_OPTIONS };
   }
 

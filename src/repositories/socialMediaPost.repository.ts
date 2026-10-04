@@ -341,6 +341,9 @@ export class SocialMediaPostRepository {
       views?: number;
       reach?: number;
       impressions?: number;
+      saves?: number;
+      clicks?: number;
+      profileVisits?: number;
     }
   ) {
     return this.prisma.socialMediaPost.update({

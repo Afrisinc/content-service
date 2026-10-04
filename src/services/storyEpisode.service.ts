@@ -46,21 +46,26 @@ interface PreviousEpisode {
 
 interface EpisodeMemory {
   summary: string | null;
+  storySoFar: string | null;
   continuity: string[];
 }
 
 const MAX_CONTINUITY_NOTES = 24;
+const RECENT_EPISODES = 10;
 const MAX_ENDING_LENGTH = 700;
 const ENDING_PARAGRAPHS = 2;
 
 export function readEpisodeMemory(metadata: unknown): EpisodeMemory {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
-    return { summary: null, continuity: [] };
+    return { summary: null, storySoFar: null, continuity: [] };
   }
 
-  const { summary, continuity } = metadata as Record<string, unknown>;
+  const { summary, storySoFar, continuity } = metadata as Record<string, unknown>;
+  const text = (value: unknown) =>
+    typeof value === 'string' && value.trim() ? value.trim() : null;
   return {
-    summary: typeof summary === 'string' && summary.trim() ? summary.trim() : null,
+    summary: text(summary),
+    storySoFar: text(storySoFar),
     continuity: Array.isArray(continuity)
       ? continuity.filter((note): note is string => typeof note === 'string' && note.trim() !== '')
       : [],
@@ -87,6 +92,12 @@ function buildBrief(
     memory: readEpisodeMemory(episode.metadata),
   }));
   const notes = [...new Set(memories.flatMap(({ memory }) => memory.continuity))];
+  const synopsisAt = memories.map(({ memory }) => memory.storySoFar !== null).lastIndexOf(true);
+  const firstRecent = Math.max(0, memories.length - RECENT_EPISODES);
+  const shown =
+    synopsisAt === -1
+      ? memories
+      : memories.filter((_, index) => index >= firstRecent || index > synopsisAt);
 
   return {
     storyTitle: story.title,
@@ -96,7 +107,9 @@ function buildBrief(
     audience: story.audience ?? undefined,
     tone: story.tone ?? undefined,
     episodeNumber,
-    priorEpisodes: memories.map(({ episode, memory }) => ({
+    storySoFar:
+      synopsisAt === -1 ? undefined : (memories[synopsisAt].memory.storySoFar ?? undefined),
+    priorEpisodes: shown.map(({ episode, memory }) => ({
       episodeNumber: episode.episodeNumber,
       title: episode.title,
       summary: memory.summary ?? episode.hook,
@@ -109,7 +122,11 @@ function buildBrief(
 }
 
 function episodeMetadata(content: EpisodeContent): Prisma.InputJsonObject {
-  return { summary: content.summary, continuity: content.continuity_notes };
+  return {
+    summary: content.summary,
+    storySoFar: content.story_so_far,
+    continuity: content.continuity_notes,
+  };
 }
 
 export class StoryEpisodeService {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildEnhancementPrompt,
+  buildTriagePrompt,
+  parseTriage,
   countWords,
   coverPrompt,
   parseEnhancement,
@@ -277,4 +279,54 @@ describe('coverPrompt', () => {
     expect(prompt).toContain('no text, lettering, numbers, signage, logos, seals or watermarks');
     expect(prompt).toContain('blank or show abstract shapes only');
   });
+});
+
+describe('the first read', () => {
+  const source = {
+    id: 3n,
+    source_headline: 'Kenya opens M-Pesa API',
+    source_summary: 'Regulators agree.',
+    source_url: 'https://example.africa/story',
+    category: 'tech',
+    creator: 'Disrupt Africa',
+    pub_date: null,
+  };
+
+  it('uses the same scoring rules as the editor and asks for no rewrite', () => {
+    const triage = buildTriagePrompt(source);
+    const editor = buildEnhancementPrompt(source);
+
+    expect(triage.systemPrompt).toContain('Do not rewrite it.');
+    expect(editor.systemPrompt).toContain(
+      'operators and investors. Score below 0.6 and set should_publish=false for: stories'
+    );
+    expect(triage.systemPrompt).toContain(
+      'operators and investors. Score below 0.6 and set should_publish=false for: stories'
+    );
+    expect(triage.prompt).toBe(editor.prompt);
+    expect(triage.systemPrompt.length).toBeLessThan(editor.systemPrompt.length / 3);
+  });
+
+  it('reads a verdict', () => {
+    expect(parseTriage({ score: 0.2, should_publish: false, reject_reason: 'Sport' })).toEqual({
+      score: 0.2,
+      shouldPublish: false,
+      rejectReason: 'Sport',
+    });
+  });
+
+  it('treats a "null" reason as none, and a string score as a number', () => {
+    expect(parseTriage({ score: '0.7', should_publish: true, reject_reason: 'null' })).toEqual({
+      score: 0.7,
+      shouldPublish: true,
+      rejectReason: null,
+    });
+  });
+
+  it.each([null, [], 'yes', { score: 2 }, { score: 'x' }, { should_publish: true }])(
+    'refuses %j',
+    reply => {
+      expect(() => parseTriage(reply)).toThrow();
+    }
+  );
 });

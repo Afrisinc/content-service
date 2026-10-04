@@ -491,7 +491,11 @@ suite('news flow, end to end against a real database', () => {
         payload: { batchSize: 2 },
       });
       expect(saved.statusCode).toBe(200);
-      expect(saved.json().data).toEqual({ batchSize: 2, batchSizeOptions: [1, 2] });
+      expect(saved.json().data).toEqual({
+        batchSize: 2,
+        days: [0, 1, 2, 3, 4, 5, 6],
+        batchSizeOptions: [1, 2],
+      });
 
       const summary = await app.inject({ method: 'GET', url: '/news-desk/summary', headers: auth });
       expect(summary.json().data.agent.batchSize).toBe(2);
@@ -697,14 +701,15 @@ suite('news flow, end to end against a real database', () => {
         photoUrl: post.cover_image,
         link: 'https://afrisinc.com/media/articles/mpesa-open-api',
         userId: 'user-a',
-        news: {
+        editorial: expect.objectContaining({
+          layout: 'news',
           headline: post.title,
-          summary: 'One standard for the region.',
-          category: 'fintech',
-          source: 'Test Feed',
-          articleUrl: 'https://afrisinc.com/media/articles/mpesa-open-api',
-          tags: ['fintech'],
-        },
+          eyebrow: 'FINTECH',
+          dateline: expect.stringMatching(/^Source: Test Feed · /),
+          caption: expect.stringContaining(
+            'Read the full story: https://afrisinc.com/media/articles/mpesa-open-api'
+          ),
+        }),
       });
       expect(deps.drawCover).toHaveBeenCalledTimes(1);
     });

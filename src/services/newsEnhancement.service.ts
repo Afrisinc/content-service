@@ -3,9 +3,12 @@ import { nodeServices } from '@/adapters/nodes/nodeServices';
 import { env } from '@/config/env';
 import {
   buildEnhancementPrompt,
+  buildTriagePrompt,
   coverPrompt,
   parseEnhancement,
+  parseTriage,
   type EnhancedArticle,
+  type TriageVerdict,
 } from '@/helpers/newsEnhancement.helper';
 import { runChatGpt } from '@/nodes';
 import { articleUrl } from '@/helpers/newsletterDigest.helper';
@@ -29,6 +32,7 @@ export interface ArticlePrompt {
 }
 
 export interface NewsEnhancementDeps {
+  triageArticle?(input: ArticlePrompt): Promise<unknown>;
   writeArticle(input: ArticlePrompt): Promise<unknown>;
   drawCover(prompt: string, articleId: bigint): Promise<Buffer>;
   storeCover(image: Buffer, filename: string): Promise<string>;
@@ -62,7 +66,29 @@ const ORPHANED_REASON =
 
 const MAX_ERROR_LENGTH = 1000;
 
+const TRIAGE_MAX_TOKENS = 200;
+
 const openAiDeps: NewsEnhancementDeps = {
+  async triageArticle({ articleId, systemPrompt, prompt }) {
+    const { credentials } = await resolveChatGptConfig();
+    const items = await runChatGpt({
+      credentials,
+      logger,
+      services: nodeServices,
+      usageContext: { requestId: `news-triage:${articleId.toString()}` },
+      parameters: {
+        resource: 'text',
+        operation: 'message',
+        model: env.NEWS_TRIAGE_MODEL,
+        systemPrompt,
+        prompt,
+        jsonOutput: true,
+        options: { temperature: 0, maxTokens: TRIAGE_MAX_TOKENS },
+      },
+    });
+    return items[0]?.json?.parsed;
+  },
+
   async writeArticle({ articleId, systemPrompt, prompt }) {
     const { credentials } = await resolveChatGptConfig();
     const items = await runChatGpt({
@@ -112,7 +138,9 @@ function errorMessage(error: unknown): string {
   return message.slice(0, MAX_ERROR_LENGTH);
 }
 
-function rejectionReason(enhanced: EnhancedArticle): string {
+function rejectionReason(
+  enhanced: Pick<EnhancedArticle, 'score' | 'shouldPublish' | 'rejectReason'>
+): string {
   if (enhanced.rejectReason) {
     return enhanced.rejectReason;
   }
@@ -121,9 +149,16 @@ function rejectionReason(enhanced: EnhancedArticle): string {
     : 'the editor chose not to publish it';
 }
 
-function rejectionNote(enhanced: EnhancedArticle): string {
-  const verdict = `Rejected by the AI editor (score ${enhanced.score.toFixed(2)})`;
+function rejectionNote(
+  enhanced: Pick<EnhancedArticle, 'score' | 'shouldPublish' | 'rejectReason'>,
+  stage = ''
+): string {
+  const verdict = `Rejected by the AI editor (score ${enhanced.score.toFixed(2)}${stage})`;
   return `${verdict}: ${rejectionReason(enhanced)}`.slice(0, MAX_ERROR_LENGTH);
+}
+
+function failsFirstRead(verdict: TriageVerdict): boolean {
+  return !verdict.shouldPublish && verdict.score < env.NEWS_MIN_SCORE - env.NEWS_TRIAGE_MARGIN;
 }
 
 export class NewsEnhancementService {
@@ -172,6 +207,20 @@ export class NewsEnhancementService {
     };
 
     try {
+      const firstRead = await this.firstRead(article);
+      if (firstRead && failsFirstRead(firstRead)) {
+        const reason = rejectionReason(firstRead);
+        await n8nArticleRepository.update(article.id, {
+          status: 'skipped',
+          processing_error: rejectionNote(firstRead, ', first read'),
+        });
+        logger.info(
+          { ...subject, score: firstRead.score, reason },
+          'news_enhancement.rejected_on_first_read'
+        );
+        return { ...subject, outcome: 'rejected', score: firstRead.score, reason, social: [] };
+      }
+
       const { systemPrompt, prompt } = buildEnhancementPrompt(article);
       const reply = await this.deps.writeArticle({ articleId: article.id, systemPrompt, prompt });
       const enhanced = parseEnhancement(reply, article);
@@ -200,6 +249,24 @@ export class NewsEnhancementService {
       await n8nArticleRepository.update(article.id, { status: 'failed', processing_error: reason });
       logger.warn({ ...subject, error: reason }, 'news_enhancement.failed');
       return { ...subject, outcome: 'failed', score: null, reason, social: [] };
+    }
+  }
+
+  private async firstRead(article: N8nArticle): Promise<TriageVerdict | null> {
+    if (!this.deps.triageArticle || !env.NEWS_TRIAGE_MODEL) {
+      return null;
+    }
+    try {
+      const { systemPrompt, prompt } = buildTriagePrompt(article);
+      return parseTriage(
+        await this.deps.triageArticle({ articleId: article.id, systemPrompt, prompt })
+      );
+    } catch (error) {
+      logger.warn(
+        { articleId: article.id.toString(), error: errorMessage(error) },
+        'news_enhancement.first_read_unavailable'
+      );
+      return null;
     }
   }
 

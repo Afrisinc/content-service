@@ -330,9 +330,19 @@ export class AnalyticsRepository {
    * Ranking, best-window and format comparisons all read the same rows, so they
    * share one query rather than three near-identical ones.
    */
-  async publishedPosts(userId: string, from: Date, to: Date) {
+  async publishedPosts(
+    userId: string,
+    from: Date,
+    to: Date,
+    accounts?: { platform: string; pageId: string }[]
+  ) {
     return this.prisma.socialMediaPost.findMany({
-      where: { userId, status: PUBLISHED_STATUS, publishedAt: { gte: from, lte: to } },
+      where: {
+        userId,
+        status: PUBLISHED_STATUS,
+        publishedAt: { gte: from, lte: to },
+        ...(accounts ? { OR: accounts.map(({ platform, pageId }) => ({ platform, pageId })) } : {}),
+      },
       select: {
         id: true,
         platform: true,
@@ -351,6 +361,10 @@ export class AnalyticsRepository {
         likes: true,
         comments: true,
         shares: true,
+        saves: true,
+        clicks: true,
+        profileVisits: true,
+        lastMetricsUpdate: true,
       },
       orderBy: { publishedAt: 'desc' },
       take: POST_SCAN_LIMIT,
@@ -496,9 +510,9 @@ export class AnalyticsRepository {
   }
 
   /** The brand whose cadence a plan should be laid out on. */
-  async planningBrand(userId: string) {
+  async planningBrand(userId: string, groupId?: string) {
     return this.prisma.accountGroup.findFirst({
-      where: { userId, isActive: true },
+      where: { userId, isActive: true, ...(groupId ? { id: groupId } : {}) },
       select: {
         id: true,
         name: true,
@@ -508,6 +522,9 @@ export class AnalyticsRepository {
         postsPerRun: true,
         defaultFormat: true,
         topics: true,
+        description: true,
+        serviceLine: true,
+        audience: true,
       },
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
     });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const envMock = vi.hoisted(() => ({
   NEWS_AGENT_ENABLED: true,
@@ -8,11 +8,13 @@ const envMock = vi.hoisted(() => ({
 const schedule = vi.hoisted(() => vi.fn());
 const agent = vi.hoisted(() => ({ runIngestion: vi.fn(), runEnhancement: vi.fn() }));
 const control = vi.hoisted(() => ({ isActive: vi.fn() }));
+const settings = vi.hoisted(() => ({ getNewsSettings: vi.fn() }));
 
 vi.mock('@/config/env', () => ({ env: envMock }));
 vi.mock('node-cron', () => ({ default: { schedule } }));
 vi.mock('@/services/newsAgent.service', () => ({ newsAgentService: agent }));
 vi.mock('@/services/agentControl.service', () => ({ agentControlService: control }));
+vi.mock('@/services/agentSettings.service', () => ({ agentSettingsService: settings }));
 
 const { startNewsAgentJobs, stopNewsAgentJobs } = await import('@/jobs/newsAgentJob');
 
@@ -25,6 +27,8 @@ describe('news agent jobs', () => {
     envMock.NEWS_AGENT_ENABLED = true;
     schedule.mockImplementation(() => ({ stop }));
     control.isActive.mockResolvedValue(true);
+    settings.getNewsSettings.mockResolvedValue({ batchSize: 1, days: [0, 1, 2, 3, 4, 5, 6] });
+    vi.useRealTimers();
   });
 
   it('schedules ingestion and enhancement on their own crons', async () => {
@@ -50,6 +54,48 @@ describe('news agent jobs', () => {
 
     expect(agent.runIngestion).not.toHaveBeenCalled();
     expect(agent.runEnhancement).not.toHaveBeenCalled();
+  });
+
+  describe('on the days the user picked', () => {
+    const MONDAY = new Date('2026-10-05T07:00:00.000Z');
+    const TUESDAY = new Date('2026-10-06T07:00:00.000Z');
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('runs both stages on a chosen day', async () => {
+      vi.useFakeTimers({ now: MONDAY });
+      settings.getNewsSettings.mockResolvedValue({ batchSize: 1, days: [1] });
+      startNewsAgentJobs();
+
+      await schedule.mock.calls[0][1]();
+      await schedule.mock.calls[1][1]();
+
+      expect(agent.runIngestion).toHaveBeenCalledTimes(1);
+      expect(agent.runEnhancement).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips both stages on any other day', async () => {
+      vi.useFakeTimers({ now: TUESDAY });
+      settings.getNewsSettings.mockResolvedValue({ batchSize: 1, days: [1] });
+      startNewsAgentJobs();
+
+      await schedule.mock.calls[0][1]();
+      await schedule.mock.calls[1][1]();
+
+      expect(agent.runIngestion).not.toHaveBeenCalled();
+      expect(agent.runEnhancement).not.toHaveBeenCalled();
+    });
+
+    it('does not even read the days while the agent is switched off', async () => {
+      control.isActive.mockResolvedValue(false);
+      startNewsAgentJobs();
+
+      await schedule.mock.calls[0][1]();
+
+      expect(settings.getNewsSettings).not.toHaveBeenCalled();
+    });
   });
 
   it('survives a failing tick', async () => {

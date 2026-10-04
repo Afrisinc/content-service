@@ -77,6 +77,7 @@ const generationResult = {
     body: 'Once upon a time.',
     cliffhanger: 'To be continued.',
     summary: 'Amina finds the radio and hears her late father.',
+    story_so_far: 'Amina, a Kigali radio engineer, hears her late father on a dead frequency.',
     continuity_notes: ['Amina is a radio engineer in Kigali'],
     themes: ['mystery'],
     content_warnings: [],
@@ -125,6 +126,7 @@ describe('storyEpisodeService.generateNext', () => {
 
     expect(mocks.create.mock.calls[0][0].metadata).toEqual({
       summary: 'Amina finds the radio and hears her late father.',
+      storySoFar: 'Amina, a Kigali radio engineer, hears her late father on a dead frequency.',
       continuity: ['Amina is a radio engineer in Kigali'],
     });
   });
@@ -479,19 +481,29 @@ describe('storyEpisodeService.recordCompletedRead', () => {
 
 describe('readEpisodeMemory', () => {
   it('reads the summary and continuity notes the writer left', () => {
-    expect(readEpisodeMemory({ summary: ' It happened. ', continuity: ['a', 'b'] })).toEqual({
+    expect(
+      readEpisodeMemory({
+        summary: ' It happened. ',
+        storySoFar: ' So far. ',
+        continuity: ['a', 'b'],
+      })
+    ).toEqual({
       summary: 'It happened.',
+      storySoFar: 'So far.',
       continuity: ['a', 'b'],
     });
   });
 
   it.each([null, undefined, 'text', 4, [], {}])('is empty for %s', value => {
-    expect(readEpisodeMemory(value)).toEqual({ summary: null, continuity: [] });
+    expect(readEpisodeMemory(value)).toEqual({ summary: null, storySoFar: null, continuity: [] });
   });
 
   it('ignores notes that are not text or are blank', () => {
-    expect(readEpisodeMemory({ summary: '', continuity: ['keep', 4, '  ', null] })).toEqual({
+    expect(
+      readEpisodeMemory({ summary: '', storySoFar: 4, continuity: ['keep', 4, '  ', null] })
+    ).toEqual({
       summary: null,
+      storySoFar: null,
       continuity: ['keep'],
     });
   });
@@ -517,5 +529,63 @@ describe('endingOf', () => {
 
     expect(ending.length).toBeLessThanOrEqual(700);
     expect(ending.startsWith('word')).toBe(true);
+  });
+});
+
+describe('the context a long series sends', () => {
+  const earlierEpisodes = (count: number, synopsisAt: number[] = []) =>
+    Array.from({ length: count }, (_, index) => ({
+      episodeNumber: index + 1,
+      title: `Episode ${index + 1}`,
+      hook: `Hook ${index + 1}`,
+      cliffhanger: null,
+      metadata: {
+        summary: `Summary ${index + 1}`,
+        ...(synopsisAt.includes(index + 1) ? { storySoFar: `Synopsis to ${index + 1}` } : {}),
+      },
+    }));
+
+  const briefFor = async (earlier: ReturnType<typeof earlierEpisodes>) => {
+    mocks.require.mockResolvedValue({ ...story, status: 'ACTIVE' });
+    mocks.lastForStory.mockResolvedValue({
+      episodeNumber: earlier.length,
+      title: 'Last',
+      hook: 'h',
+      cliffhanger: 'c',
+      body: 'One.\n\nTwo.',
+    });
+    mocks.findEarlier.mockResolvedValue(earlier);
+    await storyEpisodeService.generateNext('story-1');
+    return mocks.generateEpisode.mock.calls[0][0];
+  };
+
+  it('sends the latest synopsis and only the last ten episodes', async () => {
+    const brief = await briefFor(earlierEpisodes(50, [49, 50]));
+
+    expect(brief.storySoFar).toBe('Synopsis to 50');
+    expect(
+      brief.priorEpisodes.map((episode: { episodeNumber: number }) => episode.episodeNumber)
+    ).toEqual([41, 42, 43, 44, 45, 46, 47, 48, 49, 50]);
+  });
+
+  it('also sends every episode written after the latest synopsis', async () => {
+    const brief = await briefFor(earlierEpisodes(30, [12]));
+
+    expect(brief.storySoFar).toBe('Synopsis to 12');
+    expect(brief.priorEpisodes[0].episodeNumber).toBe(13);
+    expect(brief.priorEpisodes).toHaveLength(18);
+  });
+
+  it('sends every summary for an older series with no synopsis yet', async () => {
+    const brief = await briefFor(earlierEpisodes(25));
+
+    expect(brief.storySoFar).toBeUndefined();
+    expect(brief.priorEpisodes).toHaveLength(25);
+  });
+
+  it('keeps a short series whole', async () => {
+    const brief = await briefFor(earlierEpisodes(4, [4]));
+
+    expect(brief.priorEpisodes).toHaveLength(4);
   });
 });

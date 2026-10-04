@@ -6,6 +6,8 @@ const envMock = vi.hoisted(() => ({
   NEWS_ENHANCE_BATCH_SIZE: 5,
   NEWS_MIN_SCORE: 0.6,
   NEWS_TEXT_MODEL: 'gpt-4o',
+  NEWS_TRIAGE_MODEL: '',
+  NEWS_TRIAGE_MARGIN: 0.1,
 }));
 
 const repository = vi.hoisted(() => ({
@@ -411,5 +413,105 @@ describe('NewsEnhancementService', () => {
     await expect(service.run()).rejects.toThrow(/OPENAI_API_KEY/);
     expect(repository.failOrphaned).not.toHaveBeenCalled();
     expect(repository.claimForEnhancement).not.toHaveBeenCalled();
+  });
+});
+
+describe('NewsEnhancementService first read', () => {
+  const deps = {
+    triageArticle: vi.fn(),
+    writeArticle: vi.fn(),
+    drawCover: vi.fn(),
+    storeCover: vi.fn(),
+    postToSocial: vi.fn(),
+  };
+  const service = new NewsEnhancementService(deps);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    envMock.NEWS_TRIAGE_MODEL = 'gpt-4o-mini';
+    envMock.NEWS_TRIAGE_MARGIN = 0.1;
+    deps.postToSocial.mockResolvedValue([]);
+    repository.isSlugTaken.mockResolvedValue(false);
+    repository.publishEnhanced.mockResolvedValue({ id: 'mp-1' });
+    deps.writeArticle.mockResolvedValue(goodReply);
+    deps.drawCover.mockResolvedValue(Buffer.from('png'));
+    deps.storeCover.mockResolvedValue('https://cdn.afrisinc.com/mpesa-open-api.png');
+  });
+
+  it('rejects a clear miss on the cheap read, without paying for the rewrite', async () => {
+    deps.triageArticle.mockResolvedValue({
+      score: 0.1,
+      should_publish: false,
+      reject_reason: 'A football transfer story',
+    });
+
+    const result = await service.enhanceArticle(article(7n));
+
+    expect(result).toMatchObject({
+      outcome: 'rejected',
+      score: 0.1,
+      reason: 'A football transfer story',
+    });
+    expect(deps.writeArticle).not.toHaveBeenCalled();
+    expect(deps.drawCover).not.toHaveBeenCalled();
+    expect(repository.update).toHaveBeenCalledWith(7n, {
+      status: 'skipped',
+      processing_error:
+        'Rejected by the AI editor (score 0.10, first read): A football transfer story',
+    });
+  });
+
+  it('sends the first reader only the headline, summary and source', async () => {
+    deps.triageArticle.mockResolvedValue({ score: 0.9, should_publish: true, reject_reason: null });
+
+    await service.enhanceArticle(article(7n));
+
+    const call = deps.triageArticle.mock.calls[0][0];
+    expect(call.articleId).toBe(7n);
+    expect(call.systemPrompt).toContain('Do not rewrite it.');
+    expect(call.systemPrompt).toContain('Score below 0.6');
+    expect(call.prompt).toContain('Headline: Kenya opens M-Pesa API');
+  });
+
+  it('leaves a borderline call to the full editor', async () => {
+    deps.triageArticle.mockResolvedValue({
+      score: 0.55,
+      should_publish: false,
+      reject_reason: 'thin',
+    });
+
+    expect((await service.enhanceArticle(article(7n))).outcome).toBe('published');
+    expect(deps.writeArticle).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets the full editor still reject what the first reader passed', async () => {
+    deps.triageArticle.mockResolvedValue({ score: 0.7, should_publish: true, reject_reason: null });
+    deps.writeArticle.mockResolvedValue({
+      score: 0.3,
+      should_publish: false,
+      reject_reason: 'PR fluff',
+    });
+
+    expect((await service.enhanceArticle(article(7n))).outcome).toBe('rejected');
+  });
+
+  it.each([
+    ['an error', () => deps.triageArticle.mockRejectedValue(new Error('rate limited'))],
+    ['an unreadable answer', () => deps.triageArticle.mockResolvedValue({ score: 'high' })],
+    ['no answer', () => deps.triageArticle.mockResolvedValue(null)],
+  ])('falls through to the full editor after %s from the first reader', async (_label, arrange) => {
+    arrange();
+
+    expect((await service.enhanceArticle(article(7n))).outcome).toBe('published');
+    expect(deps.writeArticle).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the first read entirely when it is switched off', async () => {
+    envMock.NEWS_TRIAGE_MODEL = '';
+
+    await service.enhanceArticle(article(7n));
+
+    expect(deps.triageArticle).not.toHaveBeenCalled();
+    expect(deps.writeArticle).toHaveBeenCalledTimes(1);
   });
 });

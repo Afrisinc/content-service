@@ -31,6 +31,9 @@ const FB_FIELDS_WITH_INSIGHTS =
   'insights.metric(post_impressions,post_impressions_unique,post_clicks,post_engaged_users)';
 const FB_FIELDS_PLAIN = 'likes.summary(true),comments.summary(true),shares';
 
+const IG_FIELDS_WITH_PROFILE_VISITS =
+  'like_count,comments_count,' +
+  'insights.metric(reach,saved,shares,views,total_interactions,profile_visits)';
 const IG_FIELDS_WITH_INSIGHTS =
   'like_count,comments_count,insights.metric(reach,saved,shares,views,total_interactions)';
 const IG_FIELDS_LEGACY_INSIGHTS =
@@ -490,7 +493,12 @@ export class MetaClient {
   ): Promise<MetaReadResult<MetaPostMetrics>> {
     const attempts =
       platform === MetaPlatform.INSTAGRAM
-        ? [IG_FIELDS_WITH_INSIGHTS, IG_FIELDS_LEGACY_INSIGHTS, IG_FIELDS_PLAIN]
+        ? [
+            IG_FIELDS_WITH_PROFILE_VISITS,
+            IG_FIELDS_WITH_INSIGHTS,
+            IG_FIELDS_LEGACY_INSIGHTS,
+            IG_FIELDS_PLAIN,
+          ]
         : [FB_FIELDS_WITH_INSIGHTS, FB_FIELDS_PLAIN];
 
     let requests = 0;
@@ -682,6 +690,7 @@ export class MetaClient {
       shares,
       saves: 0,
       views: insights.post_video_views ?? 0,
+      profileVisits: 0,
     };
   }
 
@@ -702,6 +711,7 @@ export class MetaClient {
       shares,
       saves: insights.saved ?? 0,
       views,
+      profileVisits: insights.profile_visits ?? 0,
     };
   }
 

@@ -1,6 +1,10 @@
 import { AutomationMode } from '@prisma/client';
 import { isAgentKey, type AgentDefinition, type AgentKey } from '@/config/agentRegistry';
-import type { NewsAgentSettings } from '@/types/newsDesk.types';
+import {
+  DEFAULT_NEWS_RUN_DAYS,
+  NEWS_RUN_DAYS,
+  type NewsAgentSettings,
+} from '@/types/newsDesk.types';
 
 export type AgentChoices = Partial<Record<AgentKey, boolean>>;
 
@@ -78,15 +82,36 @@ export function isWorkspaceAgentActive(
   return policies.some(policy => isAgentActiveForPolicy(agent, policy, now));
 }
 
+export function parseRunDays(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    return [...DEFAULT_NEWS_RUN_DAYS];
+  }
+  const days = [...new Set(value)]
+    .filter(
+      (day): day is number =>
+        Number.isInteger(day) && (NEWS_RUN_DAYS as readonly number[]).includes(day)
+    )
+    .sort((a, b) => a - b);
+  return days.length ? days : [...DEFAULT_NEWS_RUN_DAYS];
+}
+
+export function isRunDay(days: readonly number[], now: Date = new Date()): boolean {
+  return days.includes(now.getUTCDay());
+}
+
 /** The news agent's saved settings, with anything missing or unusable replaced by the fallback. */
 export function parseNewsSettings(value: unknown, fallbackBatchSize: number): NewsAgentSettings {
   const stored =
     value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>).batchSize
-      : undefined;
+      ? (value as Record<string, unknown>)
+      : {};
+  const batchSize = stored.batchSize;
 
   return {
     batchSize:
-      Number.isInteger(stored) && (stored as number) >= 1 ? (stored as number) : fallbackBatchSize,
+      Number.isInteger(batchSize) && (batchSize as number) >= 1
+        ? (batchSize as number)
+        : fallbackBatchSize,
+    days: parseRunDays(stored.days),
   };
 }

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { escapeControlCharsInStrings, parseLenientJson } from '@/helpers/jsonRepair.helper';
+import {
+  escapeControlCharsInStrings,
+  escapeStrayQuotes,
+  parseLenientJson,
+} from '@/helpers/jsonRepair.helper';
 
 describe('escapeControlCharsInStrings', () => {
   it('escapes raw line breaks and tabs inside a string', () => {
@@ -46,5 +50,42 @@ describe('parseLenientJson', () => {
   it('still throws on JSON that is broken in some other way', () => {
     expect(() => parseLenientJson('{"a": ')).toThrow();
     expect(() => parseLenientJson('not json')).toThrow();
+  });
+});
+
+describe('escapeStrayQuotes', () => {
+  it('escapes a quote inside dialogue that the model left bare', () => {
+    expect(escapeStrayQuotes('{"body":"She said "hello" and left."}')).toBe(
+      '{"body":"She said \\"hello\\" and left."}'
+    );
+  });
+
+  it('keeps the quotes that really open and close strings', () => {
+    const json = '{"a": "one", "b": ["two", "three"], "c": {"d": "four"}}';
+
+    expect(escapeStrayQuotes(json)).toBe(json);
+  });
+
+  it('leaves quotes that are already escaped alone', () => {
+    const json = '{"a":"say \\"hi\\" now"}';
+
+    expect(escapeStrayQuotes(json)).toBe(json);
+  });
+
+  it('treats a quote before whitespace and a closing brace as the end of the string', () => {
+    expect(escapeStrayQuotes('{"a":"done"\n}')).toBe('{"a":"done"\n}');
+  });
+});
+
+describe('parseLenientJson with stray quotes', () => {
+  it('reads an episode whose dialogue broke the JSON, with line breaks too', () => {
+    expect(parseLenientJson('{"body":"He whispered "run".\n\nShe ran.","n":1}')).toEqual({
+      body: 'He whispered "run".\n\nShe ran.',
+      n: 1,
+    });
+  });
+
+  it('still fails when a stray quote sits right before a comma, rather than guessing', () => {
+    expect(() => parseLenientJson('{"body":"He said "hi", then left."}')).toThrow();
   });
 });

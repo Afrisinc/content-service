@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "social_media_posts" ADD COLUMN     "clicks" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "profileVisits" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "saves" INTEGER NOT NULL DEFAULT 0;

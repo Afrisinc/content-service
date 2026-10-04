@@ -1,4 +1,8 @@
-import { NEWS_ARTICLE_STATUSES, NEWS_BATCH_SIZE_OPTIONS } from '@/types/newsDesk.types';
+import {
+  NEWS_ARTICLE_STATUSES,
+  NEWS_BATCH_SIZE_OPTIONS,
+  NEWS_RUN_DAYS,
+} from '@/types/newsDesk.types';
 
 const articleIdParams = {
   type: 'object',
@@ -37,7 +41,16 @@ export const UpdateNewsDeskSettingsSchema = {
     type: 'object',
     additionalProperties: false,
     required: ['batchSize'],
-    properties: { batchSize: { type: 'integer', enum: [...NEWS_BATCH_SIZE_OPTIONS] } },
+    properties: {
+      batchSize: { type: 'integer', enum: [...NEWS_BATCH_SIZE_OPTIONS] },
+      days: {
+        type: 'array',
+        minItems: 1,
+        maxItems: NEWS_RUN_DAYS.length,
+        uniqueItems: true,
+        items: { type: 'integer', enum: [...NEWS_RUN_DAYS] },
+      },
+    },
   },
 };
 

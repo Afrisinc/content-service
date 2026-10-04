@@ -65,6 +65,61 @@ const ALLOWED_TAGS = new Set([
   'br',
 ]);
 
+const SCORING_RULES = [
+  'Scoring (0 to 1): how relevant and valuable the story is to African founders,',
+  'operators and investors. Score below 0.6 and set should_publish=false for: stories',
+  'with no African business, technology, economic or policy angle; celebrity, sport or',
+  'crime items; press-release fluff; items too thin to write 500 words about honestly.',
+];
+
+function sourceLines(article: EnhancementSource): string {
+  return [
+    `Headline: ${article.source_headline ?? '(none)'}`,
+    `Summary: ${article.source_summary ?? '(none)'}`,
+    `Source: ${article.creator ?? 'unknown'}`,
+    `Feed category: ${article.category ?? 'general'}`,
+    `Published: ${article.pub_date ? article.pub_date.toISOString() : 'unknown'}`,
+    `Original URL: ${article.source_url}`,
+  ].join('\n');
+}
+
+export function buildTriagePrompt(article: EnhancementSource) {
+  const systemPrompt = [
+    'You are the first reader for Afrisinc Media, an African business and technology news',
+    'publication. Judge one raw RSS item. Do not rewrite it.',
+    '',
+    ...SCORING_RULES,
+    '',
+    'Respond with ONLY a JSON object:',
+    '{ "score": 0.0, "should_publish": true, "reject_reason": "why it fails, or null" }',
+  ].join('\n');
+
+  return { systemPrompt, prompt: sourceLines(article) };
+}
+
+export interface TriageVerdict {
+  score: number;
+  shouldPublish: boolean;
+  rejectReason: string | null;
+}
+
+export function parseTriage(raw: unknown): TriageVerdict {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('the first reader did not return a JSON object');
+  }
+  const reply = raw as Record<string, unknown>;
+  const score = typeof reply.score === 'number' ? reply.score : Number(reply.score);
+  if (!Number.isFinite(score) || score < 0 || score > 1) {
+    throw new Error('the first reader returned no valid relevance score');
+  }
+  const reason = str(reply.reject_reason, 500);
+  return {
+    score,
+    shouldPublish: reply.should_publish === true,
+    rejectReason: reason && reason.toLowerCase() !== 'null' ? reason : null,
+  };
+}
+
 export function buildEnhancementPrompt(article: EnhancementSource) {
   const systemPrompt = [
     'You are the senior editor of Afrisinc Media, an African business and technology',
@@ -73,10 +128,7 @@ export function buildEnhancementPrompt(article: EnhancementSource) {
     'You receive one raw news item from an RSS feed. First judge it, then, only if it is',
     'worth publishing, rewrite it as an original Afrisinc Media article.',
     '',
-    'Scoring (0 to 1): how relevant and valuable the story is to African founders,',
-    'operators and investors. Score below 0.6 and set should_publish=false for: stories',
-    'with no African business, technology, economic or policy angle; celebrity, sport or',
-    'crime items; press-release fluff; items too thin to write 500 words about honestly.',
+    ...SCORING_RULES,
     '',
     'Rules for the article:',
     '- Never invent facts, numbers, quotes or names that are not in the source. Where the',
@@ -118,16 +170,7 @@ export function buildEnhancementPrompt(article: EnhancementSource) {
     '}',
   ].join('\n');
 
-  const prompt = [
-    `Headline: ${article.source_headline ?? '(none)'}`,
-    `Summary: ${article.source_summary ?? '(none)'}`,
-    `Source: ${article.creator ?? 'unknown'}`,
-    `Feed category: ${article.category ?? 'general'}`,
-    `Published: ${article.pub_date ? article.pub_date.toISOString() : 'unknown'}`,
-    `Original URL: ${article.source_url}`,
-  ].join('\n');
-
-  return { systemPrompt, prompt };
+  return { systemPrompt, prompt: sourceLines(article) };
 }
 
 export function slugify(value: string, maxLength = 60): string {

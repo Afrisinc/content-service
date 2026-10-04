@@ -6,7 +6,9 @@ import {
   isPolicyLive,
   isWorkspaceAgentActive,
   parseAgentChoices,
+  isRunDay,
   parseNewsSettings,
+  parseRunDays,
   withAgentChoice,
   type PolicySnapshot,
 } from '@/helpers/agentSettings.helper';
@@ -129,7 +131,10 @@ describe('isWorkspaceAgentActive', () => {
 
 describe('parseNewsSettings', () => {
   it('reads a saved batch size', () => {
-    expect(parseNewsSettings({ batchSize: 2 }, 1)).toEqual({ batchSize: 2 });
+    expect(parseNewsSettings({ batchSize: 2 }, 1)).toEqual({
+      batchSize: 2,
+      days: [0, 1, 2, 3, 4, 5, 6],
+    });
   });
 
   it.each([
@@ -142,6 +147,50 @@ describe('parseNewsSettings', () => {
     ['zero', { batchSize: 0 }],
     ['a negative number', { batchSize: -3 }],
   ])('falls back to the server default for %s', (_label, value) => {
-    expect(parseNewsSettings(value, 1)).toEqual({ batchSize: 1 });
+    expect(parseNewsSettings(value, 1)).toEqual({ batchSize: 1, days: [0, 1, 2, 3, 4, 5, 6] });
+  });
+});
+
+describe('parseNewsSettings run days', () => {
+  it('reads the saved days', () => {
+    expect(parseNewsSettings({ batchSize: 1, days: [1, 4] }, 1).days).toEqual([1, 4]);
+  });
+});
+
+describe('parseRunDays', () => {
+  it('sorts the days and drops repeats', () => {
+    expect(parseRunDays([5, 1, 5, 3])).toEqual([1, 3, 5]);
+  });
+
+  it('ignores anything that is not a weekday number', () => {
+    expect(parseRunDays([1, 7, -1, 2.5, '3', null, 6])).toEqual([1, 6]);
+  });
+
+  it.each([undefined, null, 'mon', 3, {}, [], [9, 'x']])(
+    'runs every day when %j leaves no usable day',
+    value => {
+      expect(parseRunDays(value)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    }
+  );
+});
+
+describe('isRunDay', () => {
+  const MONDAY = new Date('2026-10-05T07:00:00.000Z');
+
+  it('is true on a chosen day', () => {
+    expect(isRunDay([1], MONDAY)).toBe(true);
+  });
+
+  it('is false on any other day', () => {
+    expect(isRunDay([0, 2, 3, 4, 5, 6], MONDAY)).toBe(false);
+  });
+
+  it('counts the day in UTC, so a late-evening UTC time is still that day', () => {
+    expect(isRunDay([1], new Date('2026-10-05T23:59:00.000Z'))).toBe(true);
+    expect(isRunDay([1], new Date('2026-10-06T00:00:00.000Z'))).toBe(false);
+  });
+
+  it('numbers Sunday as 0', () => {
+    expect(isRunDay([0], new Date('2026-10-04T12:00:00.000Z'))).toBe(true);
   });
 });

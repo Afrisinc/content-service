@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   SYSTEM_PROMPT,
   storyLlmService,
+  tidyCandidate,
   userPrompt,
   type EpisodeBrief,
 } from '@/services/storyLlm.service';
@@ -18,6 +19,7 @@ const envMock = vi.hoisted(() => ({
   STORY_LLM_MAX_TOKENS: 4096,
   STORY_LLM_TEMPERATURE: 0.85,
   STORY_LLM_MAX_ATTEMPTS: 2,
+  STORY_LLM_MAX_PAID_ATTEMPTS: 3,
 }));
 
 vi.mock('@/config/env', () => ({ env: envMock }));
@@ -56,6 +58,9 @@ function validEpisodeJson(overrides: Record<string, unknown> = {}): string {
     summary:
       'Amina, the night operator at a dark station, hears a voice reading numbers and realises ' +
       'it knows her name.',
+    story_so_far:
+      'Amina works the night shift at Radio Kigali. A voice on a dead frequency reads ' +
+      'numbers and, at the end of the first night, says her name.',
     continuity_notes: ['Amina works nights at Radio Kigali', 'The voice reads numbers'],
     themes: ['mystery'],
     content_warnings: [],
@@ -126,12 +131,67 @@ describe('what an episode must be to be accepted', () => {
 
   it.each([
     ['an episode label', `Episode 4\n\n${validBody()}`],
-    ['a chapter label', `Chapter 2\n\n${validBody()}`],
+    ['a chapter label and title', `Chapter 2: The Signal\n\n${validBody()}`],
     ['a markdown heading', `# The Signal\n\n${validBody()}`],
-  ])('sends back an episode that begins with %s', async (_label, body) => {
-    const prompt = await rejectedFor({ body });
+  ])('removes %s in code instead of paying for another attempt', async (_label, body) => {
+    mocks.runClaude.mockResolvedValue([{ json: { content: validEpisodeJson({ body }) } }]);
 
-    expect(prompt).toContain('write prose only');
+    const result = await storyLlmService.generateEpisode(brief, 'req-label', 'user-1');
+
+    expect(result.attempts).toBe(1);
+    expect(mocks.runClaude).toHaveBeenCalledTimes(1);
+    expect(result.content.body).toBe(validBody());
+  });
+
+  it('keeps a prose line that merely starts with the word chapter', async () => {
+    const body = `Chapter 3 of her life began that night, she thought.\n\n${validBody()}`;
+    mocks.runClaude.mockResolvedValue([{ json: { content: validEpisodeJson({ body }) } }]);
+
+    const result = await storyLlmService.generateEpisode(brief, 'req-prose', 'user-1');
+
+    expect(result.content.body).toBe(body);
+  });
+
+  it('tidies hashtags in code rather than sending them back', async () => {
+    mocks.runClaude.mockResolvedValue([
+      {
+        json: {
+          content: validEpisodeJson({
+            promotion_hashtags: ['fiction', '#Kigali Nights', '#fiction', '##Static!', '', 4],
+          }),
+        },
+      },
+    ]);
+
+    const result = await storyLlmService.generateEpisode(brief, 'req-tags', 'user-1');
+
+    expect(result.attempts).toBe(1);
+    expect(result.content.promotion_hashtags).toEqual(['#fiction', '#KigaliNights', '#Static']);
+  });
+
+  it('trims over-long lists instead of rejecting the episode', async () => {
+    mocks.runClaude.mockResolvedValue([
+      {
+        json: {
+          content: validEpisodeJson({
+            continuity_notes: Array.from({ length: 12 }, (_, i) => `Fact number ${i}`),
+            themes: Array.from({ length: 9 }, (_, i) => `theme ${i}`),
+          }),
+        },
+      },
+    ]);
+
+    const result = await storyLlmService.generateEpisode(brief, 'req-lists', 'user-1');
+
+    expect(result.attempts).toBe(1);
+    expect(result.content.continuity_notes).toHaveLength(8);
+    expect(result.content.themes).toHaveLength(6);
+  });
+
+  it('sends back an episode with no running synopsis', async () => {
+    const prompt = await rejectedFor({ story_so_far: undefined });
+
+    expect(prompt).toContain('story_so_far: Required');
   });
 
   it('sends back an episode with no cliffhanger', async () => {
@@ -352,5 +412,137 @@ describe('storyLlmService.generateEpisode', () => {
     await expect(storyLlmService.generateEpisode(brief, 'req-6', 'user-1')).rejects.toThrow(
       /claude.*chatgpt.*ollama/s
     );
+  });
+});
+
+describe('the paid attempt budget', () => {
+  it('stops paying after three attempts and falls back to the free local model', async () => {
+    mocks.runClaude.mockResolvedValue([{ json: { content: '{"nonsense": true}' } }]);
+    mocks.runChatGpt.mockResolvedValue([{ json: { content: '{"nonsense": true}' } }]);
+    mocks.ollamaComplete.mockResolvedValue({ text: validEpisodeJson() });
+
+    const result = await storyLlmService.generateEpisode(brief, 'req-budget', 'user-1');
+
+    expect(mocks.runClaude).toHaveBeenCalledTimes(2);
+    expect(mocks.runChatGpt).toHaveBeenCalledTimes(1);
+    expect(result.provider).toBe('ollama');
+  });
+
+  it('skips a paid provider entirely once the budget is spent', async () => {
+    envMock.STORY_LLM_MAX_PAID_ATTEMPTS = 2;
+    mocks.runClaude.mockResolvedValue([{ json: { content: '{"nonsense": true}' } }]);
+    mocks.ollamaComplete.mockResolvedValue({ text: validEpisodeJson() });
+
+    const result = await storyLlmService.generateEpisode(brief, 'req-budget-2', 'user-1');
+
+    expect(mocks.runChatGpt).not.toHaveBeenCalled();
+    expect(result.provider).toBe('ollama');
+    envMock.STORY_LLM_MAX_PAID_ATTEMPTS = 3;
+  });
+
+  it('names the skipped provider when nothing works', async () => {
+    envMock.STORY_LLM_MAX_PAID_ATTEMPTS = 2;
+    mocks.runClaude.mockResolvedValue([{ json: { content: '{"nonsense": true}' } }]);
+    mocks.ollamaComplete.mockRejectedValue(new Error('ollama is not running'));
+
+    await expect(storyLlmService.generateEpisode(brief, 'req-budget-3', 'user-1')).rejects.toThrow(
+      /chatgpt: skipped, the paid attempt budget is spent/
+    );
+    envMock.STORY_LLM_MAX_PAID_ATTEMPTS = 3;
+  });
+});
+
+describe('the prompt for a long-running series', () => {
+  it('leads with the running synopsis and lists only the recent episodes', () => {
+    const prompt = userPrompt({
+      ...brief,
+      episodeNumber: 40,
+      storySoFar: 'Amina has traced the voice to the old Kibungo relay.',
+      priorEpisodes: [{ episodeNumber: 39, title: 'The Relay', summary: 'She climbs the mast.' }],
+    });
+
+    expect(prompt).toContain(
+      'The story until now: Amina has traced the voice to the old Kibungo relay.'
+    );
+    expect(prompt).toContain('Most recent episodes:\nEpisode 39 — The Relay: She climbs the mast.');
+    expect(prompt).not.toContain('Story so far:');
+  });
+
+  it('gives the synopsis alone when no episode falls after it', () => {
+    const prompt = userPrompt({ ...brief, episodeNumber: 2, storySoFar: 'It began.' });
+
+    expect(prompt).toContain('The story until now: It began.');
+    expect(prompt).not.toContain('Most recent episodes:');
+  });
+
+  it('asks the writer to update the running synopsis', () => {
+    expect(userPrompt(brief)).toContain('"story_so_far": "the whole story from episode one');
+  });
+});
+
+describe('tidyCandidate', () => {
+  it('leaves anything that is not an object alone', () => {
+    expect(tidyCandidate(null)).toBeNull();
+    expect(tidyCandidate('text')).toBe('text');
+    expect(tidyCandidate([1])).toEqual([1]);
+  });
+
+  it('trims the text fields and collapses gaps left by removed headings', () => {
+    expect(tidyCandidate({ title: '  Static  ', body: 'One.\n\n## Part\n\n\nTwo.' })).toEqual({
+      title: 'Static',
+      body: 'One.\n\nTwo.',
+    });
+  });
+});
+
+describe('limits that should not cost a retry', () => {
+  it('accepts a content warning that needs a full sentence', async () => {
+    mocks.runClaude.mockResolvedValue([
+      {
+        json: {
+          content: validEpisodeJson({
+            content_warnings: ['References to the 1994 genocide against the Tutsi and to grief'],
+          }),
+        },
+      },
+    ]);
+
+    const result = await storyLlmService.generateEpisode(brief, 'req-warning', 'user-1');
+
+    expect(result.attempts).toBe(1);
+  });
+
+  it('accepts an episode whose dialogue quotes broke the JSON', async () => {
+    const raw = validEpisodeJson().replace(
+      'The voice says her name.',
+      'The voice says "Amina" twice.'
+    );
+    const broken = raw.replace('\\"Amina\\"', '"Amina"');
+    expect(() => JSON.parse(broken)).toThrow();
+    mocks.runClaude.mockResolvedValue([{ json: { content: broken } }]);
+
+    const result = await storyLlmService.generateEpisode(brief, 'req-quotes', 'user-1');
+
+    expect(result.attempts).toBe(1);
+    expect(result.content.cliffhanger).toBe('The voice says "Amina" twice.');
+  });
+});
+
+describe('what the writer is asked to spend', () => {
+  it('turns Claude thinking off, since the checks are done in code', async () => {
+    mocks.runClaude.mockResolvedValue([{ json: { content: validEpisodeJson() } }]);
+
+    await storyLlmService.generateEpisode(brief, 'req-thinking', 'user-1');
+
+    expect(mocks.runClaude.mock.calls[0][0].parameters.options).toEqual({ thinking: 'disabled' });
+  });
+
+  it('asks ChatGPT for JSON mode', async () => {
+    mocks.runClaude.mockRejectedValue(new Error('down'));
+    mocks.runChatGpt.mockResolvedValue([{ json: { content: validEpisodeJson() } }]);
+
+    await storyLlmService.generateEpisode(brief, 'req-json-mode', 'user-1');
+
+    expect(mocks.runChatGpt.mock.calls[0][0].parameters.jsonOutput).toBe(true);
   });
 });

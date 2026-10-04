@@ -42,8 +42,8 @@ export async function runNewsAgentStage(request: FastifyRequest, reply: FastifyR
 }
 
 export async function updateNewsDeskSettings(request: FastifyRequest, reply: FastifyReply) {
-  const { batchSize } = request.body as { batchSize: number };
-  const settings = await newsDeskService.updateSettings(batchSize, request.user!.userId);
+  const { batchSize, days } = request.body as { batchSize: number; days?: number[] };
+  const settings = await newsDeskService.updateSettings(batchSize, request.user!.userId, days);
   return success(reply, 200, 'News agent settings saved', 1205, settings);
 }
 

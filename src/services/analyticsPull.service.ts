@@ -265,6 +265,9 @@ export class AnalyticsPullService {
         views: metrics.views,
         reach: metrics.reach,
         impressions: metrics.impressions,
+        saves: metrics.saves,
+        clicks: metrics.clicks,
+        profileVisits: metrics.profileVisits,
       });
 
       await socialMediaPostRepository.upsertAnalytics(post.id, {

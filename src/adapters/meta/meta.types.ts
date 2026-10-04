@@ -233,6 +233,7 @@ export interface MetaPostMetrics {
   shares: number;
   saves: number;
   views: number;
+  profileVisits: number;
 }
 
 export interface MetaAccountMetrics {

@@ -41,10 +41,64 @@ export function escapeControlCharsInStrings(json: string): string {
   return out;
 }
 
+const CLOSES_STRING = new Set([',', '}', ']', ':']);
+
+function nextVisible(json: string, from: number): string | undefined {
+  for (let index = from; index < json.length; index += 1) {
+    if (!/\s/.test(json[index])) {
+      return json[index];
+    }
+  }
+  return undefined;
+}
+
+export function escapeStrayQuotes(json: string): string {
+  let out = '';
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < json.length; index += 1) {
+    const char = json[index];
+    if (!inString) {
+      inString = char === '"';
+      out += char;
+      continue;
+    }
+    if (escaped) {
+      escaped = false;
+      out += char;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      out += char;
+      continue;
+    }
+    if (char === '"') {
+      const next = nextVisible(json, index + 1);
+      if (next === undefined || CLOSES_STRING.has(next)) {
+        inString = false;
+        out += char;
+      } else {
+        out += '\\"';
+      }
+      continue;
+    }
+    out += char;
+  }
+
+  return out;
+}
+
 export function parseLenientJson(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
-    return JSON.parse(escapeControlCharsInStrings(text));
+    const controlled = escapeControlCharsInStrings(text);
+    try {
+      return JSON.parse(controlled);
+    } catch {
+      return JSON.parse(escapeStrayQuotes(controlled));
+    }
   }
 }

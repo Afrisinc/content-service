@@ -21,8 +21,13 @@ export type NewsBatchSize = (typeof NEWS_BATCH_SIZE_OPTIONS)[number];
 
 export const DEFAULT_NEWS_BATCH_SIZE: NewsBatchSize = 1;
 
+export const NEWS_RUN_DAYS = [0, 1, 2, 3, 4, 5, 6] as const;
+
+export const DEFAULT_NEWS_RUN_DAYS: readonly number[] = NEWS_RUN_DAYS;
+
 export interface NewsAgentSettings {
   batchSize: number;
+  days: number[];
 }
 
 export interface NewsPostSource {

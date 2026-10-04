@@ -1,5 +1,5 @@
 import { env } from '@/config/env';
-import { parseNewsSettings } from '@/helpers/agentSettings.helper';
+import { parseNewsSettings, parseRunDays } from '@/helpers/agentSettings.helper';
 import { BadRequestError } from '@/utils/http-error';
 import {
   agentSettingRepository,
@@ -21,21 +21,32 @@ export class AgentSettingsService {
         { error: error instanceof Error ? error.message : 'Unknown error' },
         'News agent settings unavailable, using the server default'
       );
-      return { batchSize: env.NEWS_ENHANCE_BATCH_SIZE };
+      return parseNewsSettings(undefined, env.NEWS_ENHANCE_BATCH_SIZE);
     }
   }
 
-  async saveNewsSettings(batchSize: number, updatedBy: string): Promise<NewsAgentSettings> {
+  async saveNewsSettings(
+    batchSize: number,
+    updatedBy: string,
+    days?: number[]
+  ): Promise<NewsAgentSettings> {
     if (!(NEWS_BATCH_SIZE_OPTIONS as readonly number[]).includes(batchSize)) {
       throw new BadRequestError(`batchSize must be one of ${NEWS_BATCH_SIZE_OPTIONS.join(', ')}`);
+    }
+    if (days && !days.length) {
+      throw new BadRequestError('pick at least one day for the news agent to run');
     }
 
     const existing = await this.repository.findByKey('news');
     const current = existing?.settings;
     const kept = current && typeof current === 'object' && !Array.isArray(current) ? current : {};
-    const row = await this.repository.save('news', { ...kept, batchSize }, updatedBy);
+    const row = await this.repository.save(
+      'news',
+      { ...kept, batchSize, ...(days ? { days: parseRunDays(days) } : {}) },
+      updatedBy
+    );
 
-    logger.info({ updatedBy, batchSize }, 'News agent settings saved');
+    logger.info({ updatedBy, batchSize, days }, 'News agent settings saved');
     return parseNewsSettings(row.settings, env.NEWS_ENHANCE_BATCH_SIZE);
   }
 }

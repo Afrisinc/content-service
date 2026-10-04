@@ -4,8 +4,9 @@ import {
   getAnalyticsPlan,
   getAnalyticsOverview,
   getAnalyticsSummary,
+  suggestPostIdeas,
 } from '@/controllers/analytics.controller';
-import { UnauthorizedError, BadRequestError } from '@/utils/http-error';
+import { BadRequestError, NotFoundError, UnauthorizedError } from '@/utils/http-error';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 const repository = vi.hoisted(() => ({
@@ -27,9 +28,19 @@ const repository = vi.hoisted(() => ({
   planningBrand: vi.fn(async () => null),
 }));
 
+const groups = vi.hoisted(() => ({
+  findActiveTargets: vi.fn(async () => [] as { platform: string; pageId: string }[]),
+}));
+
 vi.mock('@/repositories/analytics.repository', () => ({
   analyticsRepository: repository,
 }));
+vi.mock('@/repositories/accountGroup.repository', () => ({
+  accountGroupRepository: groups,
+}));
+
+const ideas = vi.hoisted(() => ({ suggest: vi.fn() }));
+vi.mock('@/services/postIdeas.service', () => ({ postIdeasService: ideas }));
 
 // The cache must never change an answer, only how fast it arrives, so these
 // tests run against the real load path.
@@ -359,7 +370,7 @@ describe('getAnalyticsPlan', () => {
 
   it('lays the plan on the brand cadence and timezone', async () => {
     repository.planningBrand.mockResolvedValueOnce(brand as never);
-    repository.connectedPlatforms.mockResolvedValueOnce(['instagram'] as never);
+    groups.findActiveTargets.mockResolvedValueOnce([{ platform: 'instagram', pageId: 'ig-1' }]);
     const reply = fakeReply();
 
     await getAnalyticsPlan(authed({ from: '2026-08-01', to: '2026-08-21' }), reply);
@@ -374,7 +385,7 @@ describe('getAnalyticsPlan', () => {
 
   it('falls back to the brand topics when nothing has performed', async () => {
     repository.planningBrand.mockResolvedValueOnce(brand as never);
-    repository.connectedPlatforms.mockResolvedValueOnce(['instagram'] as never);
+    groups.findActiveTargets.mockResolvedValueOnce([{ platform: 'instagram', pageId: 'ig-1' }]);
     const reply = fakeReply();
 
     await getAnalyticsPlan(authed({ from: '2026-08-01', to: '2026-08-21' }), reply);
@@ -384,9 +395,125 @@ describe('getAnalyticsPlan', () => {
     expect(slots[0].format).toBe('story');
   });
 
+  it('learns only from settled posts and says how many were left out', async () => {
+    const settled = {
+      id: 'old',
+      platform: 'instagram',
+      postFormat: 'feed',
+      mediaType: 'image',
+      publishedAt: new Date('2026-08-02T09:00:00Z'),
+      lastMetricsUpdate: new Date('2026-08-04T09:00:00Z'),
+      likes: 5,
+      comments: 0,
+      shares: 0,
+      tags: [],
+    };
+    const unread = { ...settled, id: 'unread', lastMetricsUpdate: null };
+    const story = { ...settled, id: 'story', postFormat: 'story' };
+    repository.publishedPosts.mockResolvedValueOnce([settled, unread, story] as never);
+    const reply = fakeReply();
+
+    await getAnalyticsPlan(authed({ from: '2026-08-01', to: '2026-08-21' }), reply);
+
+    expect(sent(reply)).toMatchObject({ postsAnalysed: 1, postsPublished: 3 });
+  });
+
+  it("learns only from the chosen brand's accounts and plans on its platforms", async () => {
+    repository.planningBrand.mockResolvedValueOnce(brand as never);
+    groups.findActiveTargets.mockResolvedValueOnce([
+      { platform: 'instagram', pageId: 'ig-1' },
+      { platform: 'facebook', pageId: 'fb-1' },
+      { platform: 'instagram', pageId: 'ig-2' },
+    ]);
+    const reply = fakeReply();
+
+    await getAnalyticsPlan(
+      authed({ from: '2026-08-01', to: '2026-08-21', groupId: 'brand-1' }),
+      reply
+    );
+
+    expect(repository.planningBrand).toHaveBeenCalledWith('user-1', 'brand-1');
+    expect(groups.findActiveTargets).toHaveBeenCalledWith('brand-1');
+    expect(repository.publishedPosts).toHaveBeenCalledWith(
+      'user-1',
+      expect.any(Date),
+      expect.any(Date),
+      [
+        { platform: 'instagram', pageId: 'ig-1' },
+        { platform: 'facebook', pageId: 'fb-1' },
+        { platform: 'instagram', pageId: 'ig-2' },
+      ]
+    );
+    expect(repository.connectedPlatforms).not.toHaveBeenCalled();
+    const platforms = (sent(reply).slots as Array<{ platform: string }>).map(slot => slot.platform);
+    expect(new Set(platforms)).toEqual(new Set(['instagram', 'facebook']));
+  });
+
+  it('answers not found for a brand the user does not own', async () => {
+    await expect(
+      getAnalyticsPlan(
+        authed({ from: '2026-08-01', to: '2026-08-21', groupId: 'other' }),
+        fakeReply()
+      )
+    ).rejects.toThrow(NotFoundError);
+    expect(repository.publishedPosts).not.toHaveBeenCalled();
+  });
+
+  it('reads every account the user has when there is no brand yet', async () => {
+    await getAnalyticsPlan(authed({ from: '2026-08-01', to: '2026-08-21' }), fakeReply());
+
+    expect(repository.publishedPosts).toHaveBeenCalledWith(
+      'user-1',
+      expect.any(Date),
+      expect.any(Date),
+      undefined
+    );
+    expect(repository.connectedPlatforms).toHaveBeenCalledWith('user-1');
+  });
+
   it('rejects a window that runs backwards', async () => {
     await expect(
       getAnalyticsPlan(authed({ from: '2026-08-20', to: '2026-08-01' }), fakeReply())
     ).rejects.toThrow(BadRequestError);
+  });
+});
+
+describe('suggestPostIdeas', () => {
+  it('refuses an unauthenticated caller', async () => {
+    await expect(suggestPostIdeas(request({ body: {} }), fakeReply())).rejects.toThrow(
+      UnauthorizedError
+    );
+    expect(ideas.suggest).not.toHaveBeenCalled();
+  });
+
+  it('asks for ideas on the chosen brand and window and returns them', async () => {
+    ideas.suggest.mockResolvedValueOnce({ generatedAt: 'now', provider: 'claude', ideas: [] });
+    const reply = fakeReply();
+
+    await suggestPostIdeas(
+      request({
+        user: { userId: 'user-1' },
+        body: { from: '2026-09-01', to: '2026-10-01', groupId: 'brand-1', refresh: true },
+      } as Partial<FastifyRequest>),
+      reply
+    );
+
+    expect(ideas.suggest).toHaveBeenCalledWith(
+      'user-1',
+      { from: new Date('2026-09-01T00:00:00.000Z'), to: new Date('2026-10-01T00:00:00.000Z') },
+      { groupId: 'brand-1', refresh: true }
+    );
+    expect(sent(reply)).toEqual({ generatedAt: 'now', provider: 'claude', ideas: [] });
+  });
+
+  it('works with no body at all', async () => {
+    ideas.suggest.mockResolvedValueOnce({ generatedAt: 'now', provider: 'claude', ideas: [] });
+
+    await suggestPostIdeas(
+      request({ user: { userId: 'user-1' } } as Partial<FastifyRequest>),
+      fakeReply()
+    );
+
+    expect(ideas.suggest.mock.calls[0][2]).toEqual({ groupId: undefined, refresh: undefined });
   });
 });
