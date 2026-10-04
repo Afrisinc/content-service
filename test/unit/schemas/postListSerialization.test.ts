@@ -64,4 +64,18 @@ describe('post list response serialization', () => {
     expect(parsed.data.posts[0].mediaType).toBe('video');
     expect(parsed.data.posts[0].mediaUrls).toEqual(['https://cdn.example.com/clip.mp4']);
   });
+
+  it('keeps saves, clicks and profile visits on the wire for the post cards', () => {
+    const parsed = JSON.parse(
+      serialize(response({ likes: 9, saves: 7, clicks: 13, profileVisits: 11, reach: 300 }))
+    );
+
+    expect(parsed.data.posts[0]).toMatchObject({
+      likes: 9,
+      saves: 7,
+      clicks: 13,
+      profileVisits: 11,
+      reach: 300,
+    });
+  });
 });
