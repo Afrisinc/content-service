@@ -1,5 +1,6 @@
 import {
   featureNewsDeskArticle,
+  generateNewsDeskSocial,
   runNewsAgentStage,
   getNewsDeskArticle,
   getNewsDeskSummary,
@@ -13,6 +14,7 @@ import { authGuard } from '@/middlewares/authGuard';
 import { rateLimitGuard } from '@/middlewares/rateLimitGuard';
 import {
   FeatureNewsDeskArticleSchema,
+  GenerateNewsDeskSocialSchema,
   GetNewsDeskArticleSchema,
   ListNewsDeskArticlesSchema,
   NewsDeskArticleActionSchema,
@@ -22,6 +24,12 @@ import {
 import { FastifyInstance } from 'fastify';
 
 const TAGS = ['news-desk'];
+
+const SOCIAL_RATE_LIMIT = {
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 20,
+  keyPrefix: 'news-desk:social',
+};
 
 /** An enhance run spends OpenAI money on every article it picks up. */
 const MANUAL_RUN_RATE_LIMIT = {
@@ -84,5 +92,14 @@ export async function newsDeskRoutes(app: FastifyInstance) {
     '/news-desk/articles/:id/feature',
     { schema: { ...FeatureNewsDeskArticleSchema, tags: TAGS }, onRequest: [authGuard] },
     asyncWrapper(featureNewsDeskArticle)
+  );
+
+  app.post(
+    '/news-desk/articles/:id/social',
+    {
+      schema: { ...GenerateNewsDeskSocialSchema, tags: TAGS },
+      onRequest: [authGuard, rateLimitGuard(SOCIAL_RATE_LIMIT)],
+    },
+    asyncWrapper(generateNewsDeskSocial)
   );
 }

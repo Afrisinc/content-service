@@ -27,6 +27,7 @@ import {
 } from '@/repositories/socialMediaAccount.repository';
 import { buildPostSlug, buildPostSpecFromCopy, buildFullCaption } from '@/helpers/postSpec.helper';
 import { buildEditorialCopy, buildEditorialSpec } from '@/helpers/editorialPost.helper';
+import { newsTemplateCandidates, templateProbe } from '@/helpers/newsTemplate.helper';
 import {
   CANCELLED_POST_STATUS,
   nextFreeSlot,
@@ -42,6 +43,7 @@ import { ArtDirectionService, artDirectionService } from '@/services/artDirectio
 import { PostCopyService, postCopyService } from '@/services/postCopy.service';
 import {
   EditorialBrief,
+  NewsTemplateName,
   PostBriefPayload,
   PostCopy,
   PostFormatName,
@@ -153,7 +155,7 @@ export class PostAgentService {
 
     const slug = buildPostSlug(brief.topic);
     const spec = brief.editorial
-      ? this.editorialSpec(slug, brief.editorial, copy, photosByIndex[0])
+      ? await this.editorialSpec(slug, brief.editorial, copy, photosByIndex[0], format)
       : buildPostSpecFromCopy(slug, copy, photosByIndex, format);
 
     const draft = await this.resumeDraft(runId, spec, copy);
@@ -196,16 +198,41 @@ export class PostAgentService {
     );
   }
 
-  private editorialSpec(
+  private async editorialSpec(
     slug: string,
     editorial: EditorialBrief,
     copy: PostCopy,
-    photo: string | undefined
+    photo: string | undefined,
+    format: PostFormatName
   ) {
     if (!photo) {
       throw new BadRequestError('a news or story post needs its cover as the photograph');
     }
-    return buildEditorialSpec(slug, editorial, copy, photo);
+    const template =
+      editorial.layout === 'news'
+        ? await this.newsTemplateFor(slug, editorial, copy, format)
+        : undefined;
+    return buildEditorialSpec(slug, editorial, copy, photo, template, format);
+  }
+
+  private async newsTemplateFor(
+    slug: string,
+    editorial: EditorialBrief,
+    copy: PostCopy,
+    format: PostFormatName
+  ): Promise<NewsTemplateName | undefined> {
+    const [slide] = copy.slides;
+    const candidates = newsTemplateCandidates(editorial.category, slug);
+    const fit = await this.render.fitHeadlines(
+      candidates.map(template =>
+        templateProbe(template, slide.headline, slide.subs?.[0] ?? editorial.standfirst)
+      ),
+      format
+    );
+    const index = fit ? fit.slides.findIndex(entry => entry.fits) : 0;
+    const chosen = candidates[index];
+    logger.info({ slug, category: editorial.category, template: chosen }, 'News template chosen');
+    return chosen;
   }
 
   /**

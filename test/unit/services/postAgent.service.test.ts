@@ -103,6 +103,12 @@ function build(overrides: Record<string, unknown> = {}) {
     fetchSlide: vi.fn(async (_slug: string, file: string) => Buffer.from(`png:${file}`)),
     slideUrl: vi.fn((slug: string, file: string) => `https://render/${slug}/${file}`),
     healthy: vi.fn(async () => true),
+    fitHeadlines: vi.fn(async (slides: { template?: string }[]) => ({
+      measure: 0,
+      min_headline_size: 0,
+      fits: true,
+      slides: slides.map((_, index) => ({ index, headline_size: 60, fits: true, lines: [] })),
+    })),
     wrapHeadline: vi.fn(async () => ({
       lines: ['Kenya opens M-Pesa API', 'to regional banks'],
       size: 69,
@@ -264,6 +270,7 @@ describe('createFromBrief', () => {
           'Read the full story: https://afrisinc.com/media/articles/mpesa-open-api',
         ].join('\n\n'),
         hashtags: ['#AfricaBusiness', '#Fintech'],
+        category: 'fintech',
       },
     };
 
@@ -312,6 +319,92 @@ describe('createFromBrief', () => {
         }),
       ]);
       expect(spec.slides[0]).not.toHaveProperty('cta');
+    });
+
+    it('picks a template from the category pool without calling the copy agent', async () => {
+      const { service, render, copyService } = buildNews();
+
+      await service.createFromBrief(NEWS_BRIEF);
+
+      const probes = render.fitHeadlines.mock.calls[0][0] as { template: string; layout: string }[];
+      expect(probes.map(probe => probe.template).sort()).toEqual([
+        'news.broadsheet',
+        'news.frame',
+        'news.split',
+      ]);
+      expect(probes.every(probe => probe.layout === 'news')).toBe(true);
+      expect(render.render.mock.calls[0][0].slides[0].template).toBe(probes[0].template);
+      expect(copyService.generate).not.toHaveBeenCalled();
+    });
+
+    it('moves on to the next template when the first does not fit', async () => {
+      const { service, render } = buildNews();
+      render.fitHeadlines.mockImplementationOnce(async slides => ({
+        measure: 0,
+        min_headline_size: 0,
+        fits: false,
+        slides: slides.map((_, index) => ({
+          index,
+          headline_size: 60,
+          fits: index === 1,
+          lines: [],
+        })),
+      }));
+
+      await service.createFromBrief(NEWS_BRIEF);
+
+      const probes = render.fitHeadlines.mock.calls[0][0] as { template: string }[];
+      expect(render.render.mock.calls[0][0].slides[0].template).toBe(probes[1].template);
+    });
+
+    it('keeps the original news frame when nothing fits', async () => {
+      const { service, render } = buildNews();
+      render.fitHeadlines.mockImplementationOnce(async slides => ({
+        measure: 0,
+        min_headline_size: 0,
+        fits: false,
+        slides: slides.map((_, index) => ({
+          index,
+          headline_size: 60,
+          fits: false,
+          lines: [],
+        })),
+      }));
+
+      await service.createFromBrief(NEWS_BRIEF);
+
+      expect(render.render.mock.calls[0][0].slides[0]).not.toHaveProperty('template');
+    });
+
+    it('takes the first template when the fit check is unavailable', async () => {
+      const { service, render } = buildNews();
+      render.fitHeadlines.mockResolvedValueOnce(null as never);
+
+      await service.createFromBrief(NEWS_BRIEF);
+
+      const probes = render.fitHeadlines.mock.calls[0][0] as { template: string }[];
+      expect(render.render.mock.calls[0][0].slides[0].template).toBe(probes[0].template);
+    });
+
+    it('renders and fits a news story at the story size', async () => {
+      const { service, render } = buildNews();
+
+      await service.createFromBrief({ ...NEWS_BRIEF, format: 'story' as const });
+
+      expect(render.fitHeadlines.mock.calls[0][1]).toBe('story');
+      expect(render.render.mock.calls[0][0].format).toBe('story');
+    });
+
+    it('leaves a story frame without a template', async () => {
+      const { service, render } = buildNews();
+
+      await service.createFromBrief({
+        ...NEWS_BRIEF,
+        editorial: { ...NEWS_BRIEF.editorial, layout: 'story' as const },
+      });
+
+      expect(render.fitHeadlines).not.toHaveBeenCalled();
+      expect(render.render.mock.calls[0][0].slides[0]).not.toHaveProperty('template');
     });
 
     it('saves a news caption with no brand footer and no AI provider', async () => {

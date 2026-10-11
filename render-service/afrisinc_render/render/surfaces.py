@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageChops, ImageEnhance, ImageFilter
+from PIL import Image, ImageChops, ImageEnhance, ImageFilter, ImageOps
 
 from ..brand import rules as R
 from ..brand import tokens as T
@@ -64,8 +64,10 @@ def _scrim_mask(
     return column.resize(size)
 
 
-def scrim(image: Image.Image, *, dense: bool = False) -> Image.Image:
+def scrim(image: Image.Image, *, dense: bool = False, top_only: bool = False) -> Image.Image:
     bottom = T.SCRIM_BOTTOM_ALPHA_DENSE if dense else T.SCRIM_BOTTOM_ALPHA
+    if top_only:
+        bottom = 0.0
     start = T.SCRIM_START_DENSE if dense else T.SCRIM_START
     mask = _scrim_mask(image.size, T.SCRIM_TOP_ALPHA, bottom, start)
     return Image.composite(Image.new("RGB", image.size, T.INK), image, mask)
@@ -101,6 +103,14 @@ def cover_crop(image: Image.Image, target: tuple[int, int], focus: float = 0.5) 
     return image.crop(box)
 
 
+def _bundled_photo(reference: str) -> Path:
+    bundled_root = settings.bundled_photo_dir.resolve()
+    bundled = (bundled_root / reference).resolve()
+    if bundled_root not in bundled.parents or not bundled.is_file():
+        raise PhotoUnavailableError(f"photo not found: {reference}")
+    return bundled
+
+
 def _resolve_photo(reference: str) -> Path:
     # The photograph library lives in another service and holds urls, not files
     # this service can see, so a reference may be either.
@@ -112,13 +122,29 @@ def _resolve_photo(reference: str) -> Path:
     if root not in candidate.parents and candidate != root:
         raise PhotoUnavailableError("photo reference escapes the photo directory")
     if not candidate.is_file():
-        raise PhotoUnavailableError(f"photo not found: {reference}")
+        candidate = _bundled_photo(reference)
     if candidate.stat().st_size > settings.max_photo_bytes:
         raise PhotoUnavailableError(f"photo exceeds the size limit: {reference}")
     return candidate
 
 
-def prepare_photo(reference: str, geo: Geometry, *, focus: float = 0.5) -> Image.Image:
+def duotone(image: Image.Image) -> Image.Image:
+    luma = np.asarray(ImageOps.autocontrast(image.convert("L"), cutoff=1), dtype=np.float32) / 255
+    stops = (T.INK, T.AZURE, T.DUOTONE_HIGHLIGHT)
+    channels = [
+        np.interp(luma, T.DUOTONE_POSITIONS, [stop[channel] for stop in stops])
+        for channel in range(3)
+    ]
+    return Image.fromarray(np.stack(channels, axis=-1).astype("uint8"), "RGB")
+
+
+def prepare_photo(
+    reference: str,
+    geo: Geometry,
+    *,
+    focus: float = 0.5,
+    size: tuple[int, int] | None = None,
+) -> Image.Image:
     try:
         source = Image.open(_resolve_photo(reference)).convert("RGB")
     except PhotoUnavailableError:
@@ -126,7 +152,8 @@ def prepare_photo(reference: str, geo: Geometry, *, focus: float = 0.5) -> Image
     except OSError as exc:
         raise PhotoUnavailableError(f"photo could not be read: {reference}") from exc
 
-    cropped = cover_crop(source, geo.size, focus).resize(geo.size, Image.LANCZOS)
+    target = size or geo.size
+    cropped = cover_crop(source, target, focus).resize(target, Image.LANCZOS)
     return grade(cropped.filter(ImageFilter.UnsharpMask(2, 55, 3)))
 
 

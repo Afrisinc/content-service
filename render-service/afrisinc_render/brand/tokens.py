@@ -95,6 +95,14 @@ PHOTO_CONTRAST: Final[float] = 1.06
 # white bench cannot be recovered once it clips, and that is where type disappears.
 PHOTO_EXPOSURE: Final[float] = 0.94
 
+DUOTONE_HIGHLIGHT: Final[RGB] = (222, 238, 252)
+DUOTONE_POSITIONS: Final[tuple[float, float, float]] = (0.0, 0.55, 1.0)
+
+PAPER: Final[RGB] = (243, 240, 232)
+NEWSPRINT_INK: Final[RGB] = (17, 17, 17)
+BROADSHEET_RED: Final[RGB] = (158, 27, 33)
+BREAKING_SHADE: Final[RGB] = (13, 5, 7)
+
 WATERMARK_ALPHA_DARK: Final[float] = 0.085
 WATERMARK_ALPHA_LIGHT: Final[float] = 0.06
 

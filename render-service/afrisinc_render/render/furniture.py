@@ -24,21 +24,23 @@ def header(
     surface: str,
     *,
     show_site: bool,
+    show_brand: bool = True,
 ) -> None:
     colour = R.foreground(surface)
-    mark_colour = colour if R.is_dark(surface) else T.AZURE
-    mark = marks.tinted_logo(LOGO_MARK_SIZE, mark_colour, 1.0)
-    overlay.alpha_composite(mark, (geo.margin, geo.header_y - LOGO_MARK_SIZE // 2))
+    if show_brand:
+        mark_colour = colour if R.is_dark(surface) else T.AZURE
+        mark = marks.tinted_logo(LOGO_MARK_SIZE, mark_colour, 1.0)
+        overlay.alpha_composite(mark, (geo.margin, geo.header_y - LOGO_MARK_SIZE // 2))
 
-    ty.draw_cap_centred(
-        draw,
-        geo.margin + LOGO_MARK_SIZE + LOGO_TEXT_GAP,
-        geo.header_y,
-        T.WORDMARK,
-        ty.font(ty.BOLD, T.SIZE_WORDMARK),
-        colour + (255,),
-        T.SIZE_WORDMARK * 0.08,
-    )
+        ty.draw_cap_centred(
+            draw,
+            geo.margin + LOGO_MARK_SIZE + LOGO_TEXT_GAP,
+            geo.header_y,
+            T.WORDMARK,
+            ty.font(ty.BOLD, T.SIZE_WORDMARK),
+            colour + (255,),
+            T.SIZE_WORDMARK * 0.08,
+        )
 
     if show_site:
         ty.draw_cap_centred(
@@ -80,10 +82,16 @@ def news_badge_rect(geo: Geometry, label: str = "NEWS") -> tuple[float, float, f
     return (geo.right_edge - width, top, geo.right_edge, top + T.NEWS_BADGE_HEIGHT)
 
 
-def news_badge(draw: ImageDraw.ImageDraw, geo: Geometry, label: str = "NEWS") -> None:
+def news_badge(
+    draw: ImageDraw.ImageDraw,
+    geo: Geometry,
+    label: str = "NEWS",
+    fill: T.RGB = T.WHITE,
+    text_colour: T.RGB = T.INK,
+) -> None:
     left, top, right, bottom = news_badge_rect(geo, label)
     draw.rounded_rectangle(
-        [left, top, right, bottom], radius=T.NEWS_BADGE_HEIGHT // 2, fill=T.WHITE + (255,)
+        [left, top, right, bottom], radius=T.NEWS_BADGE_HEIGHT // 2, fill=fill + (255,)
     )
 
     dot_x = left + T.NEWS_BADGE_PADDING + T.NEWS_BADGE_DOT_RADIUS
@@ -103,7 +111,7 @@ def news_badge(draw: ImageDraw.ImageDraw, geo: Geometry, label: str = "NEWS") ->
         centre_y,
         label,
         ty.font(ty.BOLD, T.SIZE_BADGE),
-        T.INK + (255,),
+        text_colour + (255,),
         ty.tracking(T.SIZE_BADGE, caps=True),
     )
 

@@ -25,6 +25,9 @@ const settings = vi.hoisted(() => ({
 vi.mock('@/repositories/n8nArticle.repository', () => ({ n8nArticleRepository: repository }));
 vi.mock('@/services/agentSettings.service', () => ({ agentSettingsService: settings }));
 vi.mock('@/services/newsAgent.service', () => ({ newsAgentService: agent }));
+const automation = vi.hoisted(() => ({ draftNewsStory: vi.fn() }));
+
+vi.mock('@/services/automation.service', () => ({ automationService: automation }));
 vi.mock('@/services/agentControl.service', () => ({
   agentControlService: { isActive: vi.fn(async () => false) },
 }));
@@ -340,5 +343,84 @@ describe('NewsDeskService.triggerStage', () => {
     agent.trigger.mockReturnValue(false);
 
     expect(() => newsDeskService.triggerStage(stage)).toThrow(message);
+  });
+});
+
+describe('NewsDeskService.generateSocial', () => {
+  const published = (overrides: Record<string, unknown> = {}) => ({
+    id: 7n,
+    status: 'published',
+    category: 'Fintech',
+    creator: 'TechCabal',
+    source_url: 'https://source.example/a',
+    updated_at: minutesAgo(5),
+    mediaPosts: [
+      {
+        title: 'Kenya opens M-Pesa API',
+        slug: 'kenya-opens-mpesa-api',
+        excerpt: 'Regulators agreed a shared regime.',
+        cover_image: 'https://cdn.example/cover.png',
+        published_at: new Date('2026-10-02T09:00:00.000Z'),
+        tags: ['mpesa'],
+      },
+    ],
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    automation.draftNewsStory.mockResolvedValue({ groupName: 'AFRISINC' });
+  });
+
+  it('drafts the requested format for the caller from the published article', async () => {
+    repository.findDeskDetail.mockResolvedValue(published());
+
+    const result = await newsDeskService.generateSocial('7', 'user-1', 'story');
+
+    expect(result).toEqual({ articleId: '7', format: 'story', groupName: 'AFRISINC' });
+    expect(automation.draftNewsStory).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({
+        title: 'Kenya opens M-Pesa API',
+        category: 'Fintech',
+        source: 'TechCabal',
+        coverUrl: 'https://cdn.example/cover.png',
+        publishedAt: '2026-10-02T09:00:00.000Z',
+        articleUrl: expect.stringContaining('/media/articles/kenya-opens-mpesa-api'),
+      }),
+      'story'
+    );
+  });
+
+  it('falls back to an empty category when the article has none', async () => {
+    repository.findDeskDetail.mockResolvedValue(published({ category: null }));
+
+    await newsDeskService.generateSocial('7', 'user-1', 'single');
+
+    expect(automation.draftNewsStory.mock.calls[0][1].category).toBe('');
+  });
+
+  it('refuses an article that is not found', async () => {
+    repository.findDeskDetail.mockResolvedValue(null);
+
+    await expect(newsDeskService.generateSocial('7', 'user-1', 'story')).rejects.toThrow(
+      NotFoundError
+    );
+  });
+
+  it.each([
+    ['unpublished', published({ status: 'draft' })],
+    ['without a media post', published({ mediaPosts: [] })],
+    [
+      'without a cover',
+      published({ mediaPosts: [{ ...published().mediaPosts[0], cover_image: null }] }),
+    ],
+  ])('refuses an article %s', async (_label, row) => {
+    repository.findDeskDetail.mockResolvedValue(row);
+
+    await expect(newsDeskService.generateSocial('7', 'user-1', 'story')).rejects.toThrow(
+      ConflictError
+    );
+    expect(automation.draftNewsStory).not.toHaveBeenCalled();
   });
 });

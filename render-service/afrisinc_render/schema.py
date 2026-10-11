@@ -19,10 +19,23 @@ def is_editorial(layout: str) -> bool:
     return layout in EDITORIAL_LAYOUTS
 
 SurfaceName = Literal["azure", "photo", "white"]
-FormatName = Literal["post", "story", "single"]
+FormatName = Literal["post", "story", "single", "portrait"]
 EyebrowKind = Literal["label", "claim"]
 Anchor = Literal["top", "centre", "bottom"]
 Layout = Literal["brand", "news", "story"]
+NewsTemplate = Literal[
+    "news.classic",
+    "news.split",
+    "news.frame",
+    "news.spotlight",
+    "news.bulletin",
+    "news.duotone",
+    "news.breaking",
+    "news.broadsheet",
+]
+BREAKING = "news.breaking"
+BROADSHEET = "news.broadsheet"
+RICH_TEMPLATES = frozenset({BREAKING, BROADSHEET})
 
 
 class Eyebrow(BaseModel):
@@ -75,6 +88,9 @@ class SlideSpec(BaseModel):
     anchor: Anchor | None = None
     dense_scrim: bool = False
     layout: Layout = "brand"
+    template: NewsTemplate | None = None
+    lead: str | None = Field(default=None, min_length=2, max_length=28)
+    section: str | None = Field(default=None, min_length=2, max_length=60)
     dateline: str | None = Field(default=None, min_length=2, max_length=80)
     photo_focus: float = Field(
         default=0.5,
@@ -107,6 +123,10 @@ class SlideSpec(BaseModel):
 
     @model_validator(mode="after")
     def coherent(self) -> SlideSpec:
+        if self.template and self.layout == "brand":
+            self.layout = NEWS
+        if (self.lead or self.section) and self.template not in RICH_TEMPLATES:
+            raise ValueError("lead and section belong to the breaking and broadsheet templates")
         if self.surface == R.PHOTO and not self.photo:
             raise ValueError("a photo surface needs a photo")
         if self.surface != R.PHOTO and self.photo:
@@ -129,11 +149,12 @@ class SlideSpec(BaseModel):
     def _check_editorial(self) -> None:
         if self.surface != R.PHOTO:
             raise ValueError("a news or story frame is built on a photograph")
-        if self.rows or self.actions or self.cta or self.closing:
+        closing_allowed = self.template == BROADSHEET
+        if self.rows or self.actions or self.cta or (self.closing and not closing_allowed):
             raise ValueError("a news or story frame carries a headline and a standfirst, nothing else")
         if self.coral_rule or self.strike_line is not None:
             raise ValueError("a news or story frame has no decorative accent")
-        if len(self.subs) > 1:
+        if len(self.subs) > (2 if self.template == BROADSHEET else 1):
             raise ValueError("a news or story frame carries one standfirst")
         if not self.dateline:
             raise ValueError("a news or story frame needs a dateline")
@@ -196,6 +217,8 @@ class RenderResult(BaseModel):
 
 class HeadlineFitSlide(BaseModel):
     layout: Layout = "brand"
+    template: NewsTemplate | None = None
+    lead: str | None = Field(default=None, min_length=2, max_length=28)
     headline: list[str] = Field(min_length=1, max_length=T.MAX_HEADLINE_LINES)
     rows: list[Row] = Field(default_factory=list)
     eyebrow: Eyebrow | None = None
@@ -203,6 +226,12 @@ class HeadlineFitSlide(BaseModel):
     closing: str | None = Field(default=None, max_length=90)
     cta: Cta | None = None
     coral_rule: bool = False
+
+    @model_validator(mode="after")
+    def template_is_editorial(self) -> HeadlineFitSlide:
+        if self.template and self.layout == "brand":
+            self.layout = NEWS
+        return self
 
 
 class HeadlineFitRequest(BaseModel):

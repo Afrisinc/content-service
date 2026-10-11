@@ -9,7 +9,7 @@ from .brand import rules as R
 from .brand import tokens as T
 from .brand.geometry import STORY, Geometry
 from .luminance import contrast_on_white, region_luminance
-from .schema import AuditFinding, SlideSpec, is_editorial
+from .schema import RICH_TEMPLATES, AuditFinding, SlideSpec, is_editorial
 
 _CORAL = np.array(T.CORAL, dtype=np.int16)
 _CORAL_TOLERANCE = 45
@@ -110,8 +110,9 @@ def audit_slide(
                     "measure — a row shrinks to fit but never wraps",
                 )
 
+    own_type_scale = spec.template in RICH_TEMPLATES
     floor = T.NEWS_HEADLINE_FLOOR if is_editorial(spec.layout) else T.HEADLINE_BRAND_FLOOR
-    if headline_size is not None and headline_size < floor:
+    if headline_size is not None and headline_size < floor and not own_type_scale:
         add(
             "headline_size",
             f"set at {headline_size}px, below the {floor}px brand floor — "
@@ -121,7 +122,7 @@ def audit_slide(
 
     pixels = np.asarray(image.convert("RGB"))
     foreground_is_white = R.is_dark(spec.surface)
-    for name, top, bottom in text_bands(geo, spec.layout):
+    for name, top, bottom in () if own_type_scale else text_bands(geo, spec.layout):
         band = pixels[top:bottom, geo.margin : geo.right_edge]
         mask = band.sum(axis=2) < 600 if foreground_is_white else band.sum(axis=2) > 240
         sample = band[mask] if mask.sum() > 50 else band.reshape(-1, 3)

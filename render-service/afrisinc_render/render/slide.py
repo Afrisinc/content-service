@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import NamedTuple
 
 from PIL import Image, ImageDraw
@@ -36,19 +37,26 @@ def resolve_anchor(spec: SlideSpec, geo: Geometry) -> str:
     return "centre" if geo.name == STORY else "top"
 
 
-def _eyebrow_block(spec: SlideSpec) -> C.Block | None:
+def _eyebrow_block(spec: SlideSpec, surface: str | None = None) -> C.Block | None:
     if spec.eyebrow is None:
         return None
+    surface = surface or spec.surface
     if spec.eyebrow.kind == "claim":
-        fill, text_colour = R.pill_colours(spec.surface, claim=True)
+        fill, text_colour = R.pill_colours(surface, claim=True)
         return C.EyebrowPill(spec.eyebrow.text, fill, text_colour)
-    return C.EyebrowLabel(spec.eyebrow.text, R.foreground(spec.surface))
+    return C.EyebrowLabel(spec.eyebrow.text, R.foreground(surface))
 
 
-def build_news_stack(spec: SlideSpec, headline_size: int) -> C.Stack:
+def build_news_stack(
+    spec: SlideSpec,
+    headline_size: int,
+    surface: str | None = None,
+    with_eyebrow: bool = True,
+) -> C.Stack:
+    surface = surface or spec.surface
     stack = C.Stack()
 
-    eyebrow = _eyebrow_block(spec)
+    eyebrow = _eyebrow_block(spec, surface) if with_eyebrow else None
     if eyebrow is not None:
         stack.add(eyebrow)
 
@@ -56,14 +64,14 @@ def build_news_stack(spec: SlideSpec, headline_size: int) -> C.Stack:
         C.Headline(
             lines=spec.headline,
             size=headline_size,
-            colours=R.headline_colours(spec.surface, len(spec.headline)),
+            colours=R.headline_colours(surface, len(spec.headline)),
             strike_line=None,
         ),
         GAP_EYEBROW_HEADLINE if eyebrow is not None else 0.0,
     )
 
     for text in spec.subs:
-        stack.add(C.SubLine(text, R.foreground(spec.surface), T.SIZE_STANDFIRST), GAP_HEADLINE_SUB)
+        stack.add(C.SubLine(text, R.foreground(surface), T.SIZE_STANDFIRST), GAP_HEADLINE_SUB)
 
     return stack
 
@@ -122,7 +130,12 @@ def build_stack(spec: SlideSpec, headline_size: int) -> C.Stack:
     return stack
 
 
-def fit_stack(spec: SlideSpec, geo: Geometry) -> tuple[C.Stack, int]:
+def fit_stack(
+    spec: SlideSpec,
+    geo: Geometry,
+    build: Callable[[SlideSpec, int], C.Stack] | None = None,
+    sizes: tuple[int, ...] | None = None,
+) -> tuple[C.Stack, int]:
     """Shrink the headline through the scale until every line clears the content
     width and the whole stack clears the contact rail.
 
@@ -132,7 +145,8 @@ def fit_stack(spec: SlideSpec, geo: Geometry) -> tuple[C.Stack, int]:
     means that case raises below instead of silently drawing a line past the
     right margin.
     """
-    sizes = headline_sizes(spec)
+    build = build or build_stack
+    sizes = sizes or headline_sizes(spec)
     floor = sizes[-1]
     natural = ty.headline_size(spec.headline, geo.content_width, sizes)
     candidates = [size for size in sizes if size <= natural]
@@ -140,7 +154,7 @@ def fit_stack(spec: SlideSpec, geo: Geometry) -> tuple[C.Stack, int]:
     for size in candidates:
         if not all(ty.fits(line, ty.BOLD, size, geo.content_width) for line in spec.headline):
             continue
-        stack = build_stack(spec, size)
+        stack = build(spec, size)
         if stack.height(geo) <= geo.band_height:
             return stack, size
 
@@ -216,7 +230,7 @@ def render(spec: SlideSpec, geo: Geometry) -> RenderedFrame:
     foreground = R.foreground(spec.surface)
 
     if is_editorial(spec.layout):
-        furniture.header(overlay, draw, geo, spec.surface, show_site=False)
+        furniture.header(overlay, draw, geo, spec.surface, show_site=False, show_brand=False)
         furniture.news_badge(draw, geo, T.BADGE_LABELS[spec.layout])
         stack.draw(draw, overlay, anchor, geo)
         furniture.dateline(draw, geo, spec.dateline or "", spec.surface)

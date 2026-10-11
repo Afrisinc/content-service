@@ -1,7 +1,8 @@
+import { env } from '@/config/env';
 import { ArtDirectionService } from '@/services/artDirection.service';
 import { PostCopy } from '@/types/post.types';
 import { BadRequestError } from '@/utils/http-error';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const USER = 'user-1';
 
@@ -211,15 +212,69 @@ describe('ArtDirectionService', () => {
     expect(result.photosByIndex[1]).toBe('bench.png');
   });
 
-  it('still leaves a one-frame post on azure when the library is empty', async () => {
-    const repo = fakeRepository([]);
-    const service = new ArtDirectionService(repo as never);
-    const copy = copyWithPhotoSlides();
-    copy.slides = [copy.slides[1]];
+  describe('when the library is empty', () => {
+    const original = env.POST_FALLBACK_PHOTO;
+    afterEach(() => {
+      env.POST_FALLBACK_PHOTO = original;
+    });
 
-    const result = await service.assignPhotos(copy, USER);
+    const oneFrame = (): PostCopy => {
+      const copy = copyWithPhotoSlides();
+      copy.slides = [copy.slides[1]];
+      return copy;
+    };
 
-    expect(result).toEqual({ photosByIndex: {}, assetIds: [], reused: 0 });
+    it('gives a one-frame post the default photograph', async () => {
+      env.POST_FALLBACK_PHOTO = 'default-photo.jpg';
+      const service = new ArtDirectionService(fakeRepository([]) as never);
+
+      const result = await service.assignPhotos(oneFrame(), USER);
+
+      expect(result).toEqual({
+        photosByIndex: { 0: 'default-photo.jpg' },
+        assetIds: [],
+        reused: 0,
+      });
+    });
+
+    it('gives only the closing frame of a pair the default photograph', async () => {
+      env.POST_FALLBACK_PHOTO = 'default-photo.jpg';
+      const service = new ArtDirectionService(fakeRepository([]) as never);
+      const copy = copyWithPhotoSlides();
+      copy.slides = [copy.slides[0], copy.slides[1]];
+
+      const result = await service.assignPhotos(copy, USER);
+
+      expect(result.photosByIndex).toEqual({ 1: 'default-photo.jpg' });
+    });
+
+    it('leaves a one-frame post on azure when no default photograph is configured', async () => {
+      env.POST_FALLBACK_PHOTO = '';
+      const service = new ArtDirectionService(fakeRepository([]) as never);
+
+      const result = await service.assignPhotos(oneFrame(), USER);
+
+      expect(result).toEqual({ photosByIndex: {}, assetIds: [], reused: 0 });
+    });
+
+    it('never substitutes the default photograph for a longer post', async () => {
+      env.POST_FALLBACK_PHOTO = 'default-photo.jpg';
+      const service = new ArtDirectionService(fakeRepository([]) as never);
+
+      await expect(service.assignPhotos(copyWithPhotoSlides(), USER)).rejects.toThrow(
+        BadRequestError
+      );
+    });
+
+    it('prefers a library photograph over the default one', async () => {
+      env.POST_FALLBACK_PHOTO = 'default-photo.jpg';
+      const repo = fakeRepository([{ id: '1', reference: 'bench.png' }]);
+      const service = new ArtDirectionService(repo as never);
+
+      const result = await service.assignPhotos(oneFrame(), USER);
+
+      expect(result.photosByIndex[0]).toBe('bench.png');
+    });
   });
 
   it('does not touch the library when no slide needs a photograph', async () => {
@@ -395,13 +450,16 @@ describe('a two-frame carousel', () => {
     });
   });
 
-  it('still publishes a pair when the library is empty', async () => {
+  it('still publishes a pair when the library is empty and no default photograph is set', async () => {
     // A pair closes on white without one, the same way a lone frame falls back.
+    const original = env.POST_FALLBACK_PHOTO;
+    env.POST_FALLBACK_PHOTO = '';
     const repo = fakeRepository([]);
     const service = new ArtDirectionService(repo as never);
 
     const result = await service.assignPhotos(pair(), USER);
 
+    env.POST_FALLBACK_PHOTO = original;
     expect(result).toEqual({ photosByIndex: {}, assetIds: [], reused: 0 });
   });
 });

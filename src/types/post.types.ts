@@ -23,12 +23,23 @@ export interface PostCta {
   arrow?: boolean;
 }
 
+export type NewsTemplateName =
+  | 'news.classic'
+  | 'news.split'
+  | 'news.frame'
+  | 'news.spotlight'
+  | 'news.bulletin'
+  | 'news.duotone'
+  | 'news.breaking'
+  | 'news.broadsheet';
+
 export type PostLayout = 'brand' | 'news' | 'story';
 export type EditorialLayout = Exclude<PostLayout, 'brand'>;
 
 export interface PostSlideSpec {
   surface: PostSurface;
   layout?: PostLayout;
+  template?: NewsTemplateName;
   dateline?: string;
   photo?: string | null;
   eyebrow?: PostEyebrow;
@@ -83,6 +94,7 @@ export interface EditorialBrief {
   dateline: string;
   caption: string;
   hashtags: string[];
+  category?: string;
 }
 
 export interface NewsBrief {
@@ -155,6 +167,8 @@ export interface RenderResult {
 }
 
 export interface HeadlineFitInput {
+  layout?: PostLayout;
+  template?: NewsTemplateName;
   headline: string[];
   rows?: PostRow[];
   eyebrow?: PostEyebrow;

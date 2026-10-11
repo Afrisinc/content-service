@@ -43,6 +43,10 @@ export const env = {
   RENDER_SERVICE_URL: process.env.RENDER_SERVICE_URL || 'http://localhost:8090',
   RENDER_SERVICE_API_KEY: process.env.RENDER_SERVICE_API_KEY || '',
   RENDER_SERVICE_TIMEOUT_MS: Number(process.env.RENDER_SERVICE_TIMEOUT_MS) || 60000,
+  // Photograph (a render-service reference or a url) used for a one- or two-frame
+  // post when the brand asset library has no approved photo. Set it empty to
+  // fall back to a flat azure frame instead.
+  POST_FALLBACK_PHOTO: process.env.POST_FALLBACK_PHOTO ?? 'default-photo.jpg',
   POST_AGENT_MODEL: process.env.POST_AGENT_MODEL || 'claude-sonnet-5',
   // The schema asks for a concept, a caption, fifteen hashtags, the claims and
   // up to ten slides. 2048 truncated that mid-object, which surfaced as

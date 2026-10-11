@@ -10,6 +10,7 @@ const service = vi.hoisted(() => ({
   setFeatured: vi.fn(),
   triggerStage: vi.fn(),
   updateSettings: vi.fn(),
+  generateSocial: vi.fn(),
 }));
 
 vi.mock('@/services/newsDesk.service', () => ({ newsDeskService: service }));
@@ -114,5 +115,21 @@ describe('news desk controller', () => {
 
     expect(service.triggerStage).toHaveBeenCalledWith('ingest');
     expect(reply.status).toHaveBeenCalledWith(202);
+  });
+
+  it.each([
+    [{ format: 'single' }, 'single'],
+    [undefined, 'story'],
+  ])('generates a social post from the caller and body %j', async (body, format) => {
+    service.generateSocial.mockResolvedValue({ articleId: '9', format, groupName: 'AFRISINC' });
+    const reply = fakeReply();
+
+    await controller.generateNewsDeskSocial(
+      request({ params: { id: '9' }, body, user: { userId: 'user-1' } } as never),
+      reply as unknown as FastifyReply
+    );
+
+    expect(service.generateSocial).toHaveBeenCalledWith('9', 'user-1', format);
+    expect(reply.status).toHaveBeenCalledWith(201);
   });
 });

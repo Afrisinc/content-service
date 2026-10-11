@@ -31,7 +31,7 @@ import {
 } from '@/types/accountGroup.types';
 import type { NewsPostSource, NewsSocialOutcome } from '@/types/newsDesk.types';
 import { PostBriefPayload, PostFormatName } from '@/types/post.types';
-import { BadRequestError, ConflictError, NotFoundError } from '@/utils/http-error';
+import { BadRequestError, ConflictError, NotFoundError, ServerError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
 import { AgentRunStatus, AgentStepStatus, AutomationMode, PostDraftStatus } from '@prisma/client';
 
@@ -76,6 +76,26 @@ function startOfToday(now: Date = new Date()): Date {
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
   return start;
+}
+
+function newsOverrides(source: NewsPostSource, format: PostFormatName): Partial<PostBriefPayload> {
+  return {
+    format,
+    slideCount: 1,
+    link: source.articleUrl,
+    photoUrl: source.coverUrl,
+    editorial: newsEditorial({
+      headline: source.title,
+      summary: source.summary ?? '',
+      standfirst: source.standfirst,
+      category: source.category,
+      source: source.source,
+      publishedAt: source.publishedAt,
+      articleUrl: source.articleUrl,
+      sourceUrl: source.sourceUrl,
+      tags: source.tags,
+    }),
+  };
 }
 
 function asPostFormat(value: string): PostFormatName {
@@ -455,6 +475,37 @@ export class AutomationService {
     return outcomes;
   }
 
+  async draftNewsStory(
+    userId: string,
+    source: NewsPostSource,
+    format: PostFormatName
+  ): Promise<{ groupName: string }> {
+    const policy = await this.policies.findByUser(userId);
+    const group = await this.newsGroupFor(userId, policy?.defaultGroupId ?? null);
+    if (!group) {
+      throw new BadRequestError('set an active default brand before generating a post');
+    }
+
+    const targets = await this.groups.findActiveTargets(group.id);
+    if (!targets.length) {
+      throw new BadRequestError('switch on at least one account in the default brand');
+    }
+
+    const failure = await this.draftOne(
+      userId,
+      group,
+      source.title,
+      MANUAL_TRIGGER,
+      false,
+      targets.length,
+      newsOverrides(source, format)
+    );
+    if (failure) {
+      throw new ServerError(failure);
+    }
+    return { groupName: group.name };
+  }
+
   private async draftNewsPostForUser(
     userId: string,
     source: NewsPostSource
@@ -493,23 +544,7 @@ export class AutomationService {
         AUTOPILOT_TRIGGER,
         policy?.autoPublish ?? true,
         targets.length,
-        {
-          format: 'single',
-          slideCount: 1,
-          link: source.articleUrl,
-          photoUrl: source.coverUrl,
-          editorial: newsEditorial({
-            headline: source.title,
-            summary: source.summary ?? '',
-            standfirst: source.standfirst,
-            category: source.category,
-            source: source.source,
-            publishedAt: source.publishedAt,
-            articleUrl: source.articleUrl,
-            sourceUrl: source.sourceUrl,
-            tags: source.tags,
-          }),
-        }
+        newsOverrides(source, 'single')
       );
       return failure
         ? outcome('failed', failure, group.name)

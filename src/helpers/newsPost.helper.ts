@@ -91,5 +91,6 @@ export function newsEditorial(news: NewsBrief): EditorialBrief {
     dateline: newsDateline(news.source, news.publishedAt),
     caption: newsCaption(news),
     hashtags: newsHashtags(news.category, news.tags),
+    category: news.category,
   };
 }

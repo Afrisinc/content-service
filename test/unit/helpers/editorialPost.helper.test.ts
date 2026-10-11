@@ -77,4 +77,13 @@ describe('buildEditorialSpec', () => {
     expect(slide).not.toHaveProperty('coral_rule');
     expect(slide).not.toHaveProperty('strike_line');
   });
+
+  it('carries the chosen template and omits it when there is none', () => {
+    const copy = buildEditorialCopy(BRIEF, ['H']);
+
+    expect(buildEditorialSpec('s', BRIEF, copy, 'p.png', 'news.frame').slides[0].template).toBe(
+      'news.frame'
+    );
+    expect(buildEditorialSpec('s', BRIEF, copy, 'p.png').slides[0]).not.toHaveProperty('template');
+  });
 });

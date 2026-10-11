@@ -167,3 +167,27 @@ class TestHostGuard:
 
         with pytest.raises(PhotoUnavailableError, match="cannot be resolved"):
             photo_source.fetch("https://nowhere.example/a.jpg")
+
+
+class TestBundledDefaultPhoto:
+    def test_a_reference_missing_from_the_photo_dir_resolves_to_the_bundled_default(self):
+        from afrisinc_render.brand.geometry import POST_GEOMETRY
+        from afrisinc_render.render import surfaces
+
+        image = surfaces.prepare_photo("default-photo.jpg", POST_GEOMETRY)
+
+        assert image.size == POST_GEOMETRY.size
+
+    def test_the_bundled_dir_cannot_be_escaped(self):
+        from afrisinc_render.errors import PhotoUnavailableError
+        from afrisinc_render.render import surfaces
+
+        with pytest.raises(PhotoUnavailableError):
+            surfaces._resolve_photo("../fonts/Poppins-Bold.ttf")
+
+    def test_an_unknown_reference_is_still_unavailable(self):
+        from afrisinc_render.errors import PhotoUnavailableError
+        from afrisinc_render.render import surfaces
+
+        with pytest.raises(PhotoUnavailableError):
+            surfaces._resolve_photo("nope.png")

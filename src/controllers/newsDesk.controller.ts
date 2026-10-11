@@ -1,6 +1,7 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { newsDeskService, type NewsDeskListQuery } from '@/services/newsDesk.service';
 import type { NewsAgentStage } from '@/services/newsAgent.service';
+import { DEFAULT_NEWS_SOCIAL_FORMAT, type NewsSocialFormat } from '@/types/newsDesk.types';
 import { success } from '@/utils/response';
 
 interface IdParams {
@@ -52,4 +53,13 @@ export async function featureNewsDeskArticle(request: FastifyRequest, reply: Fas
   const { featured } = request.body as { featured: boolean };
   const article = await newsDeskService.setFeatured(id, featured);
   return success(reply, 200, featured ? 'Article featured' : 'Article unfeatured', 1203, article);
+}
+
+export async function generateNewsDeskSocial(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as IdParams;
+  const { format = DEFAULT_NEWS_SOCIAL_FORMAT } = (request.body ?? {}) as {
+    format?: NewsSocialFormat;
+  };
+  const result = await newsDeskService.generateSocial(id, request.user!.userId, format);
+  return success(reply, 201, 'Social post drafted', 1206, result);
 }

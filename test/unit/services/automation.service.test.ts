@@ -1845,3 +1845,71 @@ describe('draftNewsPosts', () => {
     ]);
   });
 });
+
+describe('draftNewsStory', () => {
+  const SOURCE = {
+    title: "M-Pesa's open API could reshape banking",
+    summary: 'One standard for the region.',
+    standfirst: 'A shared standard for the region.',
+    category: 'fintech',
+    source: 'TechCabal',
+    publishedAt: '2026-10-02T09:00:00.000Z',
+    tags: ['mpesa'],
+    articleUrl: 'https://afrisinc.com/media/articles/mpesa-open-api',
+    coverUrl: 'https://cdn.afrisinc.com/mpesa-open-api.png',
+  };
+
+  function buildStory(group: Record<string, unknown> | null = groupRow({ isActive: true })) {
+    const built = build({
+      policy: { mode: 'off', autoPublish: true, defaultGroupId: 'group-1', maxPostsPerDay: 3 },
+    });
+    built.groups.findByIdForUser.mockResolvedValue(group as never);
+    return built;
+  }
+
+  it('drafts a story for review on the default brand, never auto-approved', async () => {
+    const { service, postAgent } = buildStory();
+
+    const result = await service.draftNewsStory('user-1', SOURCE, 'story');
+
+    expect(result).toEqual({ groupName: 'AFRISINC' });
+    expect(postAgent.createFromBrief).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: 'story',
+        autoPublish: false,
+        trigger: 'manual',
+        photoUrl: SOURCE.coverUrl,
+        editorial: expect.objectContaining({ layout: 'news', category: 'fintech' }),
+      })
+    );
+    expect(postAgent.approve).not.toHaveBeenCalled();
+  });
+
+  it('refuses when there is no active default brand', async () => {
+    const { service, postAgent } = buildStory(null);
+
+    await expect(service.draftNewsStory('user-1', SOURCE, 'story')).rejects.toThrow(
+      BadRequestError
+    );
+    expect(postAgent.createFromBrief).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the brand has no switched-on account', async () => {
+    const { service, groups, postAgent } = buildStory();
+    groups.findActiveTargets.mockResolvedValue([]);
+
+    await expect(service.draftNewsStory('user-1', SOURCE, 'story')).rejects.toThrow(
+      BadRequestError
+    );
+    expect(postAgent.createFromBrief).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a failed draft', async () => {
+    const { service, postAgent } = buildStory();
+    postAgent.createFromBrief.mockRejectedValue(new Error('render service unreachable'));
+
+    await expect(service.draftNewsStory('user-1', SOURCE, 'story')).rejects.toThrow(
+      'render service unreachable'
+    );
+  });
+});

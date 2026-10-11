@@ -10,6 +10,7 @@ from . import tokens as T
 POST: Final[str] = "post"
 STORY: Final[str] = "story"
 SINGLE: Final[str] = "single"
+PORTRAIT: Final[str] = "portrait"
 
 
 @dataclass(frozen=True)
@@ -113,10 +114,24 @@ SINGLE_GEOMETRY: Final[Geometry] = replace(
     POST_GEOMETRY, name=SINGLE, filename_prefix="main"
 )
 
+PORTRAIT_GEOMETRY: Final[Geometry] = replace(
+    POST_GEOMETRY,
+    name=PORTRAIT,
+    height=1350,
+    band_bottom=1120,
+    contact_rail_y=1176,
+    footer_y=1240,
+    watermark_pos=(500, 760),
+    mark_box=(52, 52, 1028, 1298),
+    filename_prefix="portrait",
+    safe_bottom=1350,
+)
+
 FORMATS: Final[dict[str, Geometry]] = {
     POST: POST_GEOMETRY,
     STORY: STORY_GEOMETRY,
     SINGLE: SINGLE_GEOMETRY,
+    PORTRAIT: PORTRAIT_GEOMETRY,
 }
 
 

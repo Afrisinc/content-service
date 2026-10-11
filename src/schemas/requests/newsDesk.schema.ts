@@ -2,6 +2,7 @@ import {
   NEWS_ARTICLE_STATUSES,
   NEWS_BATCH_SIZE_OPTIONS,
   NEWS_RUN_DAYS,
+  NEWS_SOCIAL_FORMATS,
 } from '@/types/newsDesk.types';
 
 const articleIdParams = {
@@ -61,5 +62,14 @@ export const FeatureNewsDeskArticleSchema = {
     additionalProperties: false,
     required: ['featured'],
     properties: { featured: { type: 'boolean' } },
+  },
+};
+
+export const GenerateNewsDeskSocialSchema = {
+  params: articleIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: { format: { type: 'string', enum: [...NEWS_SOCIAL_FORMATS] } },
   },
 };

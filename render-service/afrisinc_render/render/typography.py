@@ -21,6 +21,14 @@ BOLD: Weight = "Bold"
 
 REQUIRED_WEIGHTS: tuple[Weight, ...] = (LIGHT, REGULAR, MEDIUM, BOLD)
 
+CONDENSED_ITALIC = "BarlowCondensed-BlackItalic"
+CONDENSED_BOLD = "BarlowCondensed-Bold"
+SERIF = "PlayfairDisplay-Variable"
+VARIABLE_FONTS: frozenset[str] = frozenset({SERIF})
+DISPLAY_FONTS: tuple[str, ...] = (CONDENSED_ITALIC, CONDENSED_BOLD, SERIF)
+SERIF_BOLD = 700
+SERIF_BLACK = 800
+
 # Line-opening characters hang outside the margin so flush-left reads as flush-left.
 _HANG_WIDE = frozenset("AVWYTJvwy")
 _HANG_ROUND = frozenset("OCGQSoces")
@@ -37,6 +45,20 @@ def verify_fonts() -> None:
         raise FontMissingError(
             f"missing Poppins weights {missing} in {settings.font_dir}"
         )
+    absent = [name for name in DISPLAY_FONTS if not (settings.font_dir / f"{name}.ttf").is_file()]
+    if absent:
+        raise FontMissingError(f"missing display fonts {absent} in {settings.font_dir}")
+
+
+@lru_cache(maxsize=128)
+def display_font(name: str, size: int, weight: int | None = None) -> ImageFont.FreeTypeFont:
+    path = settings.font_dir / f"{name}.ttf"
+    if not path.is_file():
+        raise FontMissingError(f"font not found: {path}")
+    fnt = ImageFont.truetype(str(path), size)
+    if name in VARIABLE_FONTS and weight is not None:
+        fnt.set_variation_by_axes([weight])
+    return fnt
 
 
 @lru_cache(maxsize=256)

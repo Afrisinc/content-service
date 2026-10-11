@@ -159,6 +159,7 @@ describe('newsEditorial', () => {
       dateline: 'Source: TechCabal · 2 Oct 2026',
       caption: newsCaption(NEWS),
       hashtags: ['#AfricaBusiness', '#Fintech', '#MobileMoney', '#Banking'],
+      category: 'fintech',
     });
   });
 

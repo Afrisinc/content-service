@@ -10,8 +10,9 @@ from .errors import LayoutOverflowError
 from .render import components as C
 from .render import typography as ty
 from .render.slide import build_stack, fit_stack
+from .render.templates import registry
 from .schema import (
-    is_editorial,
+    RICH_TEMPLATES,
     FittedLine,
     FittedSlide,
     HeadlineFitRequest,
@@ -19,6 +20,7 @@ from .schema import (
     HeadlineFitSlide,
     Row,
     SlideSpec,
+    is_editorial,
 )
 
 
@@ -55,12 +57,14 @@ def _row_lines(rows: list[Row], geo: Geometry) -> list[FittedLine]:
     ]
 
 
-def _stack_line(slide: HeadlineFitSlide, geo: Geometry) -> FittedLine | None:
+def _probe_spec(slide: HeadlineFitSlide) -> SlideSpec | None:
     try:
-        spec = SlideSpec(
+        return SlideSpec(
             surface="photo" if is_editorial(slide.layout) else "azure",
             photo="fit-check" if is_editorial(slide.layout) else None,
             layout=slide.layout,
+            template=slide.template,
+            lead=slide.lead,
             dateline="fit check" if is_editorial(slide.layout) else None,
             headline=slide.headline,
             eyebrow=slide.eyebrow,
@@ -73,23 +77,56 @@ def _stack_line(slide: HeadlineFitSlide, geo: Geometry) -> FittedLine | None:
     except ValidationError:
         return None
 
+
+def _rich_slide(index: int, slide: HeadlineFitSlide, geo: Geometry) -> FittedSlide:
+    spec = _probe_spec(slide)
+    if spec is None:
+        return FittedSlide(index=index, headline_size=0, fits=False, lines=[])
+    report = registry.get(slide.template).report(spec, geo)
+    return FittedSlide(
+        index=index,
+        headline_size=report.size,
+        fits=report.fits,
+        lines=[
+            FittedLine(
+                role="stack height",
+                text=" / ".join(spec.headline),
+                width=round(report.height, 1),
+                overflow=round(report.height - report.limit, 1),
+                fits=report.fits,
+            )
+        ],
+    )
+
+
+def _stack_line(slide: HeadlineFitSlide, geo: Geometry) -> FittedLine | None:
+    spec = _probe_spec(slide)
+    if spec is None:
+        return None
+
+    template = registry.get(spec.template) if spec.template else None
+    text_geo = template.text_geometry(spec, geo) if template else geo
+    build = template.build if template else build_stack
+
     try:
-        _, size = fit_stack(spec, geo)
+        _, size = template.layout(spec, geo) if template else fit_stack(spec, geo)
         fits = True
     except LayoutOverflowError:
         size, fits = T.MIN_HEADLINE_SIZE, False
 
-    height = build_stack(spec, size).height(geo)
+    height = build(spec, size).height(text_geo)
     return FittedLine(
         role="stack height",
         text=" / ".join(spec.headline),
         width=round(height, 1),
-        overflow=round(height - geo.band_height, 1),
+        overflow=round(height - text_geo.band_height, 1),
         fits=fits,
     )
 
 
 def _fit_slide(index: int, slide: HeadlineFitSlide, geo: Geometry) -> FittedSlide:
+    if slide.template in RICH_TEMPLATES:
+        return _rich_slide(index, slide, geo)
     size, lines = _headline_lines(slide.headline, geo, slide.layout)
     lines.extend(_row_lines(slide.rows, geo))
     if all(line.fits for line in lines):

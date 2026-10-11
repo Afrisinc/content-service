@@ -51,3 +51,9 @@ export interface NewsSocialOutcome {
   status: NewsSocialStatus;
   reason: string | null;
 }
+
+export const NEWS_SOCIAL_FORMATS = ['story', 'single'] as const;
+
+export type NewsSocialFormat = (typeof NEWS_SOCIAL_FORMATS)[number];
+
+export const DEFAULT_NEWS_SOCIAL_FORMAT: NewsSocialFormat = 'story';

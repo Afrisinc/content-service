@@ -12,7 +12,7 @@ from .config import settings
 from .errors import RenderError
 from .fit import fit_headlines
 from .render import marks, post, typography
-from .wrap import wrap_headline
+from .render.templates import registry
 from .schema import (
     HeadlineFitRequest,
     HeadlineFitResult,
@@ -21,6 +21,7 @@ from .schema import (
     PostSpec,
     RenderResult,
 )
+from .wrap import wrap_headline
 
 TAG = "render"
 
@@ -63,6 +64,14 @@ async def formats() -> dict[str, dict[str, int | str]]:
         }
         for name, geo in FORMATS.items()
     }
+
+
+@app.get("/templates", tags=[TAG])
+async def templates() -> list[dict[str, str]]:
+    return [
+        {"name": template.name, "title": template.title, "description": template.description}
+        for template in registry.catalog()
+    ]
 
 
 @app.get("/health", tags=[TAG])

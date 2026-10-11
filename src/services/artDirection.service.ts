@@ -1,3 +1,4 @@
+import { env } from '@/config/env';
 import { BrandAssetRepository, brandAssetRepository } from '@/repositories/brandAsset.repository';
 import { PostCopy } from '@/types/post.types';
 import { BadRequestError } from '@/utils/http-error';
@@ -93,8 +94,16 @@ export class ArtDirectionService {
       );
 
       if (!chosen) {
-        // A single post reads perfectly well on azure, so a bare library is not fatal.
+        // A bare library is not fatal for a short post: it takes the default
+        // photograph, or reads on azure when none is configured.
         if (copy.slides.length <= 2) {
+          if (env.POST_FALLBACK_PHOTO) {
+            photosByIndex[index] = env.POST_FALLBACK_PHOTO;
+            logger.info(
+              { userId, groupId, photo: env.POST_FALLBACK_PHOTO },
+              'No approved brand photograph — using the default photograph'
+            );
+          }
           break;
         }
         throw new BadRequestError(

@@ -1,11 +1,15 @@
 import { n8nArticleRepository } from '@/repositories/n8nArticle.repository';
 import { BadRequestError, ConflictError, NotFoundError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
+import { env } from '@/config/env';
+import { articleUrl } from '@/helpers/newsletterDigest.helper';
+import { automationService } from '@/services/automation.service';
 import {
   NEWS_ARTICLE_STATUSES,
   NEWS_BATCH_SIZE_OPTIONS,
   STUCK_AFTER_MINUTES,
   type NewsArticleStatus,
+  type NewsSocialFormat,
 } from '@/types/newsDesk.types';
 import { agentControlService } from '@/services/agentControl.service';
 import { agentSettingsService } from '@/services/agentSettings.service';
@@ -169,6 +173,50 @@ export class NewsDeskService {
     }
 
     return n8nArticleRepository.update(article.id, { is_featured: featured });
+  }
+
+  async generateSocial(id: string, userId: string, format: NewsSocialFormat) {
+    const article = await n8nArticleRepository.findDeskDetail(parseArticleId(id));
+    if (!article) {
+      throw new NotFoundError('article not found');
+    }
+
+    const post = article.mediaPosts[0];
+    if (article.status !== 'published' || !post?.cover_image) {
+      throw new ConflictError('only a published article with a cover can become a post');
+    }
+
+    const { groupName } = await automationService.draftNewsStory(
+      userId,
+      {
+        title: post.title,
+        summary: post.excerpt,
+        standfirst: post.excerpt,
+        category: article.category ?? '',
+        source: article.creator,
+        sourceUrl: article.source_url,
+        publishedAt: (post.published_at ?? article.updated_at).toISOString(),
+        tags: post.tags,
+        articleUrl: articleUrl(
+          {
+            id: article.id.toString(),
+            title: post.title,
+            slug: post.slug,
+            excerpt: post.excerpt,
+            cover_image: post.cover_image,
+          },
+          env.NEWSLETTER_SITE_URL
+        ),
+        coverUrl: post.cover_image,
+      },
+      format
+    );
+
+    logger.info(
+      { articleId: article.id.toString(), format, groupName },
+      'news_desk.social_drafted'
+    );
+    return { articleId: article.id.toString(), format, groupName };
   }
 
   /** Starts a pipeline stage in the background, as the cron would. */
