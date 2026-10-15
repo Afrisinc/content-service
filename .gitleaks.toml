@@ -1,0 +1,29 @@
+title = "content-service gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "committed-env-file"
+description = "Environment file committed to git; these hold runtime credentials and must stay untracked."
+path = '''(?i)(?:^|/)\.env(?:\.[a-z0-9_-]+)?$'''
+
+[[rules.allowlists]]
+description = "Templates that document variable names with placeholder values."
+paths = ['''(?i)(?:^|/)\.env\.(?:example|sample|template)$''']
+
+[[rules]]
+id = "credentialed-connection-string"
+description = "Database, cache or broker URI with an embedded password."
+regex = '''(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqps?):\/\/[^\s:@\/'"`]+:([^\s:@\/'"`]{6,})@[^\s\/'"`]+'''
+secretGroup = 1
+entropy = 2.5
+keywords = ["postgres", "mysql", "mariadb", "mongodb", "redis", "amqp"]
+
+[[rules.allowlists]]
+description = "Local-only hosts and placeholder passwords used in CI services, tests and docs."
+regexTarget = "match"
+regexes = [
+  '''@(?:localhost|127\.0\.0\.1|0\.0\.0\.0|host\.docker\.internal)(?:[:\/]|$)''',
+  ''':(?:password|changeme|example|placeholder|\$\{[^}]+\}|\$[A-Z_]+|<[^>]+>)@''',
+]

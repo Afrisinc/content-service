@@ -1,1 +1,15 @@
+if command -v gitleaks >/dev/null 2>&1; then
+  status=0
+  gitleaks git --pre-commit --staged --redact --no-banner --exit-code 2 . || status=$?
+  if [ "$status" -eq 2 ]; then
+    echo "gitleaks: possible secret in staged changes. Unstage it, and rotate the credential if it is real." >&2
+    exit 1
+  elif [ "$status" -ne 0 ]; then
+    echo "gitleaks: scan failed with status $status (not a finding). Fix the install or rerun." >&2
+    exit 1
+  fi
+else
+  echo "gitleaks not installed: staged secrets check skipped (CI still scans). Install with: brew install gitleaks" >&2
+fi
+
 npx lint-staged
