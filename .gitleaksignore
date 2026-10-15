@@ -1,0 +1,4 @@
+# Gitleaks exceptions for confirmed false positives only. Never add a real or unverified credential.
+# One fingerprint per entry (commit:file:rule:line), copied from the Gitleaks report.
+# Each entry needs a comment line directly above it in this form:
+# reason: <why this is not a secret> | owner: <team or person> | added: YYYY-MM-DD | review-by: YYYY-MM-DD

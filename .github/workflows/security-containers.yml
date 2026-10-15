@@ -1,0 +1,211 @@
+name: Security · Containers
+
+on:
+  workflow_call:
+    inputs:
+      images:
+        description: 'JSON array of {"name", "context", "dockerfile"?} objects to build locally and scan. dockerfile defaults to <context>/Dockerfile.'
+        type: string
+        default: '[]'
+      gate-mode:
+        description: 'report: findings only warn. block: findings at block-severity fail the check on pull requests.'
+        type: string
+        default: report
+      block-severity:
+        description: 'Comma-separated severities that fail in block mode. Image findings only count when a fix exists.'
+        type: string
+        default: CRITICAL
+
+permissions: {}
+
+env:
+  TRIVY_VERSION: 0.74.0
+  TRIVY_SHA256: 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
+  TRIVY_NO_PROGRESS: 'true'
+  GATE_MODE: ${{ inputs.gate-mode }}
+  BLOCK_SEVERITY: ${{ inputs.block-severity }}
+
+jobs:
+  image:
+    name: Image scan (Trivy, ${{ matrix.image.name }})
+    if: fromJSON(inputs.images)[0] != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(inputs.images) }}
+    env:
+      IMAGE_NAME: ${{ matrix.image.name }}
+      IMAGE_REF: security-scan/${{ matrix.image.name }}:${{ github.sha }}
+    steps:
+      - name: Validate inputs
+        run: |
+          case "$GATE_MODE" in
+            report | block) ;;
+            *) echo "::error title=Invalid gate-mode::Expected 'report' or 'block', got '$GATE_MODE'."; exit 1 ;;
+          esac
+          if [[ ! "$IMAGE_NAME" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "::error title=Invalid image name::'$IMAGE_NAME' must be lowercase letters, digits, '.', '_' or '-'."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build image (not pushed)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.dockerfile || format('{0}/Dockerfile', matrix.image.context) }}
+          load: true
+          push: false
+          provenance: false
+          tags: ${{ env.IMAGE_REF }}
+          cache-from: type=gha,scope=security-scan-${{ matrix.image.name }}
+          cache-to: type=gha,mode=max,scope=security-scan-${{ matrix.image.name }}
+
+      - name: Install Trivy
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/trivy.tar.gz" \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  $RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          echo "TRIVY_DB_DATE=$(date -u +%Y-%m-%d)" >> "$GITHUB_ENV"
+
+      - name: Restore Trivy database cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ env.TRIVY_DB_DATE }}
+          restore-keys: trivy-db-
+
+      - name: Scan image OS packages
+        run: |
+          ignore_args=()
+          if [ -f .trivyignore.yaml ]; then ignore_args=(--ignorefile .trivyignore.yaml); fi
+          if ! "$RUNNER_TEMP/trivy" image --quiet --scanners vuln --pkg-types os "${ignore_args[@]}" \
+            --format json --output trivy-image.json "$IMAGE_REF"; then
+            echo "::error title=Trivy execution failed::trivy image failed for ${IMAGE_NAME} (not a vulnerability finding)."
+            exit 1
+          fi
+          "$RUNNER_TEMP/trivy" convert --format sarif --output trivy-image.sarif trivy-image.json
+
+      - name: Write findings summary
+        id: summary
+        run: |
+          jq -r --arg name "$IMAGE_NAME" --arg version "$TRIVY_VERSION" --arg mode "$GATE_MODE" '
+            ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"] as $order
+            | [.Results[]?.Vulnerabilities[]? | {sev: .Severity, id: .VulnerabilityID, pkg: .PkgName, installed: .InstalledVersion, fixed: (.FixedVersion // "")}]
+            | sort_by(.sev as $s | $order | index($s)) as $rows
+            | "## Image vulnerabilities: \($name) (Trivy v\($version), OS packages)",
+              "",
+              "Findings: \($rows | length) (\($order | map(. as $s | "\($rows | map(select(.sev == $s)) | length) \($s | ascii_downcase)") | join(", "))). Fixable: \($rows | map(select(.fixed != "")) | length). Mode: `\($mode)`.",
+              "",
+              (if ($rows | length) > 0 then
+                "| Severity | Package | Installed | Fixed | Advisory |", "| --- | --- | --- | --- | --- |",
+                ($rows[:150][] | "| \(.sev) | `\(.pkg)` | \(.installed) | \(if .fixed == "" then "—" else .fixed end) | \(.id) |")
+              else empty end)
+          ' trivy-image.json >> "$GITHUB_STEP_SUMMARY"
+          blocking=$(jq --arg sev "$BLOCK_SEVERITY" '($sev | split(",")) as $s | [.Results[]?.Vulnerabilities[]? | select((.Severity as $v | $s | index($v)) and ((.FixedVersion // "") != ""))] | length' trivy-image.json)
+          echo "blocking=$blocking" >> "$GITHUB_OUTPUT"
+
+      - name: Upload results to code scanning
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image-${{ matrix.image.name }}
+
+      - name: Enforce gate
+        if: steps.summary.outputs.blocking != '0'
+        env:
+          BLOCKING: ${{ steps.summary.outputs.blocking }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$GATE_MODE" = "block" ] && [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "::error title=Fixable image vulnerabilities::${IMAGE_NAME} has ${BLOCKING} fixable ${BLOCK_SEVERITY} OS vulnerabilities. Update the base image or packages."
+            exit 1
+          fi
+          echo "::warning title=Fixable image vulnerabilities (report-only)::${IMAGE_NAME} has ${BLOCKING} fixable ${BLOCK_SEVERITY} OS vulnerabilities."
+
+  config:
+    name: Config scan (Trivy, Dockerfile/IaC)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Validate inputs
+        run: |
+          case "$GATE_MODE" in
+            report | block) ;;
+            *) echo "::error title=Invalid gate-mode::Expected 'report' or 'block', got '$GATE_MODE'."; exit 1 ;;
+          esac
+
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install Trivy
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/trivy.tar.gz" \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  $RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+
+      - name: Scan configuration files
+        run: |
+          ignore_args=()
+          if [ -f .trivyignore.yaml ]; then ignore_args=(--ignorefile .trivyignore.yaml); fi
+          if ! "$RUNNER_TEMP/trivy" config --quiet "${ignore_args[@]}" --format json --output trivy-config.json .; then
+            echo "::error title=Trivy execution failed::trivy config failed (not a misconfiguration finding)."
+            exit 1
+          fi
+          "$RUNNER_TEMP/trivy" convert --format sarif --output trivy-config.sarif trivy-config.json
+
+      - name: Write findings summary
+        id: summary
+        run: |
+          jq -r --arg version "$TRIVY_VERSION" --arg mode "$GATE_MODE" '
+            ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"] as $order
+            | [.Results[]? | .Target as $t | .Misconfigurations[]? | select(.Status == "FAIL") | {sev: .Severity, id: .ID, title: .Title, target: $t, line: (.CauseMetadata.StartLine // 0)}]
+            | sort_by(.sev as $s | $order | index($s)) as $rows
+            | "## Configuration misconfigurations (Trivy v\($version))",
+              "",
+              "Findings: \($rows | length). Mode: `\($mode)`.",
+              "",
+              (if ($rows | length) > 0 then
+                "| Severity | Check | Title | File |", "| --- | --- | --- | --- |",
+                ($rows[] | "| \(.sev) | \(.id) | \(.title) | `\(.target)`\(if .line > 0 then ":\(.line)" else "" end) |")
+              else empty end)
+          ' trivy-config.json >> "$GITHUB_STEP_SUMMARY"
+          blocking=$(jq --arg sev "$BLOCK_SEVERITY" '($sev | split(",")) as $s | [.Results[]?.Misconfigurations[]? | select(.Status == "FAIL" and (.Severity as $v | $s | index($v)))] | length' trivy-config.json)
+          echo "blocking=$blocking" >> "$GITHUB_OUTPUT"
+
+      - name: Upload results to code scanning
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config
+
+      - name: Enforce gate
+        if: steps.summary.outputs.blocking != '0'
+        env:
+          BLOCKING: ${{ steps.summary.outputs.blocking }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$GATE_MODE" = "block" ] && [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "::error title=Configuration misconfigurations::${BLOCKING} ${BLOCK_SEVERITY} misconfigurations found. See the job summary."
+            exit 1
+          fi
+          echo "::warning title=Configuration misconfigurations (report-only)::${BLOCKING} ${BLOCK_SEVERITY} misconfigurations found."

@@ -1,0 +1,6 @@
+/.github/ @ElissaDesign
+/.husky/ @ElissaDesign
+/.gitleaks.toml @ElissaDesign
+/.gitleaksignore @ElissaDesign
+/.trivyignore.yaml @ElissaDesign
+/osv-scanner.toml @ElissaDesign

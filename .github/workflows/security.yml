@@ -1,0 +1,68 @@
+name: Security Scanning
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+  push:
+    branches:
+      - develop
+      - main
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  sast:
+    name: sast
+    uses: ./.github/workflows/security-sast.yml
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    with:
+      languages: >-
+        [
+          {"language": "javascript-typescript", "build-mode": "none"},
+          {"language": "python", "build-mode": "none"},
+          {"language": "actions", "build-mode": "none"}
+        ]
+
+  dependencies:
+    name: dependencies
+    uses: ./.github/workflows/security-dependencies.yml
+    permissions:
+      contents: read
+      security-events: write
+    with:
+      gate-mode: report
+
+  secrets:
+    name: secrets
+    uses: ./.github/workflows/security-secrets.yml
+    permissions:
+      contents: read
+      security-events: write
+    with:
+      gate-mode: report
+
+  containers:
+    name: containers
+    uses: ./.github/workflows/security-containers.yml
+    permissions:
+      contents: read
+      security-events: write
+    with:
+      gate-mode: report
+      images: >-
+        [
+          {"name": "content-service", "context": "."},
+          {"name": "render-service", "context": "render-service"}
+        ]

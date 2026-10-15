@@ -1,0 +1,112 @@
+name: Security · Dependencies
+
+on:
+  workflow_call:
+    inputs:
+      gate-mode:
+        description: 'report: findings only warn. block: Dependency Review fails pull requests that add vulnerable dependencies.'
+        type: string
+        default: report
+      fail-on-severity:
+        description: 'Lowest severity that fails Dependency Review in block mode: low, moderate, high or critical.'
+        type: string
+        default: high
+
+permissions: {}
+
+env:
+  OSV_SCANNER_VERSION: 2.6.0
+  OSV_SCANNER_SHA256: ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108
+
+jobs:
+  osv-scanner:
+    name: Dependency scan (OSV-Scanner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install OSV-Scanner
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/osv-scanner" \
+            "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SCANNER_SHA256}  $RUNNER_TEMP/osv-scanner" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/osv-scanner"
+
+      - name: Scan lockfiles for known vulnerabilities
+        run: |
+          set +e
+          "$RUNNER_TEMP/osv-scanner" scan source --recursive --format sarif --output-file osv.sarif .
+          status=$?
+          set -e
+          case "$status" in
+            0 | 1) ;;
+            *) echo "::error title=OSV-Scanner execution failed::osv-scanner exited with status $status (not a vulnerability finding)."; exit "$status" ;;
+          esac
+
+      - name: Write findings summary
+        run: |
+          jq -r --arg root "file://${GITHUB_WORKSPACE}/" --arg version "$OSV_SCANNER_VERSION" '
+            def band: if . >= 9 then "Critical" elif . >= 7 then "High" elif . >= 4 then "Medium" elif . > 0 then "Low" else "Unknown" end;
+            ([.runs[].tool.driver.rules // [] | .[] | {key: .id, value: ((.properties["security-severity"] // "0") | tonumber? // 0)}] | from_entries) as $score
+            | [.runs[].results // [] | .[] | {
+                score: ($score[.ruleId] // 0),
+                id: .ruleId,
+                package: ((.message.text | capture("Package \u0027(?<p>[^\u0027]+)\u0027").p) // "?"),
+                file: (.locations[0].physicalLocation.artifactLocation.uri | ltrimstr($root))
+              }] | sort_by(-.score) as $rows
+            | ($rows | map(.score | band)) as $bands
+            | (["Critical", "High", "Medium", "Low", "Unknown"]
+                | map(. as $b | {band: $b, n: ($bands | map(select(. == $b)) | length)})
+                | map(select(.n > 0) | "\(.n) \(.band)") | join(", ")) as $breakdown
+            | "## Dependency vulnerabilities (OSV-Scanner v\($version))",
+              "",
+              "Findings: \($rows | length)\(if $breakdown == "" then "" else " (\($breakdown))" end). Report-only: this job never fails on findings. Fixed versions are listed on each alert in Security → Code scanning (tool: osv-scanner).",
+              "",
+              (if ($rows | length) > 0 then
+                "| CVSS | Package | Advisory | Lockfile |", "| --- | --- | --- | --- |",
+                ($rows[:200][] | "| \(.score) \(.score | band) | `\(.package)` | [\(.id)](https://osv.dev/\(.id)) | `\(.file)` |")
+              else empty end)
+          ' osv.sarif >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results to code scanning
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: osv.sarif
+          category: osv-scanner
+
+  dependency-review:
+    name: Dependency review (PR changes)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      GATE_MODE: ${{ inputs.gate-mode }}
+    steps:
+      - name: Validate inputs
+        run: |
+          case "$GATE_MODE" in
+            report | block) ;;
+            *) echo "::error title=Invalid gate-mode::Expected 'report' or 'block', got '$GATE_MODE'."; exit 1 ;;
+          esac
+
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: ${{ inputs.gate-mode == 'block' && inputs.fail-on-severity || 'low' }}
+          warn-only: ${{ inputs.gate-mode != 'block' }}
+          comment-summary-in-pr: never
+          show-patched-versions: true
