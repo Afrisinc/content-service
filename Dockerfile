@@ -1,5 +1,5 @@
 # ---------- Build Stage ----------
-FROM node:20-bullseye AS builder
+FROM node:26-bullseye AS builder
 WORKDIR /app
 COPY package.json yarn.lock ./
 RUN yarn install --frozen-lockfile --ignore-scripts
@@ -8,7 +8,7 @@ RUN npx prisma generate
 RUN yarn build
 
 # ---------- Production Stage ----------
-FROM node:20-bullseye
+FROM node:26-bullseye
 WORKDIR /app
 
 ENV NODE_ENV=production
