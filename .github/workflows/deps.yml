@@ -1,0 +1,21 @@
+name: deps
+on:
+  pull_request:
+  schedule:
+    - cron: '17 6 * * *'          # nightly — catches newly-disclosed CVEs
+concurrency:
+  group: deps-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Scan dependencies
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          scan-type: fs
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '0'          # report-only; change to '1' to block
