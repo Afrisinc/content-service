@@ -41,7 +41,10 @@ export default tseslint.config(
       eqeqeq: ['error', 'always'],
       curly: ['error', 'all'],
       'no-throw-literal': 'error',
-      'max-len': ['error', { code: 100 }],
+      'max-len': [
+        'error',
+        { code: 100, ignoreStrings: true, ignoreTemplateLiterals: true, ignoreComments: true },
+      ],
 
       // Prettier integration
       'prettier/prettier': 'error',

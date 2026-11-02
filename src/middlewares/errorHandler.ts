@@ -76,6 +76,7 @@ export class RateLimitError extends AppError {
 }
 
 // Error response interface
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface ErrorResponse {
   error: string;
   message: string;
@@ -93,7 +94,7 @@ const shouldLogError = (statusCode: number): boolean => {
 };
 
 // Helper function to sanitize error for client
-const sanitizeError = (error: any, statusCode: number) => {
+const sanitizeError = (error: any, _statusCode: number) => {
   const isDevelopment = process.env.NODE_ENV !== 'production';
 
   // Always show error message (helpful for debugging)
@@ -264,6 +265,7 @@ export const errorHandler = (
 };
 
 // Helper function to get error name from status code
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getErrorName(statusCode: number): string {
   switch (statusCode) {
     case 400:

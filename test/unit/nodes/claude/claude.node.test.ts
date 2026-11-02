@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ClaudeNode } from '@/nodes/claude/claude.node';
+import { ClaudeNode } from '@/nodes/claude/claude.impl';
 import { runClaude, streamClaude } from '@/nodes/claude';
 import { REFUSAL_FALLBACK_BETA } from '@/nodes/claude/claude.constants';
 import type { ClaudeCredentials, IClaudeClient } from '@/nodes/claude/claude.types';
