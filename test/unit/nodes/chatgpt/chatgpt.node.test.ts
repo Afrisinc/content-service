@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ChatGptNode } from '@/nodes/chatgpt/chatgpt.node';
+import { ChatGptNode } from '@/nodes/chatgpt/chatgpt.impl';
 import { runChatGpt, streamChatGpt } from '@/nodes/chatgpt';
 import type { ChatGptCredentials, IChatGptClient } from '@/nodes/chatgpt/chatgpt.types';
 import type { INodeExecutionContext } from '@/nodes/core';
