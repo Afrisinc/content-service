@@ -100,34 +100,3 @@ jobs:
             ghcr.io/${{ secrets.GHCR_OWNER }}/render-service:${{ steps.meta.outputs.env_tag }}
           cache-from: type=gha,scope=render-service-production
           cache-to: type=gha,mode=max,scope=render-service-production
-
-      - name: Deploy to server
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
-          timeout: 30s
-          command_timeout: 10m
-          envs: DEPLOY_GHCR_USERNAME,DEPLOY_GHCR_TOKEN
-          script: |
-            set -e
-            APP_PATH="${{ secrets.VPS_APP_PATH }}/content-service/production"
-            cd $APP_PATH
-
-            echo "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u "$DEPLOY_GHCR_USERNAME" --password-stdin
-            docker compose pull --quiet
-
-            docker compose run --rm --no-deps --entrypoint "" \
-              content_service_production \
-              npm run db:deploy
-
-            docker compose up -d
-
-            for repo in content-service render-service; do
-              docker images "ghcr.io/${{ secrets.GHCR_OWNER }}/$repo" --format "{{.Repository}}:{{.Tag}}" \
-                | grep -v ":production$" \
-                | grep -v ":${{ steps.meta.outputs.short_sha }}$" \
-                | xargs -r docker rmi -f
-            done || true
