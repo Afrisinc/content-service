@@ -202,7 +202,8 @@ export const GetGeneratedPostByIdSchema = {
             published_at: { type: 'string' },
           },
           description:
-            'Generated post object with id, post_id, topic, platform, Facebook fields, Instagram fields, status, and timestamps',
+            'Generated post object with id, post_id, topic, platform, Facebook fields, ' +
+            'Instagram fields, status, and timestamps',
         },
       },
     },

@@ -23,8 +23,24 @@ export interface PostCta {
   arrow?: boolean;
 }
 
+export type NewsTemplateName =
+  | 'news.classic'
+  | 'news.split'
+  | 'news.frame'
+  | 'news.spotlight'
+  | 'news.bulletin'
+  | 'news.duotone'
+  | 'news.breaking'
+  | 'news.broadsheet';
+
+export type PostLayout = 'brand' | 'news' | 'story';
+export type EditorialLayout = Exclude<PostLayout, 'brand'>;
+
 export interface PostSlideSpec {
   surface: PostSurface;
+  layout?: PostLayout;
+  template?: NewsTemplateName;
+  dateline?: string;
   photo?: string | null;
   eyebrow?: PostEyebrow;
   headline: string[];
@@ -70,6 +86,35 @@ export interface PostCopySlide {
 
 export type SlideRole = 'hook' | 'proof' | 'method' | 'differentiator' | 'cta';
 
+export interface EditorialBrief {
+  layout: EditorialLayout;
+  headline: string;
+  standfirst: string;
+  eyebrow: string;
+  dateline: string;
+  caption: string;
+  hashtags: string[];
+  category?: string;
+}
+
+export interface NewsBrief {
+  headline: string;
+  summary: string;
+  standfirst?: string | null;
+  category: string;
+  source: string | null;
+  publishedAt: string;
+  articleUrl: string;
+  sourceUrl?: string | null;
+  tags: string[];
+}
+
+export interface HeadlineWrapResult {
+  lines: string[];
+  size: number;
+  truncated: boolean;
+}
+
 export interface PostBriefPayload {
   topic: string;
   format?: PostFormatName;
@@ -80,6 +125,8 @@ export interface PostBriefPayload {
   keywords?: string;
   /** A reference link the copy or its CTA can point to. */
   link?: string;
+  photoUrl?: string;
+  editorial?: EditorialBrief;
   slideCount?: number;
   userId?: string;
   /** Publish to every switched-on account in this group instead of one page. */
@@ -117,6 +164,40 @@ export interface RenderResult {
   slides: RenderedSlide[];
   findings: AuditFinding[];
   passed: boolean;
+}
+
+export interface HeadlineFitInput {
+  layout?: PostLayout;
+  template?: NewsTemplateName;
+  headline: string[];
+  rows?: PostRow[];
+  eyebrow?: PostEyebrow;
+  subs?: string[];
+  closing?: string;
+  cta?: PostCta;
+  coral_rule?: boolean;
+}
+
+export interface HeadlineFitLine {
+  role: string;
+  text: string;
+  width: number;
+  overflow: number;
+  fits: boolean;
+}
+
+export interface HeadlineFitSlide {
+  index: number;
+  headline_size: number;
+  fits: boolean;
+  lines: HeadlineFitLine[];
+}
+
+export interface HeadlineFitResult {
+  measure: number;
+  min_headline_size: number;
+  fits: boolean;
+  slides: HeadlineFitSlide[];
 }
 
 export interface SchedulePostPayload {

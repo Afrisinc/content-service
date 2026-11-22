@@ -154,6 +154,21 @@ export class BrandAssetRepository {
     });
   }
 
+  async findReferencesStartingWith(userId: string, prefixes: string[]): Promise<string[]> {
+    if (!prefixes.length) {
+      return [];
+    }
+    const rows = await this.prisma.brandAssetImage.findMany({
+      where: { userId, OR: prefixes.map(prefix => ({ reference: { startsWith: prefix } })) },
+      select: { reference: true },
+    });
+    return rows.map(row => row.reference);
+  }
+
+  async replaceSubjects(assetId: string, subjects: string[]) {
+    await this.prisma.brandAssetImage.updateMany({ where: { assetId }, data: { subjects } });
+  }
+
   /** Usage is recorded per photograph, since rotation is per photograph. */
   async recordUse(imageIds: string[]) {
     if (!imageIds.length) {

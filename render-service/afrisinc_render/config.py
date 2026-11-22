@@ -11,6 +11,7 @@ _SERVICE_ROOT = _PACKAGE_ROOT.parent
 
 _DEFAULT_FONT_DIR = _SERVICE_ROOT / "assets" / "fonts"
 _DEFAULT_LOGO = _SERVICE_ROOT / "assets" / "brand" / "afrisinc-logo.png"
+_DEFAULT_BUNDLED_PHOTO_DIR = _SERVICE_ROOT / "assets" / "photos"
 
 
 def _path(name: str, default: Path) -> Path:
@@ -31,6 +32,7 @@ class Settings:
     font_dir: Path
     logo_path: Path
     photo_dir: Path
+    bundled_photo_dir: Path
     output_dir: Path
     api_key: str
     max_photo_bytes: int
@@ -42,6 +44,7 @@ class Settings:
             font_dir=_path("RENDER_FONT_DIR", _DEFAULT_FONT_DIR),
             logo_path=_path("RENDER_LOGO_PATH", _DEFAULT_LOGO),
             photo_dir=_path("RENDER_PHOTO_DIR", Path("/tmp/afrisinc-photos")),
+            bundled_photo_dir=_path("RENDER_BUNDLED_PHOTO_DIR", _DEFAULT_BUNDLED_PHOTO_DIR),
             output_dir=_path("RENDER_OUTPUT_DIR", Path("/tmp/afrisinc-render")),
             api_key=os.environ.get("RENDER_API_KEY", ""),
             max_photo_bytes=_int("RENDER_MAX_PHOTO_BYTES", 12 * 1024 * 1024),

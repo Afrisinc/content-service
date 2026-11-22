@@ -1,11 +1,23 @@
 import { env } from '@/config/env';
-import { PostSpec, RenderResult } from '@/types/post.types';
+import {
+  HeadlineFitInput,
+  HeadlineFitResult,
+  HeadlineWrapResult,
+  PostFormatName,
+  PostSpec,
+  RenderResult,
+} from '@/types/post.types';
 import { ServerError, BadRequestError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
 import axios, { AxiosInstance, isAxiosError } from 'axios';
 
 export interface RenderClient {
   render(spec: PostSpec): Promise<RenderResult>;
+  fitHeadlines(
+    slides: HeadlineFitInput[],
+    format: PostFormatName
+  ): Promise<HeadlineFitResult | null>;
+  wrapHeadline(text: string, format: PostFormatName): Promise<HeadlineWrapResult>;
   fetchSlide(slug: string, filename: string): Promise<Buffer>;
   slideUrl(slug: string, filename: string): string;
   healthy(): Promise<boolean>;
@@ -44,6 +56,39 @@ class HttpRenderClient implements RenderClient {
     }
   }
 
+  async fitHeadlines(
+    slides: HeadlineFitInput[],
+    format: PostFormatName
+  ): Promise<HeadlineFitResult | null> {
+    try {
+      const response = await this.client.post<HeadlineFitResult>('/fit/headlines', {
+        format,
+        slides: slides.map(slide => ({ ...slide, rows: slide.rows ?? [] })),
+      });
+      return response.data;
+    } catch (err) {
+      logger.warn(
+        { error: err instanceof Error ? err.message : String(err) },
+        'Could not preflight headline fit; letting the copy through to render'
+      );
+      return null;
+    }
+  }
+
+  async wrapHeadline(text: string, format: PostFormatName): Promise<HeadlineWrapResult> {
+    try {
+      const response = await this.client.post<HeadlineWrapResult>('/layout/headline', {
+        text,
+        format,
+      });
+      return response.data;
+    } catch (err) {
+      const detail = isAxiosError(err) ? this.describe(err.response?.data) : String(err);
+      logger.error({ detail }, 'Could not lay out a news headline');
+      throw new ServerError(`could not lay out the headline: ${detail}`);
+    }
+  }
+
   async fetchSlide(slug: string, filename: string): Promise<Buffer> {
     try {
       const response = await this.client.get<ArrayBuffer>(`/render/${slug}/${filename}`, {
@@ -71,12 +116,20 @@ class HttpRenderClient implements RenderClient {
   }
 
   private describe(payload: unknown): string {
-    if (typeof payload === 'string') return payload;
+    if (typeof payload === 'string') {
+      return payload;
+    }
     if (payload && typeof payload === 'object') {
       const body = payload as { detail?: unknown; resp_msg?: unknown };
-      if (typeof body.resp_msg === 'string') return body.resp_msg;
-      if (typeof body.detail === 'string') return body.detail;
-      if (Array.isArray(body.detail)) return JSON.stringify(body.detail);
+      if (typeof body.resp_msg === 'string') {
+        return body.resp_msg;
+      }
+      if (typeof body.detail === 'string') {
+        return body.detail;
+      }
+      if (Array.isArray(body.detail)) {
+        return JSON.stringify(body.detail);
+      }
     }
     return 'unknown render failure';
   }

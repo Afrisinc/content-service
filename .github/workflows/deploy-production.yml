@@ -6,7 +6,53 @@ on:
       - main
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: content_service
+          POSTGRES_PASSWORD: content_service
+          POSTGRES_DB: content_service_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://content_service:content_service@localhost:5432/content_service_ci
+      SERVICE_SECRET: ci-service-secret
+      OPENAI_API_KEY: sk-test-fake-key-for-ci
+      NODE_ENV: test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Apply database migrations
+        run: npx prisma migrate deploy
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Test
+        run: yarn test
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     env:
       DEPLOY_GHCR_USERNAME: ${{ secrets.DEPLOY_GHCR_USERNAME }}
@@ -30,16 +76,6 @@ jobs:
           username: ${{ secrets.GHCR_OWNER }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      # Plain `docker build` on a fresh ubuntu-latest VM has no cache to draw
-      # on, so `yarn install` / `pip install` reran from scratch and produced a
-      # brand-new layer digest on every single deploy, even when dependencies
-      # hadn't changed. That forced a full re-download of both fat dependency
-      # layers on every deploy, not just the first — this is the actual reason
-      # deploys have kept timing out, and it lines up with this starting when
-      # render-service (a second always-cold, uncached image) was added on top
-      # of content-service's own always-cold build. GHA-backed Buildx cache
-      # makes those layers reproducible across runs, so the VPS pull below
-      # only fetches what actually changed.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
@@ -54,8 +90,6 @@ jobs:
           cache-from: type=gha,scope=content-service-production
           cache-to: type=gha,mode=max,scope=content-service-production
 
-      # Built from ./render-service: its Dockerfile copies requirements.txt and
-      # afrisinc_render relative to that directory, not to the repo root.
       - name: Build and push render-service
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
@@ -67,16 +101,7 @@ jobs:
           cache-from: type=gha,scope=render-service-production
           cache-to: type=gha,mode=max,scope=render-service-production
 
-      # A prior version of this job ran the whole deploy — including `docker
-      # compose pull` and the wait for render's healthcheck — inside one long
-      # SSH session. That kept dying well short of any timeout this workflow
-      # configures. The VPS runs this deploy alongside ~20 other services on
-      # 4 vCPUs and is routinely overloaded (load average in the double
-      # digits), so neither the pull nor the session itself can be trusted to
-      # finish quickly or survive a held-open connection. So everything slow
-      # runs detached on the server, and a separate step polls it with short,
-      # independent connections instead of one held-open session.
-      - name: Kick off deployment on server
+      - name: Deploy to server
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -84,9 +109,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
           timeout: 30s
-          command_timeout: 2m
-
-          # PASS DEPLOY CREDS TO VPS
+          command_timeout: 10m
           envs: DEPLOY_GHCR_USERNAME,DEPLOY_GHCR_TOKEN
           script: |
             set -e
@@ -94,115 +117,17 @@ jobs:
             cd $APP_PATH
 
             echo "$DEPLOY_GHCR_TOKEN" | docker login ghcr.io -u "$DEPLOY_GHCR_USERNAME" --password-stdin
+            docker compose pull --quiet
 
-            rm -f deploy-status.txt deploy.log
+            docker compose run --rm --no-deps --entrypoint "" \
+              content_service_production \
+              npm run db:deploy
 
-            # docker compose pull used to run here, synchronously. On this host
-            # a pull for both images can take longer than this step's
-            # command_timeout on its own — nothing to do with the healthcheck
-            # wait below. It's now inside the same backgrounded block so the
-            # foreground SSH step never has to survive it.
-            #
-            # content_service_production depends_on render's healthcheck, so
-            # `docker compose up -d` for the whole stack would block on it here
-            # too. Backgrounded, detached from this SSH session entirely: this
-            # step only has to survive long enough to start it.
-            #
-            # `nohup ... &` alone does NOT detach this from the SSH session: it
-            # only redirects stdout/stderr and ignores SIGHUP, but the child still
-            # inherits fd 0 (stdin) from the session's pty. sshd can keep the
-            # channel open until every process holding that pty has exited, so
-            # this step's own command_timeout was racing the backgrounded pull —
-            # which is exactly what showed up live in this step's log instead of
-            # staying invisible in deploy.log. `setsid` starts a real new session,
-            # fully detached from the controlling terminal, and `</dev/null`
-            # closes the last tie to the pty (stdin) — together these guarantee
-            # this step returns as soon as the script below is launched, instead
-            # of depending on timing.
-            setsid nohup bash -c '
-              set -e
-              docker compose pull
+            docker compose up -d
 
-              # Migrations run before the new image serves traffic, as a one-off
-              # container: a failed migration stops the deploy instead of leaving
-              # the app up against a schema it cannot read. --no-deps keeps it from
-              # starting the render service just to run prisma.
-              # docker compose run --rm --no-deps --entrypoint "" \
-              #   content_service_production \
-              #   npm run db:deploy
-
-              docker compose up -d --no-deps render_service_production
-
-              elapsed=0
-              while [ "$(docker inspect -f "{{.State.Health.Status}}" render_service_production 2>/dev/null)" != "healthy" ]; do
-                if [ "$elapsed" -ge 180 ]; then
-                  echo FAILED > deploy-status.txt
-                  docker compose logs --tail=100 render_service_production >> deploy.log 2>&1
-                  exit 1
-                fi
-                sleep 10
-                elapsed=$((elapsed + 10))
-              done
-
-              docker compose up -d
-              echo DONE > deploy-status.txt
-
-              # Cleanup runs after DONE is already written. `docker image prune -af`
-              # used to gate this status file, and on a host running ~20 other
-              # services under double-digit load it has been observed to run long
-              # enough on its own to blow through the polling budget below even
-              # after the deploy itself had already finished — bumping that budget
-              # once already didn't fix it, because prune's runtime is unbounded,
-              # not a one-off slow step like the pull or healthcheck above. `-a`
-              # also scans every image on the host, not just ours, risking an
-              # unrelated service's image mid-restart. Scoped here to just these
-              # two repos' old tags, and never allowed to affect the reported result.
-              for repo in content-service render-service; do
-                docker images "ghcr.io/${{ secrets.GHCR_OWNER }}/$repo" --format "{{.Repository}}:{{.Tag}}" \
-                  | grep -v ":production$" \
-                  | grep -v ":${{ steps.meta.outputs.short_sha }}$" \
-                  | xargs -r docker rmi -f
-              done || true
-            ' < /dev/null > deploy.log 2>&1 &
-            disown
-
-            echo "Deploy kicked off in the background — polling for it next"
-
-      - name: Load deploy SSH key for polling
-        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
-        with:
-          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
-
-      - name: Wait for deployment to finish
-        run: |
-          set -e
-          REMOTE="${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}"
-          APP_PATH="${{ secrets.VPS_APP_PATH }}/content-service/production"
-          SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15"
-
-          # Each check is its own short connection — nothing here holds one SSH
-          # session open across the whole wait, which is exactly what the
-          # previous approach couldn't survive. The budget below (15 minutes)
-          # has to cover docker compose pull too now, and pulls on this host
-          # have been observed to run past 2 minutes on their own.
-          for i in $(seq 1 60); do
-            STATUS=$(ssh $SSH_OPTS "$REMOTE" "cd $APP_PATH && cat deploy-status.txt 2>/dev/null || true")
-
-            if [ "$STATUS" = "DONE" ]; then
-              echo "Deploy finished successfully"
-              ssh $SSH_OPTS "$REMOTE" "cd $APP_PATH && docker compose ps content_service_production && rm -f deploy-status.txt deploy.log"
-              exit 0
-            fi
-
-            if [ "$STATUS" = "FAILED" ]; then
-              echo "::error::Deploy failed on the server — dumping its log"
-              ssh $SSH_OPTS "$REMOTE" "cd $APP_PATH && cat deploy.log && rm -f deploy-status.txt deploy.log"
-              exit 1
-            fi
-
-            echo "Still deploying... ($((i * 15))s elapsed)"
-            sleep 15
-          done
-
-          echo "::error::Deploy did not finish within 15 minutes"
-          exit 1
+            for repo in content-service render-service; do
+              docker images "ghcr.io/${{ secrets.GHCR_OWNER }}/$repo" --format "{{.Repository}}:{{.Tag}}" \
+                | grep -v ":production$" \
+                | grep -v ":${{ steps.meta.outputs.short_sha }}$" \
+                | xargs -r docker rmi -f
+            done || true

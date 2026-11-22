@@ -57,7 +57,9 @@ describe('rankTopics', () => {
   it('reads the source category first', () => {
     const posts = many(3, { mediaPost: { category: 'finance' }, tags: ['ignored'] });
 
-    expect(rankTopics(posts, 5)).toEqual([{ topic: 'finance', posts: 3, averageEngagement: 5 }]);
+    expect(rankTopics(posts, 5)).toEqual([
+      { topic: 'finance', posts: 3, averageEngagement: 5, score: 0.05 },
+    ]);
   });
 
   it('falls back to tags when there is no source article', () => {
@@ -139,7 +141,9 @@ describe('buildWeeklyPlan', () => {
     const slots = buildWeeklyPlan(posts, ['instagram', 'linkedin'], cadence, MONDAY);
 
     expect(slots[0].platform).toBe('linkedin');
-    expect(slots[0].reason).toContain('room left');
+    expect(slots[0].reason).toBe(
+      'LinkedIn has had the fewest posts this window, so it has the most room to grow.'
+    );
   });
 
   it('fills slots with the topic that performed, and says why', () => {
@@ -165,13 +169,54 @@ describe('buildWeeklyPlan', () => {
 
   it('picks the format that earned most, over the brand default', () => {
     const posts = [
+      ...many(4, { mediaType: 'image', likes: 90 }),
+      ...many(4, { mediaType: 'carousel', likes: 1 }).map((row, i) => ({ ...row, id: `c-${i}` })),
+    ];
+
+    expect(
+      buildWeeklyPlan(posts as PublishedPostRow[], ['instagram'], cadence, MONDAY)[0].format
+    ).toBe('single');
+  });
+
+  it('only plans formats the post agent can make, never video', () => {
+    const posts = [
       ...many(4, { mediaType: 'video', likes: 90 }),
       ...many(4, { mediaType: 'image', likes: 1 }).map((row, i) => ({ ...row, id: `i-${i}` })),
     ];
 
     expect(
       buildWeeklyPlan(posts as PublishedPostRow[], ['instagram'], cadence, MONDAY)[0].format
-    ).toBe('video');
+    ).toBe('post');
+  });
+
+  it('keeps the brand default when the leading format is not clearly ahead', () => {
+    const posts = [
+      ...many(4, { mediaType: 'image', likes: 10 }),
+      ...many(4, { mediaType: 'carousel', likes: 9 }).map((row, i) => ({ ...row, id: `c-${i}` })),
+    ];
+
+    expect(
+      buildWeeklyPlan(posts as PublishedPostRow[], ['instagram'], cadence, MONDAY)[0].format
+    ).toBe('post');
+  });
+
+  it('judges topics and format on the evidence, and volume on everything published', () => {
+    const evidence = many(6, { mediaPost: { category: 'finance' }, likes: 40 });
+    const all = [
+      ...evidence,
+      ...many(9, { platform: 'linkedin' }).map((row, i) => ({ ...row, id: `l-${i}` })),
+    ];
+
+    const slots = buildWeeklyPlan(
+      all as PublishedPostRow[],
+      ['instagram', 'linkedin'],
+      cadence,
+      MONDAY,
+      evidence
+    );
+
+    expect(slots[0].platform).toBe('instagram');
+    expect(slots[1].topic).toBe('finance');
   });
 
   it('uses the brand default format when nothing has performed', () => {
@@ -185,5 +230,91 @@ describe('buildWeeklyPlan', () => {
     expect(buildWeeklyPlan([], ['instagram'], kigali, MONDAY)[0].when).toBe(
       '2026-08-04T07:00:00.000Z'
     );
+  });
+});
+
+describe('rankTopics hashtags', () => {
+  it('treats #Fintech and fintech as one topic, shown without the hash', () => {
+    const posts = [
+      post({ id: 'a', tags: ['#Fintech'], likes: 10 }),
+      post({ id: 'b', tags: ['fintech'], likes: 20 }),
+      post({ id: 'c', tags: ['policy'], likes: 1 }),
+      post({ id: 'd', tags: ['policy'], likes: 1 }),
+    ];
+
+    const [top] = rankTopics(posts, 5);
+
+    expect(top).toMatchObject({ topic: 'Fintech', posts: 2, averageEngagement: 15 });
+    expect(top.score).toBeCloseTo(0.15);
+  });
+
+  it('drops a house hashtag that sits on nearly every post', () => {
+    const posts = [
+      ...many(4, { tags: ['#AfricaBusiness', '#Fintech'], likes: 9 }),
+      ...many(2, { tags: ['#AfricaBusiness', '#Policy'], likes: 1 }).map((row, i) => ({
+        ...row,
+        id: `x-${i}`,
+      })),
+    ];
+
+    expect(rankTopics(posts as PublishedPostRow[], 5).map(topic => topic.topic)).toEqual([
+      'Fintech',
+      'Policy',
+    ]);
+  });
+
+  it('keeps a source category even when every post shares it', () => {
+    expect(rankTopics(many(6, { mediaPost: { category: 'finance' } }), 5)[0].topic).toBe('finance');
+  });
+
+  it('counts a topic once per post however often it is tagged', () => {
+    expect(rankTopics(many(2, { tags: ['#ai', 'AI', 'ai'] }), 5)).toEqual([
+      { topic: 'ai', posts: 2, averageEngagement: 5, score: 0.05 },
+    ]);
+  });
+});
+
+describe('rankTopics scoring', () => {
+  it('ranks on engagement per person reached, so a big audience does not win by size alone', () => {
+    const posts = [
+      ...many(2, { tags: ['policy'], likes: 50, reach: 5000 }),
+      ...many(2, { tags: ['startups'], likes: 20, reach: 200 }).map((row, i) => ({
+        ...row,
+        id: `s-${i}`,
+      })),
+    ];
+
+    expect(rankTopics(posts as PublishedPostRow[], 5).map(topic => topic.topic)).toEqual([
+      'startups',
+      'policy',
+    ]);
+  });
+
+  it('falls back to raw engagement when reach was not reported', () => {
+    const posts = [
+      ...many(2, { tags: ['policy'], likes: 50, reach: 0 }),
+      ...many(2, { tags: ['startups'], likes: 20, reach: 0 }).map((row, i) => ({
+        ...row,
+        id: `s-${i}`,
+      })),
+    ];
+
+    expect(rankTopics(posts as PublishedPostRow[], 5)[0]).toMatchObject({
+      topic: 'policy',
+      score: 50,
+    });
+  });
+
+  it('uses the typical post, so one viral hit does not crown a topic', () => {
+    const posts = [
+      ...many(3, { tags: ['ai'], likes: 1, reach: 100 }),
+      post({ id: 'viral', tags: ['ai'], likes: 5000, reach: 100 }),
+      ...many(4, { tags: ['policy'], likes: 10, reach: 100 }).map((row, i) => ({
+        ...row,
+        id: `p-${i}`,
+      })),
+    ];
+
+    expect(rankTopics(posts as PublishedPostRow[], 5)[0].topic).toBe('policy');
   });
 });

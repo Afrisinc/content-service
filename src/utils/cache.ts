@@ -189,6 +189,24 @@ export async function cacheRead(key: string): Promise<string | null> {
   }
 }
 
+export async function cacheTtl(key: string): Promise<number | null> {
+  const redis = readyClient();
+  if (!redis) {
+    return null;
+  }
+
+  try {
+    const ttl = await withTimeout(redis.ttl(key));
+    return ttl !== null && ttl >= 0 ? ttl : null;
+  } catch (error) {
+    logger.warn(
+      { key, error: error instanceof Error ? error.message : 'Unknown error' },
+      'Cache ttl read failed'
+    );
+    return null;
+  }
+}
+
 export async function cacheDelete(key: string): Promise<void> {
   const redis = readyClient();
   if (!redis) {

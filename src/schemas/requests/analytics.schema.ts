@@ -72,6 +72,20 @@ export const GetAnalyticsAccountsSchema = {
   },
 };
 
+export const SuggestPostIdeasSchema = {
+  description: 'One concrete hook and angle for each post in the plan, written by AI',
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      from: { type: 'string', format: 'date' },
+      to: { type: 'string', format: 'date' },
+      groupId: { type: 'string', minLength: 1, maxLength: 64 },
+      refresh: { type: 'boolean' },
+    },
+  },
+};
+
 export const GetAnalyticsPlanSchema = {
   description: 'What to post next week, derived from what has performed in the window',
   querystring: {
@@ -80,6 +94,7 @@ export const GetAnalyticsPlanSchema = {
     properties: {
       from: { type: 'string', format: 'date' },
       to: { type: 'string', format: 'date' },
+      groupId: { type: 'string', minLength: 1, maxLength: 64 },
     },
   },
 };

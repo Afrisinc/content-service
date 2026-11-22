@@ -11,6 +11,9 @@ vi.mock('@/nodes', () => ({
   ClaudeNode: class {},
   claudeCredentialsFromEnv: () => ({ apiKey: 'test-key' }),
 }));
+vi.mock('@/services/aiCredentials.service', () => ({
+  resolveClaudeConfig: async () => ({ credentials: { apiKey: 'test-key' } }),
+}));
 
 const { CopyUnusableError, PostCopyService } = await import('@/services/postCopy.service');
 const { env } = await import('@/config/env');

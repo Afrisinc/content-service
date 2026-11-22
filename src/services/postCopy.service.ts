@@ -1,4 +1,5 @@
 import { nodeServices } from '@/adapters/nodes/nodeServices';
+import { getRenderClient, RenderClient } from '@/adapters/render/render.client';
 import {
   BANNED_CONSTRUCTIONS,
   BANNED_WORDS,
@@ -11,8 +12,17 @@ import {
   VOICE_PROMPT,
 } from '@/brand/afrisinc.brand';
 import { env } from '@/config/env';
-import { claudeCredentialsFromEnv, ClaudeNode, runClaude } from '@/nodes';
-import { PostBriefPayload, PostCopy, PostFormatName } from '@/types/post.types';
+import { ClaudeNode, runClaude } from '@/nodes';
+import { surfaceForRole } from '@/helpers/postSpec.helper';
+import { resolveClaudeConfig } from '@/services/aiCredentials.service';
+import {
+  HeadlineFitInput,
+  HeadlineFitResult,
+  PostBriefPayload,
+  PostCopy,
+  PostCopySlide,
+  PostFormatName,
+} from '@/types/post.types';
 import { BadRequestError, ServerError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
 import { z } from 'zod';
@@ -156,7 +166,57 @@ export function briefPrompt(brief: PostBriefPayload, complaint?: string): string
   return lines.filter(Boolean).join('\n');
 }
 
+const STACK_HEIGHT_ROLE = 'stack height';
+
+export function fitInputFor(slide: PostCopySlide, index: number, total: number): HeadlineFitInput {
+  const carriesRows =
+    surfaceForRole(slide, index, total, {}) === 'white' && Boolean(slide.rows?.length);
+
+  return {
+    headline: slide.headline,
+    eyebrow: { text: slide.eyebrow, kind: slide.eyebrowKind },
+    subs: slide.subs?.slice(0, 2),
+    rows: carriesRows ? slide.rows : [],
+    closing: carriesRows ? slide.closing : undefined,
+    cta: slide.cta ? { text: slide.cta, arrow: true } : undefined,
+    coral_rule: true,
+  };
+}
+
+export function describeFitFailure(fit: HeadlineFitResult): string {
+  const failing = fit.slides.flatMap(slide =>
+    slide.lines.filter(line => !line.fits).map(line => ({ slide, line }))
+  );
+  const tooWide = failing
+    .filter(({ line }) => line.role !== STACK_HEIGHT_ROLE)
+    .map(
+      ({ slide, line }) =>
+        `slide ${slide.index + 1} ${line.role} "${line.text}" measures ` +
+        `${Math.round(line.width)}px, ${Math.round(line.overflow)}px too wide`
+    );
+  const tooTall = failing
+    .filter(({ line }) => line.role === STACK_HEIGHT_ROLE)
+    .map(
+      ({ slide, line }) =>
+        `slide ${slide.index + 1} stacks ${Math.round(line.overflow)}px taller than its ` +
+        'frame even with the smallest headline'
+    );
+
+  const fixes = [
+    tooWide.length &&
+      'Rewrite the wide lines shorter so each one holds its measure and every headline ' +
+        `sets at ${fit.min_headline_size}px.`,
+    tooTall.length &&
+      'Drop a sub-line, a row or the closing line on the tall slides — the frame cannot grow.',
+  ].filter(Boolean);
+
+  const problems = [...tooWide, ...tooTall].join('; ');
+  return `${problems}. ${fixes.join(' ')} Cut words — the type size is fixed.`;
+}
+
 export class PostCopyService {
+  constructor(private readonly render: RenderClient = getRenderClient()) {}
+
   async generate(
     brief: PostBriefPayload,
     signal?: AbortSignal
@@ -208,6 +268,16 @@ export class PostCopyService {
         continue;
       }
 
+      const fit = await this.render.fitHeadlines(
+        parsed.data.slides.map((slide, index, all) => fitInputFor(slide, index, all.length)),
+        format
+      );
+      if (fit && !fit.fits) {
+        complaint = describeFitFailure(fit);
+        logger.warn({ attempt, complaint }, 'Copy agent wrote a headline past the measure');
+        continue;
+      }
+
       return { copy: parsed.data, attempts: attempt };
     }
 
@@ -226,17 +296,18 @@ export class PostCopyService {
     signal?: AbortSignal
   ): Promise<string> {
     try {
+      const { credentials, model } = await resolveClaudeConfig();
       const items = await runClaude({
         node: copyNode,
         signal,
-        credentials: claudeCredentialsFromEnv(),
+        credentials,
         logger,
         services: nodeServices,
         usageContext: { userId: brief.userId, requestId: brief.runId },
         parameters: {
           resource: 'text',
           operation: 'message',
-          model: env.POST_AGENT_MODEL,
+          model: model ?? env.POST_AGENT_MODEL,
           maxTokens: env.POST_AGENT_MAX_TOKENS,
           systemPrompt: VOICE_PROMPT,
           prompt: briefPrompt(brief, complaint),

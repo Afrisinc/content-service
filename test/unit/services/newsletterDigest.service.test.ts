@@ -28,6 +28,9 @@ vi.mock('@/nodes', () => ({
   runChatGpt: mocks.runChatGpt,
   chatGptCredentialsFromEnv: () => ({ apiKey: 'sk-test' }),
 }));
+vi.mock('@/services/aiCredentials.service', () => ({
+  resolveChatGptConfig: async () => ({ credentials: { apiKey: 'sk-test' } }),
+}));
 
 const articles = [1, 2, 3, 4].map(index => ({
   id: `id-${index}`,

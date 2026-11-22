@@ -392,6 +392,16 @@ export const ListSocialMediaPostsSchema = {
         default: 0,
         description: 'Number of posts to skip',
       },
+      sort_by: {
+        type: 'string',
+        enum: ['createdAt', 'scheduledAt', 'publishedAt'],
+        description: 'Column to sort by',
+      },
+      sort_order: {
+        type: 'string',
+        enum: ['asc', 'desc'],
+        description: 'Sort direction',
+      },
     },
   },
   response: {
@@ -453,6 +463,9 @@ export const ListSocialMediaPostsSchema = {
                   views: { type: 'number' },
                   reach: { type: 'number' },
                   impressions: { type: 'number' },
+                  saves: { type: 'number' },
+                  clicks: { type: 'number' },
+                  profileVisits: { type: 'number' },
                   lastMetricsUpdate: { type: ['string', 'null'], format: 'date-time' },
                   metadata: { type: ['string', 'null'] },
                   createdAt: { type: 'string', format: 'date-time' },

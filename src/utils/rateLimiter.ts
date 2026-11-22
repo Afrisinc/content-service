@@ -1,12 +1,9 @@
-/**
- * Rate Limiter Utility
- * Supports both in-memory and Redis-based rate limiting
- */
+import { cacheDelete, cacheIncrementBy, cacheRead, cacheTtl } from '@/utils/cache';
 
 export interface RateLimitConfig {
-  windowMs: number; // Time window in milliseconds
-  maxRequests: number; // Max requests per window
-  keyPrefix: string; // Key prefix for identification
+  windowMs: number;
+  maxRequests: number;
+  keyPrefix: string;
 }
 
 interface RequestRecord {
@@ -15,29 +12,68 @@ interface RequestRecord {
 }
 
 /**
- * In-memory rate limiter (suitable for single-instance deployments)
- * For distributed systems, use Redis backend instead
+ * Redis-backed fixed-window rate limiter, shared across every instance of this
+ * service. Falls back to a local, in-process window only when Redis is
+ * unreachable — and fails open rather than blocking every caller during an
+ * outage, matching the budget guard's degrade rule.
  */
 export class RateLimiter {
-  private store: Map<string, RequestRecord> = new Map();
+  private fallbackStore: Map<string, RequestRecord> = new Map();
   private cleanupInterval: ReturnType<typeof setInterval>;
 
   constructor() {
-    // Cleanup expired entries every minute
-    this.cleanupInterval = setInterval(() => this.cleanup(), 60000);
+    this.cleanupInterval = setInterval(() => this.cleanupFallback(), 60000);
+    this.cleanupInterval.unref?.();
   }
 
   async isAllowed(key: string, config: RateLimitConfig): Promise<boolean> {
     const redisKey = `${config.keyPrefix}:${key}`;
+    const windowSeconds = Math.max(1, Math.ceil(config.windowMs / 1000));
+    const count = await cacheIncrementBy(redisKey, 1, windowSeconds);
+
+    if (count !== null) {
+      return count <= config.maxRequests;
+    }
+
+    return this.isAllowedFallback(redisKey, config);
+  }
+
+  async getRemainingRequests(key: string, config: RateLimitConfig): Promise<number> {
+    const redisKey = `${config.keyPrefix}:${key}`;
+    const raw = await cacheRead(redisKey);
+
+    if (raw !== null) {
+      const count = Number.parseInt(raw, 10) || 0;
+      return Math.max(0, config.maxRequests - count);
+    }
+
+    return this.getRemainingFallback(redisKey, config);
+  }
+
+  async getResetTime(key: string, config: RateLimitConfig): Promise<number> {
+    const redisKey = `${config.keyPrefix}:${key}`;
+    const raw = await cacheRead(redisKey);
+
+    if (raw !== null) {
+      const ttlSeconds = await cacheTtl(redisKey);
+      return ttlSeconds !== null ? ttlSeconds * 1000 : 0;
+    }
+
+    return this.getResetFallback(redisKey);
+  }
+
+  async reset(key: string, config: RateLimitConfig): Promise<void> {
+    const redisKey = `${config.keyPrefix}:${key}`;
+    await cacheDelete(redisKey);
+    this.fallbackStore.delete(redisKey);
+  }
+
+  private isAllowedFallback(redisKey: string, config: RateLimitConfig): boolean {
     const now = Date.now();
-    const record = this.store.get(redisKey);
+    const record = this.fallbackStore.get(redisKey);
 
     if (!record || now > record.resetAt) {
-      // Reset if expired or new
-      this.store.set(redisKey, {
-        count: 1,
-        resetAt: now + config.windowMs,
-      });
+      this.fallbackStore.set(redisKey, { count: 1, resetAt: now + config.windowMs });
       return true;
     }
 
@@ -45,9 +81,8 @@ export class RateLimiter {
     return record.count <= config.maxRequests;
   }
 
-  async getRemainingRequests(key: string, config: RateLimitConfig): Promise<number> {
-    const redisKey = `${config.keyPrefix}:${key}`;
-    const record = this.store.get(redisKey);
+  private getRemainingFallback(redisKey: string, config: RateLimitConfig): number {
+    const record = this.fallbackStore.get(redisKey);
     const now = Date.now();
 
     if (!record || now > record.resetAt) {
@@ -57,9 +92,8 @@ export class RateLimiter {
     return Math.max(0, config.maxRequests - record.count);
   }
 
-  async getResetTime(key: string, config: RateLimitConfig): Promise<number> {
-    const redisKey = `${config.keyPrefix}:${key}`;
-    const record = this.store.get(redisKey);
+  private getResetFallback(redisKey: string): number {
+    const record = this.fallbackStore.get(redisKey);
     const now = Date.now();
 
     if (!record || now > record.resetAt) {
@@ -69,23 +103,18 @@ export class RateLimiter {
     return Math.max(0, record.resetAt - now);
   }
 
-  async reset(key: string, config: RateLimitConfig): Promise<void> {
-    const redisKey = `${config.keyPrefix}:${key}`;
-    this.store.delete(redisKey);
-  }
-
-  private cleanup(): void {
+  private cleanupFallback(): void {
     const now = Date.now();
-    for (const [key, record] of this.store.entries()) {
+    for (const [key, record] of this.fallbackStore.entries()) {
       if (now > record.resetAt) {
-        this.store.delete(key);
+        this.fallbackStore.delete(key);
       }
     }
   }
 
   destroy(): void {
     clearInterval(this.cleanupInterval);
-    this.store.clear();
+    this.fallbackStore.clear();
   }
 }
 

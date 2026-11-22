@@ -24,21 +24,23 @@ def header(
     surface: str,
     *,
     show_site: bool,
+    show_brand: bool = True,
 ) -> None:
     colour = R.foreground(surface)
-    mark_colour = colour if R.is_dark(surface) else T.AZURE
-    mark = marks.tinted_logo(LOGO_MARK_SIZE, mark_colour, 1.0)
-    overlay.alpha_composite(mark, (geo.margin, geo.header_y - LOGO_MARK_SIZE // 2))
+    if show_brand:
+        mark_colour = colour if R.is_dark(surface) else T.AZURE
+        mark = marks.tinted_logo(LOGO_MARK_SIZE, mark_colour, 1.0)
+        overlay.alpha_composite(mark, (geo.margin, geo.header_y - LOGO_MARK_SIZE // 2))
 
-    ty.draw_cap_centred(
-        draw,
-        geo.margin + LOGO_MARK_SIZE + LOGO_TEXT_GAP,
-        geo.header_y,
-        T.WORDMARK,
-        ty.font(ty.BOLD, T.SIZE_WORDMARK),
-        colour + (255,),
-        T.SIZE_WORDMARK * 0.08,
-    )
+        ty.draw_cap_centred(
+            draw,
+            geo.margin + LOGO_MARK_SIZE + LOGO_TEXT_GAP,
+            geo.header_y,
+            T.WORDMARK,
+            ty.font(ty.BOLD, T.SIZE_WORDMARK),
+            colour + (255,),
+            T.SIZE_WORDMARK * 0.08,
+        )
 
     if show_site:
         ty.draw_cap_centred(
@@ -67,6 +69,68 @@ def contact_rail(draw: ImageDraw.ImageDraw, geo: Geometry, surface: str) -> None
         T.CONTACT_RAIL,
         ty.font(ty.MEDIUM, size),
         R.foreground(surface) + (int(255 * T.RAIL_ALPHA),),
+    )
+
+
+def news_badge_rect(geo: Geometry, label: str = "NEWS") -> tuple[float, float, float, float]:
+    fnt = ty.font(ty.BOLD, T.SIZE_BADGE)
+    text = ty.text_width(label, fnt, ty.tracking(T.SIZE_BADGE, caps=True))
+    width = (
+        T.NEWS_BADGE_PADDING * 2 + T.NEWS_BADGE_DOT_RADIUS * 2 + T.NEWS_BADGE_GAP + text
+    )
+    top = geo.header_y - T.NEWS_BADGE_HEIGHT / 2
+    return (geo.right_edge - width, top, geo.right_edge, top + T.NEWS_BADGE_HEIGHT)
+
+
+def news_badge(
+    draw: ImageDraw.ImageDraw,
+    geo: Geometry,
+    label: str = "NEWS",
+    fill: T.RGB = T.WHITE,
+    text_colour: T.RGB = T.INK,
+) -> None:
+    left, top, right, bottom = news_badge_rect(geo, label)
+    draw.rounded_rectangle(
+        [left, top, right, bottom], radius=T.NEWS_BADGE_HEIGHT // 2, fill=fill + (255,)
+    )
+
+    dot_x = left + T.NEWS_BADGE_PADDING + T.NEWS_BADGE_DOT_RADIUS
+    centre_y = (top + bottom) / 2
+    draw.ellipse(
+        [
+            dot_x - T.NEWS_BADGE_DOT_RADIUS,
+            centre_y - T.NEWS_BADGE_DOT_RADIUS,
+            dot_x + T.NEWS_BADGE_DOT_RADIUS,
+            centre_y + T.NEWS_BADGE_DOT_RADIUS,
+        ],
+        fill=T.CORAL + (255,),
+    )
+    ty.draw_cap_centred(
+        draw,
+        dot_x + T.NEWS_BADGE_DOT_RADIUS + T.NEWS_BADGE_GAP,
+        centre_y,
+        label,
+        ty.font(ty.BOLD, T.SIZE_BADGE),
+        text_colour + (255,),
+        ty.tracking(T.SIZE_BADGE, caps=True),
+    )
+
+
+def dateline(draw: ImageDraw.ImageDraw, geo: Geometry, text: str, surface: str) -> None:
+    colour = R.foreground(surface)
+    rule_y = geo.footer_y - T.DATELINE_RULE_OFFSET
+    draw.line(
+        [(geo.margin, rule_y), (geo.right_edge, rule_y)],
+        fill=colour + (int(255 * T.DATELINE_RULE_ALPHA),),
+        width=2,
+    )
+
+    fnt = ty.font(ty.MEDIUM, T.SIZE_DATELINE)
+    fill = colour + (int(255 * T.DATELINE_TEXT_ALPHA),)
+    track = T.SIZE_DATELINE * 0.08
+    ty.draw_cap_centred(draw, geo.margin, geo.footer_y, text.upper(), fnt, fill, track)
+    ty.draw_cap_centred(
+        draw, geo.right_edge, geo.footer_y, T.SITE.upper(), fnt, fill, track, align_right=True
     )
 
 

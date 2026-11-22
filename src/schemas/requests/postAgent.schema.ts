@@ -95,7 +95,8 @@ export const RejectPostDraftSchema = {
 
 export const SchedulePostDraftSchema = {
   description:
-    'Move a draft to a different slot, or queue one that was not auto-queued. Everything is optional: omit scheduledAt for the next free slot.',
+    'Move a draft to a different slot, or queue one that was not auto-queued. ' +
+    'Everything is optional: omit scheduledAt for the next free slot.',
   params: idParams,
   body: {
     type: 'object',

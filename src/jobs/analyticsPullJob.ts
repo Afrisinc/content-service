@@ -1,5 +1,8 @@
 import cron, { ScheduledTask } from 'node-cron';
 import { env } from '@/config/env';
+import { analyticsOutcome } from '@/helpers/agentRunOutcome.helper';
+import { agentControlService } from '@/services/agentControl.service';
+import { agentRunRecorder } from '@/services/agentRunRecorder.service';
 import { analyticsPullService } from '@/services/analyticsPull.service';
 import { logger } from '@/utils/logger';
 
@@ -31,7 +34,19 @@ export function startAnalyticsPullJob() {
     running = true;
 
     try {
-      const report = await analyticsPullService.run();
+      if (!(await agentControlService.isActive('analytics'))) {
+        logger.debug('Analytics sync switched off in the dashboard, skipping this tick');
+        return;
+      }
+
+      const report = await agentRunRecorder.record({
+        agent: 'analytics',
+        trigger: 'schedule',
+        topic: 'Analytics sync',
+        stepLabel: 'Sync metrics',
+        execute: () => analyticsPullService.run(),
+        outcome: analyticsOutcome,
+      });
       logger.info({ ...report }, 'Analytics pull job completed');
     } catch (error) {
       logger.error(

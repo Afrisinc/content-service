@@ -1,0 +1,105 @@
+import {
+  featureNewsDeskArticle,
+  generateNewsDeskSocial,
+  runNewsAgentStage,
+  getNewsDeskArticle,
+  getNewsDeskSummary,
+  listNewsDeskArticles,
+  requeueNewsDeskArticle,
+  skipNewsDeskArticle,
+  updateNewsDeskSettings,
+} from '@/controllers/newsDesk.controller';
+import { asyncWrapper } from '@/middlewares/async_wrapper.middleware';
+import { authGuard } from '@/middlewares/authGuard';
+import { rateLimitGuard } from '@/middlewares/rateLimitGuard';
+import {
+  FeatureNewsDeskArticleSchema,
+  GenerateNewsDeskSocialSchema,
+  GetNewsDeskArticleSchema,
+  ListNewsDeskArticlesSchema,
+  NewsDeskArticleActionSchema,
+  RunNewsAgentStageSchema,
+  UpdateNewsDeskSettingsSchema,
+} from '@/schemas/requests/newsDesk.schema';
+import { FastifyInstance } from 'fastify';
+
+const TAGS = ['news-desk'];
+
+const SOCIAL_RATE_LIMIT = {
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 20,
+  keyPrefix: 'news-desk:social',
+};
+
+/** An enhance run spends OpenAI money on every article it picks up. */
+const MANUAL_RUN_RATE_LIMIT = {
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 6,
+  keyPrefix: 'news-desk:run',
+};
+
+/**
+ * The editor's view of the news agent (RSS ingestion → AI enhancement). Separate
+ * from the public /articles routes the website reads without a user token.
+ */
+export async function newsDeskRoutes(app: FastifyInstance) {
+  app.get(
+    '/news-desk/summary',
+    { schema: { tags: TAGS }, onRequest: [authGuard] },
+    asyncWrapper(getNewsDeskSummary)
+  );
+
+  app.put(
+    '/news-desk/settings',
+    { schema: { ...UpdateNewsDeskSettingsSchema, tags: TAGS }, onRequest: [authGuard] },
+    asyncWrapper(updateNewsDeskSettings)
+  );
+
+  app.get(
+    '/news-desk/articles',
+    { schema: { ...ListNewsDeskArticlesSchema, tags: TAGS }, onRequest: [authGuard] },
+    asyncWrapper(listNewsDeskArticles)
+  );
+
+  app.get(
+    '/news-desk/articles/:id',
+    { schema: { ...GetNewsDeskArticleSchema, tags: TAGS }, onRequest: [authGuard] },
+    asyncWrapper(getNewsDeskArticle)
+  );
+
+  app.post(
+    '/news-desk/runs/:stage',
+    {
+      schema: { ...RunNewsAgentStageSchema, tags: TAGS },
+      onRequest: [authGuard, rateLimitGuard(MANUAL_RUN_RATE_LIMIT)],
+    },
+    asyncWrapper(runNewsAgentStage)
+  );
+
+  app.post(
+    '/news-desk/articles/:id/requeue',
+    { schema: { ...NewsDeskArticleActionSchema, tags: TAGS }, onRequest: [authGuard] },
+    asyncWrapper(requeueNewsDeskArticle)
+  );
+
+  app.post(
+    '/news-desk/articles/:id/skip',
+    { schema: { ...NewsDeskArticleActionSchema, tags: TAGS }, onRequest: [authGuard] },
+    asyncWrapper(skipNewsDeskArticle)
+  );
+
+  app.post(
+    '/news-desk/articles/:id/feature',
+    { schema: { ...FeatureNewsDeskArticleSchema, tags: TAGS }, onRequest: [authGuard] },
+    asyncWrapper(featureNewsDeskArticle)
+  );
+
+  app.post(
+    '/news-desk/articles/:id/social',
+    {
+      schema: { ...GenerateNewsDeskSocialSchema, tags: TAGS },
+      onRequest: [authGuard, rateLimitGuard(SOCIAL_RATE_LIMIT)],
+    },
+    asyncWrapper(generateNewsDeskSocial)
+  );
+}

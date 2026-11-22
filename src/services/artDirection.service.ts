@@ -1,3 +1,4 @@
+import { env } from '@/config/env';
 import { BrandAssetRepository, brandAssetRepository } from '@/repositories/brandAsset.repository';
 import { PostCopy } from '@/types/post.types';
 import { BadRequestError } from '@/utils/http-error';
@@ -49,7 +50,8 @@ export class ArtDirectionService {
     copy: PostCopy,
     userId: string,
     groupId?: string,
-    assetIds?: string[]
+    assetIds?: string[],
+    fixedPhoto?: string
   ): Promise<PhotoAssignment> {
     // A one-frame post has no proof slide, so the single frame is the photo
     // slide. A pair opens on azure and closes on a photograph, so only its
@@ -63,6 +65,11 @@ export class ArtDirectionService {
 
     if (!photoSlides.length) {
       return { photosByIndex: {}, assetIds: [], reused: 0 };
+    }
+
+    if (fixedPhoto) {
+      const photosByIndex = Object.fromEntries(photoSlides.map(({ index }) => [index, fixedPhoto]));
+      return { photosByIndex, assetIds: [], reused: 0 };
     }
 
     // Resolved once: asking per slide would hit the database for every frame.
@@ -87,8 +94,16 @@ export class ArtDirectionService {
       );
 
       if (!chosen) {
-        // A single post reads perfectly well on azure, so a bare library is not fatal.
+        // A bare library is not fatal for a short post: it takes the default
+        // photograph, or reads on azure when none is configured.
         if (copy.slides.length <= 2) {
+          if (env.POST_FALLBACK_PHOTO) {
+            photosByIndex[index] = env.POST_FALLBACK_PHOTO;
+            logger.info(
+              { userId, groupId, photo: env.POST_FALLBACK_PHOTO },
+              'No approved brand photograph — using the default photograph'
+            );
+          }
           break;
         }
         throw new BadRequestError(

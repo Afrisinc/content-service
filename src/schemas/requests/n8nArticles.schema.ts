@@ -475,7 +475,8 @@ export const GetArticleByIdSchema = {
             updated_at: { type: 'string' },
           },
           description:
-            'Article object with all fields including AI enhancement fields (slug, ai_generated, tags, read_time)',
+            'Article object with all fields including AI enhancement fields ' +
+            '(slug, ai_generated, tags, read_time)',
         },
       },
     },
@@ -567,4 +568,22 @@ export const GetTopArticlesSchema = {
       },
     },
   },
+};
+
+const slugParams = {
+  type: 'object',
+  required: ['slug'],
+  properties: { slug: { type: 'string' } },
+};
+
+export const RecordArticleViewSchema = {
+  description: 'Record that a device viewed this article',
+  tags: ['articles'],
+  params: slugParams,
+};
+
+export const RecordArticleReadSchema = {
+  description: 'Record that a device finished reading this article',
+  tags: ['articles'],
+  params: slugParams,
 };

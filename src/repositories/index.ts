@@ -15,3 +15,8 @@ export {
 export { MediaPostRepository } from './mediaPost.repository';
 export { postDraftRepository, PostDraftRepository } from './postDraft.repository';
 export { brandAssetRepository, BrandAssetRepository } from './brandAsset.repository';
+export {
+  aiProviderConfigRepository,
+  AiProviderConfigRepository,
+} from './aiProviderConfig.repository';
+export { agentSettingRepository, AgentSettingRepository } from './agentSetting.repository';

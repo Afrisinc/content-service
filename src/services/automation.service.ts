@@ -1,4 +1,13 @@
+import {
+  AGENT_REGISTRY,
+  WORKSPACE_RUN_OWNER,
+  agentKeyForRun,
+  runOwnersFor,
+  type AgentKey,
+} from '@/config/agentRegistry';
 import { env } from '@/config/env';
+import { isAgentSwitchedOn } from '@/helpers/agentSettings.helper';
+import { newsEditorial } from '@/helpers/newsPost.helper';
 import { pluralise } from '@/helpers/agentRun.helper';
 import { cancelRun, isRunCancellable } from '@/helpers/runCancellation.helper';
 import {
@@ -20,8 +29,9 @@ import {
   AutomationPolicyDTO,
   UpdateAutomationPolicyPayload,
 } from '@/types/accountGroup.types';
-import { PostFormatName } from '@/types/post.types';
-import { BadRequestError, ConflictError, NotFoundError } from '@/utils/http-error';
+import type { NewsPostSource, NewsSocialOutcome } from '@/types/newsDesk.types';
+import { PostBriefPayload, PostFormatName } from '@/types/post.types';
+import { BadRequestError, ConflictError, NotFoundError, ServerError } from '@/utils/http-error';
 import { logger } from '@/utils/logger';
 import { AgentRunStatus, AgentStepStatus, AutomationMode, PostDraftStatus } from '@prisma/client';
 
@@ -66,6 +76,26 @@ function startOfToday(now: Date = new Date()): Date {
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
   return start;
+}
+
+function newsOverrides(source: NewsPostSource, format: PostFormatName): Partial<PostBriefPayload> {
+  return {
+    format,
+    slideCount: 1,
+    link: source.articleUrl,
+    photoUrl: source.coverUrl,
+    editorial: newsEditorial({
+      headline: source.title,
+      summary: source.summary ?? '',
+      standfirst: source.standfirst,
+      category: source.category,
+      source: source.source,
+      publishedAt: source.publishedAt,
+      articleUrl: source.articleUrl,
+      sourceUrl: source.sourceUrl,
+      tags: source.tags,
+    }),
+  };
 }
 
 function asPostFormat(value: string): PostFormatName {
@@ -124,19 +154,29 @@ export class AutomationService {
   async listRuns(params: {
     userId: string;
     groupId?: string;
+    agent?: AgentKey;
     status?: AgentRunStatus;
     page?: number;
     limit?: number;
   }) {
-    const result = await this.runs.list(params);
+    const { agent, ...rest } = params;
+    const result = await this.runs.list({
+      ...rest,
+      alsoOwnedBy: [WORKSPACE_RUN_OWNER],
+      ...(agent ? { agent: AGENT_REGISTRY[agent].runAgent } : {}),
+    });
     const items = await Promise.all(
       result.items.map(run => this.withResumable(this.withCancellable(this.toRunDTO(run))))
     );
     return { ...result, items };
   }
 
-  async summarise(userId: string, since: Date = startOfToday()) {
-    return this.runs.summariseForUser(userId, since);
+  async summarise(userId: string, since: Date = startOfToday(), agent?: AgentKey) {
+    return this.runs.summariseForOwners(
+      runOwnersFor(userId),
+      since,
+      agent ? AGENT_REGISTRY[agent].runAgent : undefined
+    );
   }
 
   /**
@@ -401,7 +441,10 @@ export class AutomationService {
 
   /** Cron entry point: every workspace whose switch is set to autopilot. */
   async runDueUsers(): Promise<{ users: number; drafted: number }> {
-    const userIds = await this.policies.findRunnableUserIds();
+    const policies = await this.policies.findRunnablePolicies();
+    const userIds = policies
+      .filter(policy => isAgentSwitchedOn(AGENT_REGISTRY.post, policy.agents))
+      .map(policy => policy.userId);
 
     let drafted = 0;
     for (const userId of userIds) {
@@ -417,6 +460,105 @@ export class AutomationService {
     }
 
     return { users: userIds.length, drafted };
+  }
+
+  async draftNewsPosts(source: NewsPostSource): Promise<NewsSocialOutcome[]> {
+    const policies = await this.policies.findRunnablePolicies();
+    const userIds = policies
+      .filter(policy => isAgentSwitchedOn(AGENT_REGISTRY.news, policy.agents))
+      .map(policy => policy.userId);
+
+    const outcomes: NewsSocialOutcome[] = [];
+    for (const userId of userIds) {
+      outcomes.push(await this.draftNewsPostForUser(userId, source));
+    }
+    return outcomes;
+  }
+
+  async draftNewsStory(
+    userId: string,
+    source: NewsPostSource,
+    format: PostFormatName
+  ): Promise<{ groupName: string }> {
+    const policy = await this.policies.findByUser(userId);
+    const group = await this.newsGroupFor(userId, policy?.defaultGroupId ?? null);
+    if (!group) {
+      throw new BadRequestError('set an active default brand before generating a post');
+    }
+
+    const targets = await this.groups.findActiveTargets(group.id);
+    if (!targets.length) {
+      throw new BadRequestError('switch on at least one account in the default brand');
+    }
+
+    const failure = await this.draftOne(
+      userId,
+      group,
+      source.title,
+      MANUAL_TRIGGER,
+      false,
+      targets.length,
+      newsOverrides(source, format)
+    );
+    if (failure) {
+      throw new ServerError(failure);
+    }
+    return { groupName: group.name };
+  }
+
+  private async draftNewsPostForUser(
+    userId: string,
+    source: NewsPostSource
+  ): Promise<NewsSocialOutcome> {
+    const outcome = (
+      status: NewsSocialOutcome['status'],
+      reason: string | null,
+      groupName: string | null = null
+    ): NewsSocialOutcome => ({ userId, groupName, status, reason });
+
+    try {
+      const policy = await this.policies.findByUser(userId);
+      const group = await this.newsGroupFor(userId, policy?.defaultGroupId ?? null);
+      if (!group) {
+        return outcome('skipped', 'no default brand is set');
+      }
+
+      const maxPostsPerDay = policy?.maxPostsPerDay ?? DEFAULT_MAX_POSTS_PER_DAY;
+      if ((await this.runs.countSince(userId, startOfToday())) >= maxPostsPerDay) {
+        return outcome('skipped', 'daily post limit reached', group.name);
+      }
+
+      if ((await this.runs.findRecentTopics(group.id)).includes(source.title)) {
+        return outcome('skipped', 'already posted for this brand', group.name);
+      }
+
+      const targets = await this.groups.findActiveTargets(group.id);
+      if (!targets.length) {
+        return outcome('skipped', 'no switched-on accounts in this brand', group.name);
+      }
+
+      const failure = await this.draftOne(
+        userId,
+        group,
+        source.title,
+        AUTOPILOT_TRIGGER,
+        policy?.autoPublish ?? true,
+        targets.length,
+        newsOverrides(source, 'single')
+      );
+      return failure
+        ? outcome('failed', failure, group.name)
+        : outcome('drafted', null, group.name);
+    } catch (err) {
+      return outcome('failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private async newsGroupFor(userId: string, defaultGroupId: string | null) {
+    const group = defaultGroupId
+      ? await this.groups.findByIdForUser(defaultGroupId, userId)
+      : (await this.groups.findAutopilotGroups([userId])).find(candidate => candidate.isDefault);
+    return group?.isActive ? group : null;
   }
 
   private async runGroup(
@@ -475,7 +617,8 @@ export class AutomationService {
     topic: string,
     trigger: string,
     autoPublish: boolean,
-    accountsTargeted: number
+    accountsTargeted: number,
+    overrides: Partial<PostBriefPayload> = {}
   ): Promise<string | null> {
     const run = await this.runs.start({
       userId,
@@ -501,6 +644,7 @@ export class AutomationService {
         autoPublish,
         trigger,
         runId: run.id,
+        ...overrides,
       });
 
       // Autopilot signs the draft off itself. The craft audit still gates it —
@@ -598,7 +742,7 @@ export class AutomationService {
 
   /** One run with its stages, for the live tracker. */
   async getRun(userId: string, runId: string): Promise<AgentRunDTO> {
-    const run = await this.runs.findByIdForUser(runId, userId);
+    const run = await this.runs.findByIdForOwners(runId, runOwnersFor(userId));
     if (!run) {
       throw new NotFoundError('agent run not found');
     }
@@ -610,7 +754,7 @@ export class AutomationService {
    * so a page of successes costs no cache reads at all.
    */
   private async withResumable(run: AgentRunDTO): Promise<AgentRunDTO> {
-    if (run.status !== AgentRunStatus.failed) {
+    if (run.status !== AgentRunStatus.failed || run.agent !== POST_AGENT_NAME) {
       return run;
     }
     return { ...run, resumable: await this.postAgent.isResumable(run.id) };
@@ -669,6 +813,7 @@ export class AutomationService {
       groupId: run.groupId,
       groupName: run.group?.name ?? null,
       agent: run.agent,
+      agentKey: agentKeyForRun(run.agent),
       trigger: run.trigger,
       status: run.status,
       topic: run.topic,

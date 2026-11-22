@@ -206,3 +206,39 @@ describe('scoping to an account', () => {
     expect(args.where.asset.OR).toEqual([{ userId: 'user-1' }, { userId: null }]);
   });
 });
+
+describe('findReferencesStartingWith', () => {
+  it('asks only for this account’s references that begin with a candidate', async () => {
+    prisma.brandAssetImage.findMany.mockResolvedValueOnce([
+      { reference: 'office' },
+      { reference: 'office-2' },
+    ] as never);
+
+    const references = await repository.findReferencesStartingWith('user-1', ['office', 'team']);
+
+    expect(references).toEqual(['office', 'office-2']);
+    expect(prisma.brandAssetImage.findMany).toHaveBeenCalledWith({
+      where: {
+        userId: 'user-1',
+        OR: [{ reference: { startsWith: 'office' } }, { reference: { startsWith: 'team' } }],
+      },
+      select: { reference: true },
+    });
+  });
+
+  it('skips the query when there is nothing to check', async () => {
+    expect(await repository.findReferencesStartingWith('user-1', [])).toEqual([]);
+    expect(prisma.brandAssetImage.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('replaceSubjects', () => {
+  it('sets the same subjects on every photograph in the set', async () => {
+    await repository.replaceSubjects('set-1', ['office', 'team']);
+
+    expect(prisma.brandAssetImage.updateMany).toHaveBeenCalledWith({
+      where: { assetId: 'set-1' },
+      data: { subjects: ['office', 'team'] },
+    });
+  });
+});
