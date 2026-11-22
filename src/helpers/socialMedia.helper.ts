@@ -92,7 +92,8 @@ class SocialMediaHelper {
    * Requests permalink_url in response so we get the actual post URL
    */
   buildFacebookApiUrl(pageId: string): string {
-    return `${this.FACEBOOK_GRAPH_API_URL}/${this.FACEBOOK_API_VERSION}/${pageId}/feed?fields=id,permalink_url`;
+    const base = `${this.FACEBOOK_GRAPH_API_URL}/${this.FACEBOOK_API_VERSION}/${pageId}/feed`;
+    return `${base}?fields=id,permalink_url`;
   }
 
   /**
@@ -336,9 +337,10 @@ class SocialMediaHelper {
       case SocialMediaPlatform.FACEBOOK:
         return this.buildFacebookApiUrl(pageId);
 
-      case SocialMediaPlatform.INSTAGRAM:
-        // Instagram API endpoint would be different
-        return `${this.FACEBOOK_GRAPH_API_URL}/${this.FACEBOOK_API_VERSION}/${pageId}/ig_hashtag_search`;
+      case SocialMediaPlatform.INSTAGRAM: {
+        const base = `${this.FACEBOOK_GRAPH_API_URL}/${this.FACEBOOK_API_VERSION}/${pageId}`;
+        return `${base}/ig_hashtag_search`;
+      }
 
       case SocialMediaPlatform.TWITTER:
         // Twitter API endpoints

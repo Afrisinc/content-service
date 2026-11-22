@@ -33,6 +33,7 @@ export interface FinishAgentRunInput {
 
 export interface ListAgentRunsParams {
   userId: string;
+  alsoOwnedBy?: string[];
   groupId?: string;
   agent?: string;
   status?: AgentRunStatus;
@@ -194,7 +195,9 @@ export class AgentRunRepository {
     const limit = Math.min(params.limit ?? 20, MAX_PAGE_SIZE);
     const page = Math.max(params.page ?? 1, 1);
     const where: Prisma.AgentRunWhereInput = {
-      userId: params.userId,
+      userId: params.alsoOwnedBy?.length
+        ? { in: [params.userId, ...params.alsoOwnedBy] }
+        : params.userId,
       ...(params.groupId ? { groupId: params.groupId } : {}),
       ...(params.agent ? { agent: params.agent } : {}),
       ...(params.status ? { status: params.status } : {}),
@@ -268,6 +271,48 @@ export class AgentRunRepository {
     return rows
       .map((row: { topic: string | null }) => row.topic)
       .filter((topic: string | null): topic is string => topic !== null);
+  }
+
+  async findByIdForOwners(id: string, owners: string[]) {
+    return this.prisma.agentRun.findFirst({
+      where: { id, userId: { in: owners } },
+      include: withGroup,
+    });
+  }
+
+  async summariseForOwners(owners: string[], since: Date, agent?: string) {
+    const grouped = await this.prisma.agentRun.groupBy({
+      by: ['status'],
+      where: { userId: { in: owners }, startedAt: { gte: since }, ...(agent ? { agent } : {}) },
+      _count: { _all: true },
+    });
+
+    return grouped.reduce<Record<string, number>>((totals, row) => {
+      totals[row.status] = row._count._all;
+      return totals;
+    }, {});
+  }
+
+  async countByAgentSince(owners: string[], since: Date) {
+    const grouped = await this.prisma.agentRun.groupBy({
+      by: ['agent'],
+      where: { userId: { in: owners }, startedAt: { gte: since } },
+      _count: { _all: true },
+    });
+    return Object.fromEntries(grouped.map(row => [row.agent, row._count._all]));
+  }
+
+  async findLatestPerAgent(owners: string[]) {
+    return this.prisma.agentRun.findMany({
+      where: { userId: { in: owners } },
+      distinct: ['agent'],
+      orderBy: { startedAt: 'desc' },
+      include: withGroup,
+    });
+  }
+
+  async discard(id: string) {
+    return this.prisma.agentRun.deleteMany({ where: { id } });
   }
 
   async summariseForUser(userId: string, since: Date) {

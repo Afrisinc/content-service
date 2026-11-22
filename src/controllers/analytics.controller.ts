@@ -5,9 +5,14 @@ import {
   type ViewSource,
 } from '@/repositories/analytics.repository';
 import { METRICS_SUPPORTED_PLATFORMS } from '@/helpers/analyticsCadence.helper';
-import { buildRecommendations, rankPosts } from '@/helpers/analyticsInsights.helper';
-import { buildWeeklyPlan, planConfidence, rankTopics } from '@/helpers/postingPlan.helper';
+import {
+  buildRecommendations,
+  comparablePosts,
+  rankPosts,
+} from '@/helpers/analyticsInsights.helper';
 import { BadRequestError, UnauthorizedError } from '@/utils/http-error';
+import { postIdeasService } from '@/services/postIdeas.service';
+import { postingPlanService } from '@/services/postingPlan.service';
 import { cacheGet, cacheSet, cacheThrough } from '@/utils/cache';
 import { success } from '@/utils/response';
 import { FastifyReply, FastifyRequest } from 'fastify';
@@ -31,8 +36,6 @@ const MAX_WINDOW_DAYS = 365;
  */
 const REPORT_TTL_SECONDS = 300;
 const TOP_MEDIA_LIMIT = 5;
-const DEFAULT_SLOT_WEEKDAYS = '2,5';
-const DEFAULT_SLOT_HOUR = 9;
 
 function windowKey(prefix: string, userId: string, from: Date, to: Date): string {
   return `analytics:${prefix}:${userId}:${from.toISOString().slice(0, 10)}:${to
@@ -266,7 +269,9 @@ async function loadOverview(userId: string, from: Date, to: Date) {
     series,
     platforms: platforms.sort((a, b) => b.reach - a.reach || b.posts - a.posts),
     topMedia: rankPosts(posts, TOP_MEDIA_LIMIT),
-    recommendations: buildRecommendations(posts, connected, timeZone),
+    recommendations: buildRecommendations(comparablePosts(posts), connected, timeZone, {
+      volume: posts,
+    }),
     postsAnalysed: posts.length,
   };
 }
@@ -356,45 +361,31 @@ async function loadAccounts(userId: string, from: Date, to: Date) {
  */
 export async function getAnalyticsPlan(request: FastifyRequest, reply: FastifyReply) {
   const userId = requireUserId(request);
-  const { from, to } = parseWindow(request.query as { from?: string; to?: string });
+  const query = request.query as { from?: string; to?: string; groupId?: string };
+  const { from, to } = parseWindow(query);
 
-  const payload = await cacheThrough(windowKey('plan', userId, from, to), REPORT_TTL_SECONDS, () =>
-    loadPlan(userId, from, to)
+  const payload = await cacheThrough(
+    windowKey('plan', `${userId}:${query.groupId ?? 'default'}`, from, to),
+    REPORT_TTL_SECONDS,
+    () => postingPlanService.build(userId, from, to, query.groupId)
   );
 
   return success(reply, 200, 'Posting plan retrieved', 1000, payload);
 }
 
-async function loadPlan(userId: string, from: Date, to: Date) {
-  const [posts, connected, brand] = await Promise.all([
-    analyticsRepository.publishedPosts(userId, from, to),
-    analyticsRepository.connectedPlatforms(userId),
-    analyticsRepository.planningBrand(userId),
-  ]);
-
-  const timeZone = brand?.timezone || 'UTC';
-  const confidence = planConfidence(posts);
-
-  const cadence = {
-    slotWeekdays: brand?.slotWeekdays ?? DEFAULT_SLOT_WEEKDAYS,
-    slotHour: brand?.slotHour ?? DEFAULT_SLOT_HOUR,
-    timezone: timeZone,
-    postsPerRun: brand?.postsPerRun ?? 1,
-    defaultFormat: brand?.defaultFormat ?? 'post',
-    topics: brand?.topics ?? [],
+export async function suggestPostIdeas(request: FastifyRequest, reply: FastifyReply) {
+  const userId = requireUserId(request);
+  const body = (request.body ?? {}) as {
+    from?: string;
+    to?: string;
+    groupId?: string;
+    refresh?: boolean;
   };
 
-  const slots = brand ? buildWeeklyPlan(posts, connected, cadence) : [];
+  const ideas = await postIdeasService.suggest(userId, parseWindow(body), {
+    groupId: body.groupId,
+    refresh: body.refresh,
+  });
 
-  return {
-    from: from.toISOString().slice(0, 10),
-    to: to.toISOString().slice(0, 10),
-    timeZone,
-    confidence,
-    brand: brand ? { id: brand.id, name: brand.name } : null,
-    topics: rankTopics(posts, 5),
-    recommendations: buildRecommendations(posts, connected, timeZone),
-    slots,
-    postsAnalysed: posts.length,
-  };
+  return success(reply, 200, 'Post ideas ready', 1000, ideas);
 }

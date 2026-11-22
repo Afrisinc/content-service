@@ -316,7 +316,7 @@ export class MetaPayloadTransformer {
       blocks.push(text);
     }
 
-    const tags = this.normalizeTags(payload.content.tags);
+    const tags = this.excludeTagsInText(this.normalizeTags(payload.content.tags), text);
     if (tags.length) {
       blocks.push(tags.map(tag => `#${tag}`).join(' '));
     }
@@ -356,6 +356,22 @@ export class MetaPayloadTransformer {
       .filter(Boolean);
 
     return [...new Set(normalized)];
+  }
+
+  /**
+   * Drafts bake their hashtags into the caption and also carry them as tags, so
+   * appending every tag would print the block twice. Meta hashtags are
+   * case-insensitive, hence the lowercase comparison.
+   */
+  private excludeTagsInText(tags: string[], text: string): string[] {
+    if (!tags.length || !text) {
+      return tags;
+    }
+
+    const present = new Set(
+      [...text.matchAll(/#([\p{L}\p{N}_]+)/gu)].map(match => match[1].toLowerCase())
+    );
+    return tags.filter(tag => !present.has(tag.toLowerCase()));
   }
 
   /** Image URLs in post order, regardless of how the caller labelled the media. */

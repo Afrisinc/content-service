@@ -30,6 +30,10 @@ MIN_TEXT_CONTRAST: Final[float] = 3.0
 TYPE_SCALE: Final[tuple[int, ...]] = (135, 108, 86, 69, 55, 44, 35, 28, 22, 18)
 HEADLINE_SIZES: Final[tuple[int, ...]] = (135, 108, 86, 69)
 MIN_HEADLINE_SIZE: Final[int] = 69
+HEADLINE_BRAND_FLOOR: Final[int] = 86
+BRAND_HEADLINE_SIZES: Final[tuple[int, ...]] = (135, 108, 86)
+NEWS_HEADLINE_SIZES: Final[tuple[int, ...]] = (86, 69, 55)
+NEWS_HEADLINE_FLOOR: Final[int] = 55
 MAX_HEADLINE_LINES: Final[int] = 4
 MIN_HEADLINE_LINES: Final[int] = 1
 
@@ -38,6 +42,18 @@ SIZE_SITE: Final[int] = 26
 SIZE_EYEBROW: Final[int] = 20
 SIZE_PILL: Final[int] = 22
 SIZE_SUB: Final[int] = 28
+SIZE_STANDFIRST: Final[int] = 32
+SIZE_BADGE: Final[int] = 22
+BADGE_LABELS: Final[dict[str, str]] = {"news": "NEWS", "story": "STORY"}
+NEWS_BADGE_HEIGHT: Final[int] = 46
+NEWS_BADGE_PADDING: Final[int] = 22
+NEWS_BADGE_DOT_RADIUS: Final[int] = 7
+NEWS_BADGE_GAP: Final[int] = 12
+SIZE_DATELINE: Final[int] = 22
+DATELINE_RULE_ALPHA: Final[float] = 0.38
+DATELINE_TEXT_ALPHA: Final[float] = 0.92
+DATELINE_RULE_OFFSET: Final[int] = 44
+NEWS_BAND_CLEARANCE: Final[int] = 84
 SIZE_ROW_TITLE: Final[int] = 28
 SIZE_ROW_BODY: Final[int] = 28
 SIZE_HANDLE: Final[int] = 28
@@ -78,6 +94,14 @@ PHOTO_CONTRAST: Final[float] = 1.06
 # photograph. Pulling six per cent protects the highlights — a blown monitor or a
 # white bench cannot be recovered once it clips, and that is where type disappears.
 PHOTO_EXPOSURE: Final[float] = 0.94
+
+DUOTONE_HIGHLIGHT: Final[RGB] = (222, 238, 252)
+DUOTONE_POSITIONS: Final[tuple[float, float, float]] = (0.0, 0.55, 1.0)
+
+PAPER: Final[RGB] = (243, 240, 232)
+NEWSPRINT_INK: Final[RGB] = (17, 17, 17)
+BROADSHEET_RED: Final[RGB] = (158, 27, 33)
+BREAKING_SHADE: Final[RGB] = (13, 5, 7)
 
 WATERMARK_ALPHA_DARK: Final[float] = 0.085
 WATERMARK_ALPHA_LIGHT: Final[float] = 0.06

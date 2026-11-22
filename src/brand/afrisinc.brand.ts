@@ -117,11 +117,23 @@ SLIDE ROLES
 - cta: one ask. Coral offer eyebrow, an invitation phrased as a trade, and cta
   text "${CONTACT.site}".
 
+HEADLINE MEASURE
+Every headline line is drawn at 86px or larger across an 888px column, so a line
+that runs long is rejected and the copy comes back to you. Keep each line to about
+eighteen characters — roughly two or three words. Write headlines in sentence case;
+an ALL CAPS line is far wider than the same words in sentence case and will not fit.
+Break for sense, on the clause, not to fill the line.
+
+ROW MEASURE
+A row body is set on one line and never wraps, inside a column narrower than the
+headline's. Keep each row body under about fifty characters — one short sentence.
+A row title is two or three words.
+
 Return only JSON matching the schema you are given. No preamble, no markdown
 fence.`;
 
-export const SINGLE_BRIEF_NOTE = `This is a SINGLE POST, not a carousel — one square frame that carries the
-whole message with nothing after it. Use the "cta" role for it: a coral offer
+export const SINGLE_BRIEF_NOTE = `This is a SINGLE POST, not a carousel — one square frame that
+carries the whole message with nothing after it. Use the "cta" role for it: a coral offer
 eyebrow, a headline of four to eight words that states the competitive
 difference, one or two sub-lines naming what is on offer, and cta text
 "${CONTACT.site}". There is no swipe, so nothing may depend on a following

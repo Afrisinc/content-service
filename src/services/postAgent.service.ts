@@ -26,6 +26,8 @@ import {
   socialMediaAccountRepository,
 } from '@/repositories/socialMediaAccount.repository';
 import { buildPostSlug, buildPostSpecFromCopy, buildFullCaption } from '@/helpers/postSpec.helper';
+import { buildEditorialCopy, buildEditorialSpec } from '@/helpers/editorialPost.helper';
+import { newsTemplateCandidates, templateProbe } from '@/helpers/newsTemplate.helper';
 import {
   CANCELLED_POST_STATUS,
   nextFreeSlot,
@@ -40,6 +42,8 @@ import { requestPostReview } from '@/helpers/reviewNotification.helper';
 import { ArtDirectionService, artDirectionService } from '@/services/artDirection.service';
 import { PostCopyService, postCopyService } from '@/services/postCopy.service';
 import {
+  EditorialBrief,
+  NewsTemplateName,
   PostBriefPayload,
   PostCopy,
   PostFormatName,
@@ -121,30 +125,38 @@ export class PostAgentService {
     // expensive part, and it is already correct.
     const signal = runId ? registerRun(runId) : undefined;
 
-    const { copy, attempts } = await this.reuseOrRun(
-      runId,
-      AGENT_STEP_KEYS.copy,
-      RUN_STATE_KEYS.copy,
-      () => this.copyService.generate({ ...brief, format }, signal),
-      generated => {
-        const frames = pluralise(generated.copy.slides.length, 'frame');
-        return `${frames} · ${pluralise(generated.attempts, 'attempt')}`;
-      }
-    );
+    const { copy, attempts } = brief.editorial
+      ? await this.editorialCopy(runId, brief.editorial, format)
+      : await this.reuseOrRun(
+          runId,
+          AGENT_STEP_KEYS.copy,
+          RUN_STATE_KEYS.copy,
+          () => this.copyService.generate({ ...brief, format }, signal),
+          generated => {
+            const frames = pluralise(generated.copy.slides.length, 'frame');
+            return `${frames} · ${pluralise(generated.attempts, 'attempt')}`;
+          }
+        );
 
     const { photosByIndex, assetIds } = await this.reuseOrRun(
       runId,
       AGENT_STEP_KEYS.art,
       RUN_STATE_KEYS.art,
-      () => this.artDirection.assignPhotos(copy, userId, brief.groupId, brief.assetIds),
+      () =>
+        this.artDirection.assignPhotos(copy, userId, brief.groupId, brief.assetIds, brief.photoUrl),
       assigned => {
+        if (brief.photoUrl) {
+          return 'the article cover';
+        }
         const photos = pluralise(assigned.assetIds.length, 'photograph');
         return assigned.reused ? `${photos} · ${assigned.reused} reused` : photos;
       }
     );
 
     const slug = buildPostSlug(brief.topic);
-    const spec = buildPostSpecFromCopy(slug, copy, photosByIndex, format);
+    const spec = brief.editorial
+      ? await this.editorialSpec(slug, brief.editorial, copy, photosByIndex[0], format)
+      : buildPostSpecFromCopy(slug, copy, photosByIndex, format);
 
     const draft = await this.resumeDraft(runId, spec, copy);
     if (draft) {
@@ -159,14 +171,68 @@ export class PostAgentService {
       offer: brief.offer,
       audience: brief.audience,
       spec: spec as unknown as Prisma.InputJsonValue,
-      caption: buildFullCaption(copy),
+      caption: brief.editorial ? copy.caption : buildFullCaption(copy),
       hashtags: copy.hashtags,
       claims: copy.claims,
-      aiProvider: 'anthropic',
+      aiProvider: brief.editorial ? undefined : 'anthropic',
       generationTries: attempts,
     });
 
     return this.renderQueueAndFinish(created, spec, copy, assetIds, brief, runId, slug);
+  }
+
+  private editorialCopy(
+    runId: string | null,
+    editorial: EditorialBrief,
+    format: PostFormatName
+  ): Promise<{ copy: PostCopy; attempts: number }> {
+    return this.reuseOrRun(
+      runId,
+      AGENT_STEP_KEYS.copy,
+      RUN_STATE_KEYS.copy,
+      async () => {
+        const { lines } = await this.render.wrapHeadline(editorial.headline, format);
+        return { copy: buildEditorialCopy(editorial, lines), attempts: 1 };
+      },
+      () => `copy taken from the ${editorial.layout === 'news' ? 'article' : 'episode'}`
+    );
+  }
+
+  private async editorialSpec(
+    slug: string,
+    editorial: EditorialBrief,
+    copy: PostCopy,
+    photo: string | undefined,
+    format: PostFormatName
+  ) {
+    if (!photo) {
+      throw new BadRequestError('a news or story post needs its cover as the photograph');
+    }
+    const template =
+      editorial.layout === 'news'
+        ? await this.newsTemplateFor(slug, editorial, copy, format)
+        : undefined;
+    return buildEditorialSpec(slug, editorial, copy, photo, template, format);
+  }
+
+  private async newsTemplateFor(
+    slug: string,
+    editorial: EditorialBrief,
+    copy: PostCopy,
+    format: PostFormatName
+  ): Promise<NewsTemplateName | undefined> {
+    const [slide] = copy.slides;
+    const candidates = newsTemplateCandidates(editorial.category, slug);
+    const fit = await this.render.fitHeadlines(
+      candidates.map(template =>
+        templateProbe(template, slide.headline, slide.subs?.[0] ?? editorial.standfirst)
+      ),
+      format
+    );
+    const index = fit ? fit.slides.findIndex(entry => entry.fits) : 0;
+    const chosen = candidates[index];
+    logger.info({ slug, category: editorial.category, template: chosen }, 'News template chosen');
+    return chosen;
   }
 
   /**

@@ -20,6 +20,9 @@ ROW_BODY_SIZES: tuple[int, ...] = (T.SIZE_ROW_BODY, 26, 24, 22)
 ACTION_LINE_GAP = 60
 ACTION_INDEX_WIDTH = 74
 OPTICAL_LIFT = 0.025
+STRIP_GAP = 8
+STRIP_PAD_X = 28
+STRIP_PAD_Y_RATIO = 0.26
 
 
 def _descender_pad(text: str, size: int) -> float:
@@ -295,6 +298,17 @@ class Rows(FilledBlock):
             y += row_height + self.gap
         return rects
 
+    def measure(self, geo: Geometry) -> list[tuple[str, str, float, float]]:
+        limit = self._measure(geo)
+        title_font = ty.font(ty.BOLD, T.SIZE_ROW_TITLE)
+        body_font = ty.font(ty.REGULAR, self._body_size(geo))
+        measured: list[tuple[str, str, float, float]] = []
+        for title, body in self.items:
+            title_width = ty.text_width(title, title_font, T.SIZE_ROW_TITLE * 0.02)
+            measured.append(("row title", title, title_width, limit))
+            measured.append(("row body", body, ty.text_width(body, body_font, 0.0), limit))
+        return measured
+
     def draw(
         self, draw: ImageDraw.ImageDraw, overlay: Image.Image, top: float, geo: Geometry
     ) -> None:
@@ -420,6 +434,60 @@ class CtaPill(FilledBlock):
         fnt = ty.font(ty.BOLD, self.size)
         width = fnt.getlength(self.text) + T.CTA_PADDING * 2 + (44 if self.arrow else 0)
         return [(geo.margin, top, geo.margin + width, top + T.CTA_HEIGHT)]
+
+
+@dataclass
+class StripHeadline(FilledBlock):
+    lines: list[str]
+    size: int
+
+    def _cap(self) -> float:
+        return ty.cap_height(ty.font(ty.BOLD, self.size))
+
+    def _pad(self) -> float:
+        return round(self.size * STRIP_PAD_Y_RATIO)
+
+    def _strip(self) -> float:
+        return self._cap() + 2 * self._pad()
+
+    def _colours(self, index: int) -> tuple[T.RGB, T.RGB]:
+        if index == len(self.lines) - 1:
+            return T.AZURE, T.WHITE
+        return T.WHITE, T.INK
+
+    def height(self, geo: Geometry) -> float:
+        count = len(self.lines)
+        return count * self._strip() + (count - 1) * STRIP_GAP
+
+    def draw(
+        self, draw: ImageDraw.ImageDraw, overlay: Image.Image, top: float, geo: Geometry
+    ) -> None:
+        fnt = ty.font(ty.BOLD, self.size)
+        track = ty.tracking(self.size)
+        strip = self._strip()
+
+        for index, line in enumerate(self.lines):
+            y = top + index * (strip + STRIP_GAP)
+            fill, text_colour = self._colours(index)
+            right = min(geo.margin + ty.text_width(line, fnt, track) + STRIP_PAD_X, geo.width)
+            draw.rectangle([0, y, right, y + strip], fill=fill + (255,))
+            ty.draw_cap_centred(
+                draw, geo.margin, y + strip / 2, line, fnt, text_colour + (255,), track
+            )
+
+    def bounds(self, top: float, geo: Geometry) -> list[Rect]:
+        fnt = ty.font(ty.BOLD, self.size)
+        track = ty.tracking(self.size)
+        strip = self._strip()
+        rects: list[Rect] = []
+
+        for index, line in enumerate(self.lines):
+            y = top + index * (strip + STRIP_GAP) + self._pad()
+            width = ty.text_width(line, fnt, track)
+            bottom = y + self._cap() + _descender_pad(line, self.size)
+            rects.append((geo.margin, y, geo.margin + width, bottom))
+
+        return rects
 
 
 @dataclass

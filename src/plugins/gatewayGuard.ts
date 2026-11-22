@@ -31,16 +31,6 @@ const verifySignature = (request: FastifyRequest): string | null => {
   const data = `${request.method}:${path}:${timestamp}:${body}`;
   const expected = crypto.createHmac('sha256', env.SERVICE_SECRET).update(data).digest('hex');
 
-  console.log('[Backend Signature Check]', {
-    method: request.method,
-    path,
-    timestamp,
-    body,
-    received_signature: signature,
-    expected_signature: expected,
-    match: signature === expected,
-  });
-
   const signatureBuffer = Buffer.from(signature);
   const expectedBuffer = Buffer.from(expected);
 

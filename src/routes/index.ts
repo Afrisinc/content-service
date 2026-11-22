@@ -7,14 +7,19 @@ import { aiGenerationRoutes } from './aiGeneration.routes';
 import { automationRoutes } from './automation.routes';
 import { ArticlesRoutes } from './articles.routes';
 import { postAgentRoutes } from './postAgent.routes';
+import { productionRoutes } from './production.routes';
+import { studioHealthRoutes } from './studioHealth.routes';
+import { storyRoutes } from './story.routes';
 import { GeneratedPostsRoutes } from './n8nGeneratedPosts.routes';
 import { socialMediaRoutes } from './socialMedia.routes';
 import { socialMediaIntegrationRoutes } from './socialMediaIntegration.routes';
+import { aiProviderConfigRoutes } from './aiProviderConfig.routes';
 import { userRoutes } from './user.routes';
 import { mediaPostRoutes } from './mediaPost.routes';
 import { aiUsageRoutes } from './aiUsage.routes';
 import { newsletterDigestRoutes } from './newsletterDigest.routes';
 import { brandAssetRoutes } from './brandAsset.routes';
+import { newsDeskRoutes } from './newsDesk.routes';
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get(
@@ -57,6 +62,7 @@ export async function registerRoutes(app: FastifyInstance) {
   app.register(userRoutes);
   app.register(socialMediaRoutes);
   app.register(socialMediaIntegrationRoutes);
+  app.register(aiProviderConfigRoutes);
   app.register(mediaPostRoutes);
   app.register(aiGenerationRoutes);
   app.register(ArticlesRoutes);
@@ -68,4 +74,8 @@ export async function registerRoutes(app: FastifyInstance) {
   app.register(accountGroupRoutes);
   app.register(automationRoutes);
   app.register(analyticsRoutes);
+  app.register(productionRoutes);
+  app.register(studioHealthRoutes);
+  app.register(storyRoutes);
+  app.register(newsDeskRoutes);
 }

@@ -1,4 +1,10 @@
-import { engagementOf } from '@/helpers/analyticsInsights.helper';
+import {
+  engagementOf,
+  leadingFormat,
+  platformName,
+  type ContentFormat,
+} from '@/helpers/analyticsInsights.helper';
+import { median, scorerFor } from '@/helpers/postScore.helper';
 import { nextFreeSlot, parseWeekdays } from '@/helpers/postingSlot.helper';
 import type { PublishedPostRow } from '@/repositories/analytics.repository';
 
@@ -6,11 +12,15 @@ const MIN_POSTS_FOR_TOPIC = 2;
 const MIN_POSTS_FOR_CONFIDENCE = 6;
 const GOOD_EVIDENCE_POSTS = 20;
 const MAX_SLOTS = 14;
+const UBIQUITOUS_SHARE = 0.8;
+const MIN_POSTS_FOR_UBIQUITY = 5;
+const PRODUCIBLE_FORMATS: readonly ContentFormat[] = ['post', 'single'];
 
 export interface TopicPerformance {
   topic: string;
   posts: number;
   averageEngagement: number;
+  score: number;
 }
 
 export interface PlannedSlot {
@@ -33,14 +43,20 @@ export interface BrandCadence {
 export type PlanConfidence = 'none' | 'low' | 'good';
 
 /** The label a post should be judged under: its source category, else its tags. */
-function topicsOf(post: PublishedPostRow): string[] {
+function topicsOf(post: PublishedPostRow): { topics: string[]; fromTags: boolean } {
   const category = (post as { mediaPost?: { category?: string | null } }).mediaPost?.category;
   if (category) {
-    return [category];
+    return { topics: [category], fromTags: false };
   }
 
   const tags = (post as { tags?: string[] }).tags ?? [];
-  return tags.filter(tag => tag.trim().length > 0).slice(0, 3);
+  return {
+    topics: tags
+      .map(tag => tag.replace(/^#+/, '').trim())
+      .filter(tag => tag.length > 0)
+      .slice(0, 3),
+    fromTags: true,
+  };
 }
 
 /**
@@ -50,25 +66,51 @@ function topicsOf(post: PublishedPostRow): string[] {
  * rather than summing stops volume from masquerading as performance.
  */
 export function rankTopics(posts: PublishedPostRow[], limit: number): TopicPerformance[] {
-  const buckets = new Map<string, { posts: number; engagements: number }>();
+  const { scoreOf } = scorerFor(posts);
+  const buckets = new Map<
+    string,
+    { label: string; posts: number; engagements: number; tagged: number; scores: number[] }
+  >();
 
   for (const post of posts) {
-    for (const topic of topicsOf(post)) {
-      const bucket = buckets.get(topic) ?? { posts: 0, engagements: 0 };
+    const seen = new Set<string>();
+    const { topics, fromTags } = topicsOf(post);
+    for (const topic of topics) {
+      const key = topic.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      const bucket = buckets.get(key) ?? {
+        label: topic,
+        posts: 0,
+        engagements: 0,
+        tagged: 0,
+        scores: [],
+      };
+      const score = scoreOf(post);
       bucket.posts += 1;
+      bucket.tagged += fromTags ? 1 : 0;
       bucket.engagements += engagementOf(post);
-      buckets.set(topic, bucket);
+      if (score !== null) {
+        bucket.scores.push(score);
+      }
+      buckets.set(key, bucket);
     }
   }
 
-  return [...buckets.entries()]
-    .filter(([, bucket]) => bucket.posts >= MIN_POSTS_FOR_TOPIC)
-    .map(([topic, bucket]) => ({
-      topic,
+  const isHouseTag = (tagged: number) =>
+    posts.length >= MIN_POSTS_FOR_UBIQUITY && tagged / posts.length >= UBIQUITOUS_SHARE;
+
+  return [...buckets.values()]
+    .filter(bucket => bucket.posts >= MIN_POSTS_FOR_TOPIC && !isHouseTag(bucket.tagged))
+    .map(bucket => ({
+      topic: bucket.label,
       posts: bucket.posts,
       averageEngagement: bucket.engagements / bucket.posts,
+      score: median(bucket.scores),
     }))
-    .sort((a, b) => b.averageEngagement - a.averageEngagement)
+    .sort((a, b) => b.score - a.score || b.posts - a.posts)
     .slice(0, limit);
 }
 
@@ -94,24 +136,7 @@ function platformOrder(posts: PublishedPostRow[], connected: string[]): string[]
 }
 
 function formatFor(posts: PublishedPostRow[], fallback: string): string {
-  const buckets = new Map<string, { posts: number; engagements: number }>();
-
-  for (const post of posts) {
-    const format = post.mediaType ?? post.postFormat;
-    if (!format) {
-      continue;
-    }
-    const bucket = buckets.get(format) ?? { posts: 0, engagements: 0 };
-    bucket.posts += 1;
-    bucket.engagements += engagementOf(post);
-    buckets.set(format, bucket);
-  }
-
-  const best = [...buckets.entries()]
-    .filter(([, bucket]) => bucket.posts >= MIN_POSTS_FOR_TOPIC)
-    .sort((a, b) => b[1].engagements / b[1].posts - a[1].engagements / a[1].posts)[0];
-
-  return best?.[0] ?? fallback;
+  return leadingFormat(posts, PRODUCIBLE_FORMATS)?.format ?? fallback;
 }
 
 /**
@@ -126,7 +151,8 @@ export function buildWeeklyPlan(
   posts: PublishedPostRow[],
   connected: string[],
   cadence: BrandCadence,
-  from: Date = new Date()
+  from: Date = new Date(),
+  evidence: PublishedPostRow[] = posts
 ): PlannedSlot[] {
   const weekdays = parseWeekdays(cadence.slotWeekdays);
   if (!weekdays.length || !connected.length) {
@@ -137,9 +163,10 @@ export function buildWeeklyPlan(
   const total = Math.min(MAX_SLOTS, weekdays.length * perRun);
 
   const platforms = platformOrder(posts, connected);
-  const topics = rankTopics(posts, 5);
+  const topics = rankTopics(evidence, 5);
+  const { describe } = scorerFor(evidence);
   const fallbackTopics = cadence.topics.filter(topic => topic.trim().length > 0);
-  const format = formatFor(posts, cadence.defaultFormat);
+  const format = formatFor(evidence, cadence.defaultFormat);
 
   const taken: Date[] = [];
   const slots: PlannedSlot[] = [];
@@ -170,7 +197,7 @@ export function buildWeeklyPlan(
       platform,
       format,
       topic,
-      reason: reasonFor(topics, platforms, platform, index),
+      reason: reasonFor(topics, platforms, platform, index, describe),
     });
   }
 
@@ -181,15 +208,22 @@ function reasonFor(
   topics: TopicPerformance[],
   platforms: string[],
   platform: string,
-  index: number
+  index: number,
+  describe: (value: number) => string
 ): string {
   if (platforms.length > 1 && platform === platforms[0]) {
-    return `${platform} has the most room left this window.`;
+    return (
+      `${platformName(platform)} has had the fewest posts this window, ` +
+      'so it has the most room to grow.'
+    );
   }
 
   const topic = topics[index % Math.max(1, topics.length)];
   if (topic) {
-    return `${topic.topic} averaged ${Math.round(topic.averageEngagement)} engagements per post.`;
+    return (
+      `${topic.topic} is one of your strongest subjects: ` +
+      `${describe(topic.score)} on a typical post.`
+    );
   }
 
   return 'Keeps the brand on its configured cadence while evidence builds.';

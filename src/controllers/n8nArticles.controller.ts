@@ -6,9 +6,11 @@
 import { createError } from '@/middlewares/errorHandler';
 import { n8nArticleRepository } from '@/repositories/n8nArticle.repository';
 import { mediaPostRepository } from '@/repositories/mediaPost.repository';
+import { readerDeviceRepository } from '@/repositories/readerDevice.repository';
 import { ApiResponseHelper, ResponseCode } from '@/utils/apiResponse';
 import { logger } from '@/utils/logger';
 import { buildPaginatedResponse, parsePagination } from '@/utils/pagination';
+import { requireReaderDeviceId } from '@/utils/readerDevice';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { Prisma } from '@prisma/client';
 
@@ -354,4 +356,50 @@ export async function getTopArticles(request: FastifyRequest, reply: FastifyRepl
     ResponseCode.SUCCESS,
     200
   );
+}
+
+/**
+ * Record that an anonymous device viewed this article — first view per device
+ * bumps the denormalized viewCount; a repeat view from the same device is a no-op.
+ * POST /articles/slug/:slug/view
+ */
+export async function recordArticleView(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
+  const params = request.params as { slug: string };
+  const deviceId = requireReaderDeviceId(request);
+
+  const article = await n8nArticleRepository.findBySlug(params.slug);
+  if (!article) {
+    throw createError.notFound(`Article with slug "${params.slug}" not found`);
+  }
+
+  await readerDeviceRepository.touch(deviceId);
+  await n8nArticleRepository.recordView(deviceId, article.id);
+
+  return ApiResponseHelper.success(reply, 'View recorded', {}, ResponseCode.SUCCESS, 200);
+}
+
+/**
+ * Record that an anonymous device finished reading this article — first
+ * completion per device bumps the denormalized readCount.
+ * POST /articles/slug/:slug/read
+ */
+export async function recordArticleRead(
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<void> {
+  const params = request.params as { slug: string };
+  const deviceId = requireReaderDeviceId(request);
+
+  const article = await n8nArticleRepository.findBySlug(params.slug);
+  if (!article) {
+    throw createError.notFound(`Article with slug "${params.slug}" not found`);
+  }
+
+  await readerDeviceRepository.touch(deviceId);
+  await n8nArticleRepository.recordCompletion(deviceId, article.id);
+
+  return ApiResponseHelper.success(reply, 'Read recorded', {}, ResponseCode.SUCCESS, 200);
 }

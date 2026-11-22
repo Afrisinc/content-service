@@ -173,7 +173,7 @@ describe('ChatGptNode image:generate', () => {
 
     expect(client.generateImages).toHaveBeenCalledWith(
       {
-        model: 'dall-e-3',
+        model: 'gpt-image-1',
         prompt: 'a cat',
         size: '1024x1792',
         quality: 'hd',

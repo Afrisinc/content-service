@@ -5,8 +5,10 @@ import {
   getAutomationPolicy,
   getAutomationSummary,
   listAgentRuns,
+  listAgents,
   resumeAgentRun,
   runAutomationNow,
+  updateAgent,
   updateAutomationPolicy,
 } from '@/controllers/automation.controller';
 import { asyncWrapper } from '@/middlewares/async_wrapper.middleware';
@@ -18,8 +20,10 @@ import {
   GetAutomationPolicySchema,
   GetAutomationSummarySchema,
   ListAgentRunsSchema,
+  ListAgentsSchema,
   ResumeAgentRunSchema,
   RunAutomationNowSchema,
+  UpdateAgentSchema,
   UpdateAutomationPolicySchema,
 } from '@/schemas/requests/automation.schema';
 import { FastifyInstance } from 'fastify';
@@ -79,5 +83,17 @@ export async function automationRoutes(app: FastifyInstance) {
     '/automation/run',
     { schema: { ...RunAutomationNowSchema, tags: TAGS }, onRequest: [authGuard] },
     asyncWrapper(runAutomationNow)
+  );
+
+  app.get(
+    '/automation/agents',
+    { schema: { ...ListAgentsSchema, tags: TAGS }, onRequest: [authGuard] },
+    asyncWrapper(listAgents)
+  );
+
+  app.patch(
+    '/automation/agents/:key',
+    { schema: { ...UpdateAgentSchema, tags: TAGS }, onRequest: [authGuard] },
+    asyncWrapper(updateAgent)
   );
 }

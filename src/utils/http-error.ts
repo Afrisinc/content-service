@@ -40,6 +40,12 @@ export class UnauthorizedError extends HttpError {
   }
 }
 
+export class TooManyRequestsError extends HttpError {
+  constructor(message: string = 'Too many requests') {
+    super(429, message);
+  }
+}
+
 export class OfferNotOpenError extends HttpError {
   constructor(message: string = 'Offer is not open for subscriptions') {
     super(409, message, null, 180);

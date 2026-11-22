@@ -10,8 +10,18 @@ from fastapi.responses import FileResponse, JSONResponse
 from .brand.geometry import FORMATS
 from .config import settings
 from .errors import RenderError
+from .fit import fit_headlines
 from .render import marks, post, typography
-from .schema import PostSpec, RenderResult
+from .render.templates import registry
+from .schema import (
+    HeadlineFitRequest,
+    HeadlineFitResult,
+    HeadlineWrapRequest,
+    HeadlineWrapResult,
+    PostSpec,
+    RenderResult,
+)
+from .wrap import wrap_headline
 
 TAG = "render"
 
@@ -56,6 +66,14 @@ async def formats() -> dict[str, dict[str, int | str]]:
     }
 
 
+@app.get("/templates", tags=[TAG])
+async def templates() -> list[dict[str, str]]:
+    return [
+        {"name": template.name, "title": template.title, "description": template.description}
+        for template in registry.catalog()
+    ]
+
+
 @app.get("/health", tags=[TAG])
 async def health() -> dict[str, str]:
     try:
@@ -64,6 +82,26 @@ async def health() -> dict[str, str]:
     except RenderError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"status": "ok"}
+
+
+@app.post(
+    "/fit/headlines",
+    response_model=HeadlineFitResult,
+    tags=[TAG],
+    dependencies=[Depends(require_api_key)],
+)
+async def fit(request: HeadlineFitRequest) -> HeadlineFitResult:
+    return fit_headlines(request)
+
+
+@app.post(
+    "/layout/headline",
+    response_model=HeadlineWrapResult,
+    tags=[TAG],
+    dependencies=[Depends(require_api_key)],
+)
+async def layout_headline(request: HeadlineWrapRequest) -> HeadlineWrapResult:
+    return wrap_headline(request)
 
 
 @app.post(

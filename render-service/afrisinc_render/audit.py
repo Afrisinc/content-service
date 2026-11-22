@@ -9,7 +9,7 @@ from .brand import rules as R
 from .brand import tokens as T
 from .brand.geometry import STORY, Geometry
 from .luminance import contrast_on_white, region_luminance
-from .schema import AuditFinding, SlideSpec
+from .schema import RICH_TEMPLATES, AuditFinding, SlideSpec, is_editorial
 
 _CORAL = np.array(T.CORAL, dtype=np.int16)
 _CORAL_TOLERANCE = 45
@@ -36,7 +36,12 @@ BANNED_WORDS = frozenset(
 )
 
 
-def text_bands(geo: Geometry) -> tuple[tuple[str, int, int], ...]:
+def text_bands(geo: Geometry, layout: str = "brand") -> tuple[tuple[str, int, int], ...]:
+    if is_editorial(layout):
+        return (
+            ("header", geo.header_y - 24, geo.header_y + 24),
+            ("dateline", geo.footer_y - 20, geo.footer_y + 20),
+        )
     return (
         ("header", geo.header_y - 24, geo.header_y + 24),
         ("contact_rail", geo.contact_rail_y - 18, geo.contact_rail_y + 18),
@@ -74,6 +79,7 @@ def audit_slide(
     geo: Geometry,
     bounds: list[tuple[float, float, float, float]] | None = None,
     contrast: list[tuple[tuple[float, float, float, float], float]] | None = None,
+    headline_size: int | None = None,
 ) -> list[AuditFinding]:
     findings: list[AuditFinding] = []
 
@@ -93,9 +99,30 @@ def audit_slide(
     if not (T.MIN_HEADLINE_LINES <= len(spec.headline) <= T.MAX_HEADLINE_LINES):
         add("headline_lines", f"{len(spec.headline)} lines, allowed 1–{T.MAX_HEADLINE_LINES}")
 
+    if spec.rows:
+        from .render.components import Rows
+
+        for role, text, width, limit in Rows([(r.title, r.body) for r in spec.rows]).measure(geo):
+            if width > limit:
+                add(
+                    "row_overflow",
+                    f'{role} "{text}" is drawn {width - limit:.0f}px past its {limit:.0f}px '
+                    "measure — a row shrinks to fit but never wraps",
+                )
+
+    own_type_scale = spec.template in RICH_TEMPLATES
+    floor = T.NEWS_HEADLINE_FLOOR if is_editorial(spec.layout) else T.HEADLINE_BRAND_FLOOR
+    if headline_size is not None and headline_size < floor and not own_type_scale:
+        add(
+            "headline_size",
+            f"set at {headline_size}px, below the {floor}px brand floor — "
+            "the copy is too long for the measure",
+            severity="warning",
+        )
+
     pixels = np.asarray(image.convert("RGB"))
     foreground_is_white = R.is_dark(spec.surface)
-    for name, top, bottom in text_bands(geo):
+    for name, top, bottom in () if own_type_scale else text_bands(geo, spec.layout):
         band = pixels[top:bottom, geo.margin : geo.right_edge]
         mask = band.sum(axis=2) < 600 if foreground_is_white else band.sum(axis=2) > 240
         sample = band[mask] if mask.sum() > 50 else band.reshape(-1, 3)

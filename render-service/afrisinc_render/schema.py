@@ -10,10 +10,32 @@ from .brand import rules as R
 from .brand import tokens as T
 from .brand.geometry import POST, SINGLE, Geometry, geometry_for
 
+NEWS = "news"
+STORY = "story"
+EDITORIAL_LAYOUTS = frozenset({NEWS, STORY})
+
+
+def is_editorial(layout: str) -> bool:
+    return layout in EDITORIAL_LAYOUTS
+
 SurfaceName = Literal["azure", "photo", "white"]
-FormatName = Literal["post", "story", "single"]
+FormatName = Literal["post", "story", "single", "portrait"]
 EyebrowKind = Literal["label", "claim"]
 Anchor = Literal["top", "centre", "bottom"]
+Layout = Literal["brand", "news", "story"]
+NewsTemplate = Literal[
+    "news.classic",
+    "news.split",
+    "news.frame",
+    "news.spotlight",
+    "news.bulletin",
+    "news.duotone",
+    "news.breaking",
+    "news.broadsheet",
+]
+BREAKING = "news.breaking"
+BROADSHEET = "news.broadsheet"
+RICH_TEMPLATES = frozenset({BREAKING, BROADSHEET})
 
 
 class Eyebrow(BaseModel):
@@ -65,6 +87,11 @@ class SlideSpec(BaseModel):
     coral_rule: bool = False
     anchor: Anchor | None = None
     dense_scrim: bool = False
+    layout: Layout = "brand"
+    template: NewsTemplate | None = None
+    lead: str | None = Field(default=None, min_length=2, max_length=28)
+    section: str | None = Field(default=None, min_length=2, max_length=60)
+    dateline: str | None = Field(default=None, min_length=2, max_length=80)
     photo_focus: float = Field(
         default=0.5,
         ge=0.0,
@@ -96,6 +123,10 @@ class SlideSpec(BaseModel):
 
     @model_validator(mode="after")
     def coherent(self) -> SlideSpec:
+        if self.template and self.layout == "brand":
+            self.layout = NEWS
+        if (self.lead or self.section) and self.template not in RICH_TEMPLATES:
+            raise ValueError("lead and section belong to the breaking and broadsheet templates")
         if self.surface == R.PHOTO and not self.photo:
             raise ValueError("a photo surface needs a photo")
         if self.surface != R.PHOTO and self.photo:
@@ -109,12 +140,30 @@ class SlideSpec(BaseModel):
         claim = self.eyebrow is not None and self.eyebrow.kind == "claim"
         if claim and (self.coral_rule or self.strike_line is not None):
             raise ValueError("one coral element per slide")
+        if is_editorial(self.layout):
+            self._check_editorial()
+        elif self.dateline:
+            raise ValueError("a dateline belongs to the news and story layouts")
         return self
+
+    def _check_editorial(self) -> None:
+        if self.surface != R.PHOTO:
+            raise ValueError("a news or story frame is built on a photograph")
+        closing_allowed = self.template == BROADSHEET
+        if self.rows or self.actions or self.cta or (self.closing and not closing_allowed):
+            raise ValueError("a news or story frame carries a headline and a standfirst, nothing else")
+        if self.coral_rule or self.strike_line is not None:
+            raise ValueError("a news or story frame has no decorative accent")
+        if len(self.subs) > (2 if self.template == BROADSHEET else 1):
+            raise ValueError("a news or story frame carries one standfirst")
+        if not self.dateline:
+            raise ValueError("a news or story frame needs a dateline")
 
     @property
     def shows_site(self) -> bool:
-        """The domain appears exactly once: in the header, unless a CTA pill carries it."""
-        return self.cta is None
+        """The domain appears exactly once: in the header, unless a CTA pill or the
+        news dateline carries it."""
+        return self.cta is None and not is_editorial(self.layout)
 
 
 class PostSpec(BaseModel):
@@ -164,3 +213,60 @@ class RenderResult(BaseModel):
     slides: list[RenderedSlide]
     findings: list[AuditFinding]
     passed: bool
+
+
+class HeadlineFitSlide(BaseModel):
+    layout: Layout = "brand"
+    template: NewsTemplate | None = None
+    lead: str | None = Field(default=None, min_length=2, max_length=28)
+    headline: list[str] = Field(min_length=1, max_length=T.MAX_HEADLINE_LINES)
+    rows: list[Row] = Field(default_factory=list)
+    eyebrow: Eyebrow | None = None
+    subs: list[str] = Field(default_factory=list, max_length=2)
+    closing: str | None = Field(default=None, max_length=90)
+    cta: Cta | None = None
+    coral_rule: bool = False
+
+    @model_validator(mode="after")
+    def template_is_editorial(self) -> HeadlineFitSlide:
+        if self.template and self.layout == "brand":
+            self.layout = NEWS
+        return self
+
+
+class HeadlineFitRequest(BaseModel):
+    format: FormatName = POST
+    slides: list[HeadlineFitSlide] = Field(min_length=1, max_length=R.MAX_FRAMES)
+
+
+class FittedLine(BaseModel):
+    role: str = "headline line"
+    text: str
+    width: float
+    overflow: float
+    fits: bool
+
+
+class FittedSlide(BaseModel):
+    index: int
+    headline_size: int
+    fits: bool
+    lines: list[FittedLine]
+
+
+class HeadlineFitResult(BaseModel):
+    measure: int
+    min_headline_size: int
+    fits: bool
+    slides: list[FittedSlide]
+
+
+class HeadlineWrapRequest(BaseModel):
+    text: str = Field(min_length=2, max_length=400)
+    format: FormatName = SINGLE
+
+
+class HeadlineWrapResult(BaseModel):
+    lines: list[str]
+    size: int
+    truncated: bool

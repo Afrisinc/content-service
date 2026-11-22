@@ -1,7 +1,10 @@
 import {
   firstPullCutoff,
   horizonStart,
+  isBackingOff,
   isDueForMetrics,
+  nextBackoff,
+  retryDelayMs,
   staleBefore,
 } from '@/helpers/analyticsCadence.helper';
 import { describe, expect, it } from 'vitest';
@@ -62,5 +65,44 @@ describe('window boundaries', () => {
 
   it('uses the shorter interval for staleness so nothing due is filtered out', () => {
     expect(staleBefore(NOW).toISOString()).toBe('2026-08-20T16:00:00.000Z');
+  });
+});
+
+describe('metrics backoff', () => {
+  it('climbs 2h, 6h, 24h, 72h for transient failures, then holds', () => {
+    expect([1, 2, 3, 4, 5].map(failures => retryDelayMs('unavailable', failures) / HOUR)).toEqual([
+      2, 6, 24, 72, 72,
+    ]);
+    expect(retryDelayMs('other', 1)).toBe(2 * HOUR);
+  });
+
+  it('waits a day for problems only a reconnect can fix', () => {
+    expect(retryDelayMs('token', 1)).toBe(24 * HOUR);
+    expect(retryDelayMs('permission', 4)).toBe(24 * HOUR);
+  });
+
+  it('waits a week for a post that is gone and never pauses on a rate limit', () => {
+    expect(retryDelayMs('missing', 1)).toBe(7 * 24 * HOUR);
+    expect(retryDelayMs('rate_limit', 3)).toBe(0);
+  });
+
+  it('counts failures from the previous backoff', () => {
+    expect(nextBackoff(null, 'unavailable', NOW)).toEqual({
+      failures: 1,
+      kind: 'unavailable',
+      retryAt: '2026-08-21T14:00:00.000Z',
+    });
+    expect(nextBackoff({ failures: 1, kind: 'unavailable', retryAt: '' }, 'token', NOW)).toEqual({
+      failures: 2,
+      kind: 'token',
+      retryAt: '2026-08-22T12:00:00.000Z',
+    });
+  });
+
+  it('is backing off only until the retry time', () => {
+    const backoff = { failures: 1, kind: 'token' as const, retryAt: '2026-08-21T13:00:00.000Z' };
+    expect(isBackingOff(null, NOW)).toBe(false);
+    expect(isBackingOff(backoff, NOW)).toBe(true);
+    expect(isBackingOff(backoff, new Date('2026-08-21T13:00:00.000Z'))).toBe(false);
   });
 });

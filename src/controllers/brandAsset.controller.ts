@@ -76,27 +76,52 @@ export function decodeUpload(content: string): Buffer {
   return Buffer.from(payload, 'base64');
 }
 
-/**
- * Upload photographs straight into the library.
- *
- * The render service reads a photograph from a url it can reach, so an uploaded
- * file is pushed to the assets service first and the public url is what the
- * library stores — the same route rendered frames already take.
- *
- * Files arrive base64-encoded rather than as multipart: the installed
- * `@fastify/multipart` requires Fastify 5 and this service runs 4, and the
- * 512MB body limit in `app.ts` exists for exactly this.
- */
-export async function uploadBrandAssets(request: FastifyRequest, reply: FastifyReply) {
-  const userId = requireUserId(request);
-  const { files } = request.body as { files: UploadedFile[] };
+const MAX_REFERENCE_LENGTH = 60;
 
-  if (!files?.length) {
-    throw new BadRequestError('no photographs were sent');
+export function uniqueReferences(candidates: string[], taken: Iterable<string>): string[] {
+  const used = new Set(taken);
+  return candidates.map(candidate => {
+    let reference = candidate;
+    for (let suffix = 2; used.has(reference); suffix += 1) {
+      const tail = `-${suffix}`;
+      reference = `${candidate.slice(0, MAX_REFERENCE_LENGTH - tail.length)}${tail}`;
+    }
+    used.add(reference);
+    return reference;
+  });
+}
+
+export function normaliseSubjects(subjects: string[]): string[] {
+  const seen = new Set<string>();
+  for (const subject of subjects) {
+    const cleaned = subject.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (cleaned) {
+      seen.add(cleaned);
+    }
   }
+  return [...seen];
+}
 
-  const { name, subjects } = request.body as { name?: string; subjects?: string[] };
+async function withUniqueReferences(
+  userId: string,
+  images: CreateBrandAssetImageInput[]
+): Promise<CreateBrandAssetImageInput[]> {
+  const taken = await brandAssetRepository.findReferencesStartingWith(userId, [
+    ...new Set(images.map(image => image.reference)),
+  ]);
+  const references = uniqueReferences(
+    images.map(image => image.reference),
+    taken
+  );
+  return images.map((image, index) => ({ ...image, reference: references[index] }));
+}
 
+interface StoredUploads {
+  prepared: CreateBrandAssetImageInput[];
+  rejected: string[];
+}
+
+async function storeUploads(files: UploadedFile[], subjects?: string[]): Promise<StoredUploads> {
   const client = getAssetsClient();
   const prepared: CreateBrandAssetImageInput[] = [];
   const rejected: string[] = [];
@@ -127,14 +152,43 @@ export async function uploadBrandAssets(request: FastifyRequest, reply: FastifyR
       continue;
     }
 
-    // `kind` and `approved` belong to the set, not to each photograph.
     prepared.push({ url: asset.url, reference, subjects });
   }
 
+  return { prepared, rejected };
+}
+
+function nothingStored(rejected: string[]): BadRequestError {
+  return new BadRequestError(
+    rejected.length ? `nothing was stored — ${rejected[0]}` : 'no usable photographs were sent'
+  );
+}
+
+/**
+ * Upload photographs straight into the library.
+ *
+ * The render service reads a photograph from a url it can reach, so an uploaded
+ * file is pushed to the assets service first and the public url is what the
+ * library stores — the same route rendered frames already take.
+ *
+ * Files arrive base64-encoded rather than as multipart: the installed
+ * `@fastify/multipart` requires Fastify 5 and this service runs 4, and the
+ * 512MB body limit in `app.ts` exists for exactly this.
+ */
+export async function uploadBrandAssets(request: FastifyRequest, reply: FastifyReply) {
+  const userId = requireUserId(request);
+  const { files } = request.body as { files: UploadedFile[] };
+
+  if (!files?.length) {
+    throw new BadRequestError('no photographs were sent');
+  }
+
+  const { name, subjects } = request.body as { name?: string; subjects?: string[] };
+
+  const { prepared, rejected } = await storeUploads(files, subjects);
+
   if (!prepared.length) {
-    throw new BadRequestError(
-      rejected.length ? `nothing was stored — ${rejected[0]}` : 'no usable photographs were sent'
-    );
+    throw nothingStored(rejected);
   }
 
   const asset = await brandAssetRepository.create({
@@ -142,7 +196,7 @@ export async function uploadBrandAssets(request: FastifyRequest, reply: FastifyR
     name: name?.trim() || defaultSetName(prepared.length),
     kind: 'photo',
     approved: false,
-    images: prepared,
+    images: await withUniqueReferences(userId, prepared),
   });
 
   return success(reply, 201, `${prepared.length} photograph(s) uploaded`, 1001, {
@@ -252,6 +306,39 @@ export async function addImagesToAsset(request: FastifyRequest, reply: FastifyRe
   return success(reply, 200, `${prepared.length} photograph(s) added`, 1002, updated);
 }
 
+/** Uploads photographs into a set that already exists. */
+export async function uploadImagesToAsset(request: FastifyRequest, reply: FastifyReply) {
+  const userId = requireUserId(request);
+  const { id } = request.params as { id: string };
+  const { files, subjects } = request.body as { files: UploadedFile[]; subjects?: string[] };
+
+  const existing = await requireOwnedAsset(id, userId);
+
+  if (!files?.length) {
+    throw new BadRequestError('no photographs were sent');
+  }
+
+  const setSubjects = subjects?.length
+    ? normaliseSubjects(subjects)
+    : [...new Set(existing.images.flatMap(image => image.subjects))];
+
+  const { prepared, rejected } = await storeUploads(files, setSubjects);
+
+  if (!prepared.length) {
+    throw nothingStored(rejected);
+  }
+
+  const images = await withUniqueReferences(userId, prepared);
+  const asset = await brandAssetRepository.addImages(id, userId, images);
+  const added = (asset?.images.length ?? 0) - existing.images.length;
+
+  return success(reply, 200, `${added} photograph(s) added`, 1002, {
+    added,
+    rejected,
+    asset,
+  });
+}
+
 export async function removeImageFromAsset(request: FastifyRequest, reply: FastifyReply) {
   const userId = requireUserId(request);
   const { imageId } = request.params as { id: string; imageId: string };
@@ -267,9 +354,21 @@ export async function removeImageFromAsset(request: FastifyRequest, reply: Fasti
 export async function updateBrandAsset(request: FastifyRequest, reply: FastifyReply) {
   const userId = requireUserId(request);
   const { id } = request.params as { id: string };
-  const { name, description } = request.body as { name?: string; description?: string };
+  const { name, description, subjects } = request.body as {
+    name?: string;
+    description?: string;
+    subjects?: string[];
+  };
 
   await requireOwnedAsset(id, userId);
+
+  if (name !== undefined && !name.trim()) {
+    throw new BadRequestError('a set needs a name');
+  }
+
+  if (subjects !== undefined) {
+    await brandAssetRepository.replaceSubjects(id, normaliseSubjects(subjects));
+  }
 
   const updated = await brandAssetRepository.update(id, {
     ...(name !== undefined ? { name: name.trim() } : {}),

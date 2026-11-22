@@ -1,0 +1,426 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BadRequestError, ConflictError, NotFoundError } from '@/utils/http-error';
+
+const repository = vi.hoisted(() => ({
+  listForDesk: vi.fn(),
+  deskStatusTotals: vi.fn(),
+  countStuck: vi.fn(),
+  getCategories: vi.fn(),
+  latestIngestedAt: vi.fn(),
+  findDeskDetail: vi.fn(),
+  findById: vi.fn(),
+  update: vi.fn(),
+}));
+
+const agent = vi.hoisted(() => ({
+  status: vi.fn(() => ({ allowedByServer: true })),
+  trigger: vi.fn(),
+}));
+
+const settings = vi.hoisted(() => ({
+  getNewsSettings: vi.fn(async () => ({ batchSize: 1, days: [0, 1, 2, 3, 4, 5, 6] })),
+  saveNewsSettings: vi.fn(),
+}));
+
+vi.mock('@/repositories/n8nArticle.repository', () => ({ n8nArticleRepository: repository }));
+vi.mock('@/services/agentSettings.service', () => ({ agentSettingsService: settings }));
+vi.mock('@/services/newsAgent.service', () => ({ newsAgentService: agent }));
+const automation = vi.hoisted(() => ({ draftNewsStory: vi.fn() }));
+
+vi.mock('@/services/automation.service', () => ({ automationService: automation }));
+vi.mock('@/services/agentControl.service', () => ({
+  agentControlService: { isActive: vi.fn(async () => false) },
+}));
+
+const { newsDeskService, STUCK_AFTER_MINUTES } = await import('@/services/newsDesk.service');
+
+const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60 * 1000);
+
+const article = (status: string, updatedMinutesAgo = 1) => ({
+  id: 7n,
+  status,
+  updated_at: minutesAgo(updatedMinutesAgo),
+});
+
+describe('NewsDeskService.list', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('flattens the latest media post and the social post count onto each article', async () => {
+    repository.listForDesk.mockResolvedValue({
+      articles: [
+        {
+          id: 1n,
+          status: 'published',
+          updated_at: minutesAgo(5),
+          mediaPosts: [{ id: 'mp-1', title: 'Rewritten' }],
+          _count: { generatedPosts: 3 },
+        },
+        {
+          id: 2n,
+          status: 'draft',
+          updated_at: minutesAgo(5),
+          mediaPosts: [],
+          _count: { generatedPosts: 0 },
+        },
+      ],
+      total: 2,
+    });
+
+    const result = await newsDeskService.list({});
+
+    expect(result.items[0]).toMatchObject({
+      mediaPost: { id: 'mp-1', title: 'Rewritten' },
+      generatedPostCount: 3,
+      stuck: false,
+    });
+    expect(result.items[0]).not.toHaveProperty('mediaPosts');
+    expect(result.items[1].mediaPost).toBeNull();
+    expect(result).toMatchObject({ total: 2, page: 1, limit: 12 });
+  });
+
+  it('flags an article that has been processing longer than the stuck threshold', async () => {
+    repository.listForDesk.mockResolvedValue({
+      articles: [
+        {
+          ...article('processing', STUCK_AFTER_MINUTES + 5),
+          mediaPosts: [],
+          _count: { generatedPosts: 0 },
+        },
+        { ...article('processing', 2), id: 8n, mediaPosts: [], _count: { generatedPosts: 0 } },
+      ],
+      total: 2,
+    });
+
+    const result = await newsDeskService.list({});
+
+    expect(result.items.map(item => item.stuck)).toEqual([true, false]);
+  });
+
+  it('clamps paging and drops blank filters before querying', async () => {
+    repository.listForDesk.mockResolvedValue({ articles: [], total: 0 });
+
+    await newsDeskService.list({ page: 0, limit: 500, category: '  ', search: ' ai ' });
+
+    expect(repository.listForDesk).toHaveBeenCalledWith({
+      status: undefined,
+      category: undefined,
+      search: 'ai',
+      page: 1,
+      limit: 100,
+    });
+  });
+});
+
+describe('NewsDeskService.summary', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('totals statuses, views and reads, and reports stuck articles and categories', async () => {
+    repository.deskStatusTotals.mockResolvedValue([
+      { status: 'published', _count: { _all: 4 }, _sum: { viewCount: 900, readCount: 300 } },
+      { status: 'failed', _count: { _all: 2 }, _sum: { viewCount: null, readCount: null } },
+      { status: 'legacy', _count: { _all: 1 }, _sum: { viewCount: 0, readCount: 0 } },
+    ]);
+    repository.countStuck.mockResolvedValue(1);
+    repository.getCategories.mockResolvedValue(['news', 'tech']);
+    repository.latestIngestedAt.mockResolvedValue(new Date('2026-09-23T08:00:00.000Z'));
+
+    const summary = await newsDeskService.summary();
+
+    expect(summary).toEqual({
+      total: 7,
+      byStatus: { draft: 0, processing: 0, published: 4, skipped: 0, failed: 2 },
+      stuck: 1,
+      views: 900,
+      reads: 300,
+      categories: ['news', 'tech'],
+      stuckAfterMinutes: STUCK_AFTER_MINUTES,
+      lastIngestedAt: new Date('2026-09-23T08:00:00.000Z'),
+      agent: {
+        allowedByServer: true,
+        enabled: false,
+        batchSize: 1,
+        days: [0, 1, 2, 3, 4, 5, 6],
+        batchSizeOptions: [1, 2],
+      },
+    });
+  });
+
+  it('reports the saved articles-per-run, not the server default', async () => {
+    repository.deskStatusTotals.mockResolvedValue([]);
+    repository.countStuck.mockResolvedValue(0);
+    repository.getCategories.mockResolvedValue([]);
+    repository.latestIngestedAt.mockResolvedValue(null);
+    settings.getNewsSettings.mockResolvedValueOnce({ batchSize: 2, days: [1] });
+
+    const summary = await newsDeskService.summary();
+
+    expect(summary.agent.batchSize).toBe(2);
+    expect(summary.agent.days).toEqual([1]);
+  });
+});
+
+describe('NewsDeskService.updateSettings', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('saves the batch size for the acting user and echoes the allowed choices', async () => {
+    settings.saveNewsSettings.mockResolvedValue({ batchSize: 2, days: [1, 4] });
+
+    await expect(newsDeskService.updateSettings(2, 'user-1', [1, 4])).resolves.toEqual({
+      batchSize: 2,
+      days: [1, 4],
+      batchSizeOptions: [1, 2],
+    });
+    expect(settings.saveNewsSettings).toHaveBeenCalledWith(2, 'user-1', [1, 4]);
+  });
+
+  it('leaves the days alone when only the batch size is sent', async () => {
+    settings.saveNewsSettings.mockResolvedValue({ batchSize: 2, days: [1] });
+
+    await newsDeskService.updateSettings(2, 'user-1');
+
+    expect(settings.saveNewsSettings).toHaveBeenCalledWith(2, 'user-1', undefined);
+  });
+
+  it('passes a rejection from the settings service straight through', async () => {
+    settings.saveNewsSettings.mockRejectedValue(
+      new BadRequestError('batchSize must be one of 1, 2')
+    );
+
+    await expect(newsDeskService.updateSettings(9, 'user-1')).rejects.toThrow(BadRequestError);
+  });
+});
+
+describe('NewsDeskService.get', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns the article with its enhanced version', async () => {
+    repository.findDeskDetail.mockResolvedValue({
+      ...article('published'),
+      mediaPosts: [{ id: 'mp-1', content: '## Body' }],
+      generatedPosts: [],
+    });
+
+    const detail = await newsDeskService.get('7');
+
+    expect(repository.findDeskDetail).toHaveBeenCalledWith(7n);
+    expect(detail.mediaPost).toEqual({ id: 'mp-1', content: '## Body' });
+    expect(detail.stuck).toBe(false);
+  });
+
+  it('returns a null enhanced version when WF2 has not produced one yet', async () => {
+    repository.findDeskDetail.mockResolvedValue({ ...article('draft'), mediaPosts: [] });
+
+    await expect(newsDeskService.get('7')).resolves.toMatchObject({ mediaPost: null });
+  });
+
+  it('rejects an unknown article', async () => {
+    repository.findDeskDetail.mockResolvedValue(null);
+
+    await expect(newsDeskService.get('7')).rejects.toThrow(NotFoundError);
+  });
+
+  it('rejects a non-numeric id before touching the database', async () => {
+    await expect(newsDeskService.get('abc')).rejects.toThrow(BadRequestError);
+    expect(repository.findDeskDetail).not.toHaveBeenCalled();
+  });
+});
+
+describe('NewsDeskService.requeue', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    repository.update.mockImplementation(async (_id, data) => ({ id: 7n, ...data }));
+  });
+
+  it.each(['failed', 'skipped'])(
+    'sends a %s article back to draft and clears its error',
+    async status => {
+      repository.findById.mockResolvedValue(article(status));
+
+      await newsDeskService.requeue('7');
+
+      expect(repository.update).toHaveBeenCalledWith(7n, {
+        status: 'draft',
+        processing_error: null,
+      });
+    }
+  );
+
+  it('requeues an article stuck in processing', async () => {
+    repository.findById.mockResolvedValue(article('processing', STUCK_AFTER_MINUTES + 1));
+
+    await newsDeskService.requeue('7');
+
+    expect(repository.update).toHaveBeenCalledWith(7n, { status: 'draft', processing_error: null });
+  });
+
+  it('refuses an article WF2 is still actively enhancing', async () => {
+    repository.findById.mockResolvedValue(article('processing', 5));
+
+    await expect(newsDeskService.requeue('7')).rejects.toThrow(/still being enhanced/);
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it.each(['draft', 'published'])('refuses a %s article', async status => {
+    repository.findById.mockResolvedValue(article(status));
+
+    await expect(newsDeskService.requeue('7')).rejects.toThrow(ConflictError);
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown article', async () => {
+    repository.findById.mockResolvedValue(null);
+
+    await expect(newsDeskService.requeue('7')).rejects.toThrow(NotFoundError);
+  });
+});
+
+describe('NewsDeskService.skip', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    repository.update.mockImplementation(async (_id, data) => ({ id: 7n, ...data }));
+  });
+
+  it.each(['draft', 'failed'])('skips a %s article', async status => {
+    repository.findById.mockResolvedValue(article(status));
+
+    await newsDeskService.skip('7');
+
+    expect(repository.update).toHaveBeenCalledWith(7n, { status: 'skipped' });
+  });
+
+  it.each(['processing', 'published', 'skipped'])('refuses a %s article', async status => {
+    repository.findById.mockResolvedValue(article(status));
+
+    await expect(newsDeskService.skip('7')).rejects.toThrow(ConflictError);
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('NewsDeskService.setFeatured', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    repository.update.mockImplementation(async (_id, data) => ({ id: 7n, ...data }));
+  });
+
+  it('features a published article', async () => {
+    repository.findById.mockResolvedValue(article('published'));
+
+    await newsDeskService.setFeatured('7', true);
+
+    expect(repository.update).toHaveBeenCalledWith(7n, { is_featured: true });
+  });
+
+  it('refuses to feature an article that is not published', async () => {
+    repository.findById.mockResolvedValue(article('draft'));
+
+    await expect(newsDeskService.setFeatured('7', true)).rejects.toThrow(ConflictError);
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it('always allows unfeaturing, whatever the status', async () => {
+    repository.findById.mockResolvedValue(article('failed'));
+
+    await newsDeskService.setFeatured('7', false);
+
+    expect(repository.update).toHaveBeenCalledWith(7n, { is_featured: false });
+  });
+});
+
+describe('NewsDeskService.triggerStage', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it.each(['ingest', 'enhance'] as const)('starts the %s stage', stage => {
+    agent.trigger.mockReturnValue(true);
+
+    expect(newsDeskService.triggerStage(stage)).toEqual({ stage, started: true });
+    expect(agent.trigger).toHaveBeenCalledWith(stage);
+  });
+
+  it.each([
+    ['ingest', /feeds are already being fetched/],
+    ['enhance', /articles are already being enhanced/],
+  ] as const)('refuses a %s stage that is already running', (stage, message) => {
+    agent.trigger.mockReturnValue(false);
+
+    expect(() => newsDeskService.triggerStage(stage)).toThrow(message);
+  });
+});
+
+describe('NewsDeskService.generateSocial', () => {
+  const published = (overrides: Record<string, unknown> = {}) => ({
+    id: 7n,
+    status: 'published',
+    category: 'Fintech',
+    creator: 'TechCabal',
+    source_url: 'https://source.example/a',
+    updated_at: minutesAgo(5),
+    mediaPosts: [
+      {
+        title: 'Kenya opens M-Pesa API',
+        slug: 'kenya-opens-mpesa-api',
+        excerpt: 'Regulators agreed a shared regime.',
+        cover_image: 'https://cdn.example/cover.png',
+        published_at: new Date('2026-10-02T09:00:00.000Z'),
+        tags: ['mpesa'],
+      },
+    ],
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    automation.draftNewsStory.mockResolvedValue({ groupName: 'AFRISINC' });
+  });
+
+  it('drafts the requested format for the caller from the published article', async () => {
+    repository.findDeskDetail.mockResolvedValue(published());
+
+    const result = await newsDeskService.generateSocial('7', 'user-1', 'story');
+
+    expect(result).toEqual({ articleId: '7', format: 'story', groupName: 'AFRISINC' });
+    expect(automation.draftNewsStory).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({
+        title: 'Kenya opens M-Pesa API',
+        category: 'Fintech',
+        source: 'TechCabal',
+        coverUrl: 'https://cdn.example/cover.png',
+        publishedAt: '2026-10-02T09:00:00.000Z',
+        articleUrl: expect.stringContaining('/media/articles/kenya-opens-mpesa-api'),
+      }),
+      'story'
+    );
+  });
+
+  it('falls back to an empty category when the article has none', async () => {
+    repository.findDeskDetail.mockResolvedValue(published({ category: null }));
+
+    await newsDeskService.generateSocial('7', 'user-1', 'single');
+
+    expect(automation.draftNewsStory.mock.calls[0][1].category).toBe('');
+  });
+
+  it('refuses an article that is not found', async () => {
+    repository.findDeskDetail.mockResolvedValue(null);
+
+    await expect(newsDeskService.generateSocial('7', 'user-1', 'story')).rejects.toThrow(
+      NotFoundError
+    );
+  });
+
+  it.each([
+    ['unpublished', published({ status: 'draft' })],
+    ['without a media post', published({ mediaPosts: [] })],
+    [
+      'without a cover',
+      published({ mediaPosts: [{ ...published().mediaPosts[0], cover_image: null }] }),
+    ],
+  ])('refuses an article %s', async (_label, row) => {
+    repository.findDeskDetail.mockResolvedValue(row);
+
+    await expect(newsDeskService.generateSocial('7', 'user-1', 'story')).rejects.toThrow(
+      ConflictError
+    );
+    expect(automation.draftNewsStory).not.toHaveBeenCalled();
+  });
+});

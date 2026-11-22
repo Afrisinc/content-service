@@ -7,7 +7,7 @@ from pathlib import Path
 from ..audit import audit_post, audit_slide, has_errors
 from ..config import settings
 from ..schema import PostSpec, RenderedSlide, RenderResult
-from . import slide as slide_renderer
+from . import templates
 
 
 def output_dir(slug: str) -> Path:
@@ -26,13 +26,17 @@ def render_post(spec: PostSpec) -> RenderResult:
     findings = audit_post(spec.slides)
 
     for index, slide_spec in enumerate(spec.slides):
-        frame = slide_renderer.render(slide_spec, geo)
+        frame = templates.render_frame(slide_spec, geo)
         image = frame.image
         filename = f"{geo.filename_prefix}-{index + 1:02d}.png"
         path = target / filename
         image.save(path, format="PNG", optimize=True)
 
-        findings.extend(audit_slide(index, slide_spec, image, geo, frame.bounds, frame.contrast))
+        findings.extend(
+            audit_slide(
+                index, slide_spec, image, geo, frame.bounds, frame.contrast, frame.headline_size
+            )
+        )
         rendered.append(
             RenderedSlide(
                 index=index,

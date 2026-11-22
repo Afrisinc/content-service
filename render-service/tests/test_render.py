@@ -85,6 +85,100 @@ def test_a_headline_line_too_wide_for_any_size_raises_rather_than_overflowing():
         slide.fit_stack(too_wide, POST_GEO)
 
 
+def test_an_overflow_names_the_line_and_the_amount_it_is_over():
+    runaway = "Supercalifragilisticexpialidocioussupercalifragilisticexpialidocious"
+    too_wide = SlideSpec(
+        surface="white",
+        eyebrow=Eyebrow(text="How we build", kind="label"),
+        headline=[runaway],
+    )
+
+    with pytest.raises(LayoutOverflowError) as raised:
+        slide.fit_stack(too_wide, POST_GEO)
+
+    message = str(raised.value)
+    assert runaway in message
+    assert f"{POST_GEO.content_width}px measure" in message
+    assert "px over" in message
+
+
+def test_a_stack_too_tall_says_so_instead_of_blaming_the_width():
+    tall = SlideSpec(
+        surface="white",
+        eyebrow=Eyebrow(text="How we build", kind="label"),
+        headline=["One", "Two", "Three", "Four"],
+        rows=[
+            {"title": "Row one title here", "body": "A reasonably long supporting line of copy."},
+            {"title": "Row two title here", "body": "A reasonably long supporting line of copy."},
+            {"title": "Row three title", "body": "A reasonably long supporting line of copy."},
+        ],
+        closing="A closing line that sits underneath the three rows.",
+        subs=["An extra sub line", "And another sub line to push it over"],
+    )
+
+    with pytest.raises(LayoutOverflowError) as raised:
+        slide.fit_stack(tall, POST_GEO)
+
+    message = str(raised.value)
+    assert "taller than the post band" in message
+    assert "not the type size" in message
+
+
+def test_a_headline_below_the_brand_floor_is_flagged_by_the_audit():
+    spec = SlideSpec(
+        surface="azure",
+        eyebrow=Eyebrow(text="Software development", kind="label"),
+        headline=["Your process.", "Not a template."],
+    )
+    image = _render(spec)
+
+    findings = audit.audit_slide(0, spec, image, POST_GEO, headline_size=T.MIN_HEADLINE_SIZE)
+    flagged = [f for f in findings if f.rule == "headline_size"]
+
+    assert len(flagged) == 1
+    assert flagged[0].severity == "warning"
+    assert str(T.HEADLINE_BRAND_FLOOR) in flagged[0].detail
+
+
+def test_a_row_body_running_off_the_frame_is_an_audit_error():
+    overlong = (
+        "We map the whole of your existing operational workflow in careful detail before any code"
+    )
+    spec = SlideSpec(
+        surface="white",
+        eyebrow=Eyebrow(text="How we build", kind="label"),
+        headline=["Ship in weeks,", "not quarters."],
+        rows=[
+            {"title": "DISCOVERY", "body": overlong},
+            {"title": "BUILD", "body": "We replace what failed."},
+            {"title": "HAND OVER", "body": "Documented, and we train."},
+        ],
+    )
+
+    findings = audit.audit_slide(0, spec, _render(spec), POST_GEO)
+    flagged = [f for f in findings if f.rule == "row_overflow"]
+
+    assert len(flagged) == 1
+    assert flagged[0].severity == "error"
+    assert "row body" in flagged[0].detail
+
+
+def test_rows_inside_their_measure_raise_nothing(white_slide):
+    findings = audit.audit_slide(0, white_slide, _render(white_slide), POST_GEO)
+
+    assert not [f for f in findings if f.rule == "row_overflow"]
+
+
+def test_a_headline_on_the_brand_floor_is_not_flagged(azure_slide):
+    image = _render(azure_slide)
+
+    findings = audit.audit_slide(
+        0, azure_slide, image, POST_GEO, headline_size=T.HEADLINE_BRAND_FLOOR
+    )
+
+    assert not [f for f in findings if f.rule == "headline_size"]
+
+
 def test_coral_stays_inside_budget(cta_slide):
     image = _render(cta_slide)
     assert audit.coral_coverage(image) <= T.MAX_CORAL_COVERAGE

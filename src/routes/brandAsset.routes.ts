@@ -5,6 +5,7 @@ import {
   uploadBrandAssets,
   updateBrandAsset,
   addImagesToAsset,
+  uploadImagesToAsset,
   removeImageFromAsset,
   approveBrandAsset,
   deleteBrandAsset,
@@ -139,7 +140,7 @@ export async function brandAssetRoutes(app: FastifyInstance) {
     {
       schema: {
         tags: TAGS,
-        description: 'Rename a set or change its description',
+        description: 'Rename a set, change its description, or replace its subjects',
         params: {
           type: 'object',
           required: ['id'],
@@ -152,12 +153,63 @@ export async function brandAssetRoutes(app: FastifyInstance) {
           properties: {
             name: { type: 'string', minLength: 1, maxLength: 120 },
             description: { type: 'string', maxLength: 280 },
+            subjects: {
+              type: 'array',
+              maxItems: 30,
+              items: { type: 'string', minLength: 1, maxLength: 60 },
+            },
           },
         },
       },
       onRequest: [authGuard],
     },
     asyncWrapper(updateBrandAsset)
+  );
+
+  app.post(
+    '/brand-assets/:id/upload',
+    {
+      schema: {
+        tags: TAGS,
+        description:
+          'Upload photographs into a set that already exists. Files go to the assets ' +
+          'service like a new upload; a clashing reference gets a numbered suffix ' +
+          'instead of being dropped.',
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string' } },
+        },
+        body: {
+          type: 'object',
+          required: ['files'],
+          additionalProperties: false,
+          properties: {
+            subjects: { type: 'array', items: { type: 'string' } },
+            files: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 40,
+              items: {
+                type: 'object',
+                required: ['filename', 'contentType', 'content'],
+                additionalProperties: false,
+                properties: {
+                  filename: { type: 'string', minLength: 1, maxLength: 255 },
+                  contentType: {
+                    type: 'string',
+                    enum: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+                  },
+                  content: { type: 'string', minLength: 1 },
+                },
+              },
+            },
+          },
+        },
+      },
+      onRequest: [authGuard],
+    },
+    asyncWrapper(uploadImagesToAsset)
   );
 
   app.post(

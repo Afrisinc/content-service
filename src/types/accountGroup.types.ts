@@ -1,3 +1,4 @@
+import type { AgentKey } from '@/config/agentRegistry';
 import type { AutomationMode } from '@prisma/client';
 import type { SocialPlatformKey } from '@/types/socialMediaIntegration.types';
 
@@ -117,6 +118,7 @@ export interface AgentRunDTO {
   groupId: string | null;
   groupName: string | null;
   agent: string;
+  agentKey: AgentKey | null;
   trigger: string;
   status: string;
   topic: string | null;

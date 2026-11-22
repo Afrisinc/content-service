@@ -47,6 +47,25 @@ describe('getAllSocialMediaPosts', () => {
 
     expect(service.getAllPosts).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }));
   });
+
+  it('passes the requested sort column and direction through to the service', async () => {
+    await getAllSocialMediaPosts(
+      request({ query: { sort_by: 'scheduledAt', sort_order: 'asc' } }),
+      fakeReply()
+    );
+
+    expect(service.getAllPosts).toHaveBeenCalledWith(
+      expect.objectContaining({ sortBy: 'scheduledAt', sortOrder: 'asc' })
+    );
+  });
+
+  it('leaves sort undefined when the caller does not request one, preserving default ordering', async () => {
+    await getAllSocialMediaPosts(request({ query: {} }), fakeReply());
+
+    expect(service.getAllPosts).toHaveBeenCalledWith(
+      expect.objectContaining({ sortBy: undefined, sortOrder: undefined })
+    );
+  });
 });
 
 describe('getUserSocialMediaPosts', () => {

@@ -107,7 +107,8 @@ export const SaveIntegrationCredentialsSchema = {
 
 export const UpdateIntegrationCredentialsSchema = {
   description:
-    'Update app credentials for an existing social media platform integration. appSecret and callbackUrl are optional — omit to keep the current ones.',
+    'Update app credentials for an existing social media platform integration. ' +
+    'appSecret and callbackUrl are optional — omit to keep the current ones.',
   tags: ['social-media-integrations'],
   security: [{ bearerAuth: [] }],
   params: PlatformParamsSchema,
@@ -146,7 +147,8 @@ export const UpdateIntegrationCredentialsSchema = {
 
 export const AddSocialMediaAccountSchema = {
   description:
-    'Add a connected account under a platform integration. Requires app credentials to already be saved.',
+    'Add a connected account under a platform integration. ' +
+    'Requires app credentials to already be saved.',
   tags: ['social-media-integrations'],
   security: [{ bearerAuth: [] }],
   params: PlatformParamsSchema,
