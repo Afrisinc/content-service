@@ -1,0 +1,16 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests", ":dependencyDashboardApproval"],
+  "timezone": "Africa/Kigali",
+  "schedule": ["* 0-5 * * 1"],
+  "minimumReleaseAge": "3 days",
+  "prConcurrentLimit": 10,
+  "labels": ["dependencies"],
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": { "labels": ["security"] },
+  "lockFileMaintenance": { "enabled": true, "schedule": ["* 0-5 1 * *"] },
+  "packageRules": [
+    { "description": "Approved patch updates of non-major deps merge themselves once CI is green", "matchUpdateTypes": ["patch", "pin", "digest"], "matchCurrentVersion": "!/^0/", "automerge": true },
+    { "description": "Group all non-major devDependencies", "matchDepTypes": ["devDependencies"], "matchUpdateTypes": ["minor", "patch"], "groupName": "dev dependencies (non-major)" }
+  ]
+}
